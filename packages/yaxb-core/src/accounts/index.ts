@@ -270,6 +270,7 @@ export const ACTIVITY_ACTIONS = {
   "question.escalated": "Question passed to the moderators",
   "web.searched": "The web was searched",
   "feedback.given": "Feedback given",
+  "answer.sent_for_review": "Answer sent to the moderators to check",
   "command.used": "Kiosk command used",
   "journey.completed": "Service used",
   "notebook.source_added": "Document added to the notebook",

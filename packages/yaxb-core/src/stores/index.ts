@@ -16,11 +16,30 @@ export interface ThreadStore {
   delete(threadId: string): Promise<void>;
 }
 
-export type ModerationItem = { id: string; question: string; reason: string; created_at: string };
+export type ModerationItem = {
+  id: string;
+  question: string;
+  reason: string;
+  created_at: string;
+  /** MOD-4: open until a moderator marks it handled, with a note. Older stores have no state (open). */
+  state?: "open" | "handled";
+  note?: string | null;
+  handled_by?: string | null;
+  handled_at?: string | null;
+};
 
 export interface ModerationStore {
   add(question: string, reason: string): Promise<ModerationItem>;
   list(limit?: number): Promise<ModerationItem[]>;
+  /** Mark an item handled (MOD-4); absent on stores that can't (the CLI's file). */
+  handle?(id: string, note: string, by: string): Promise<ModerationItem | null>;
+}
+
+export const MODERATION_NOTE_MAX = 1000;
+
+/** The queue filtered by state and reason (MOD-4). */
+export function filterModeration(items: ModerationItem[], { state, reason }: { state?: "open" | "handled"; reason?: string } = {}) {
+  return items.filter((i) => (!state || (i.state ?? "open") === state) && (!reason || i.reason === reason));
 }
 
 /** `limit(key)` returns true when the call is allowed. */
@@ -37,6 +56,7 @@ export function newModerationItem(question: string, reason: string): ModerationI
     question: question.slice(0, MODERATION_QUESTION_MAX),
     reason: reason.slice(0, MODERATION_REASON_MAX),
     created_at: new Date().toISOString(),
+    state: "open",
   };
 }
 
@@ -66,7 +86,13 @@ export function createMemoryModerationStore(maxItems = 500): ModerationStore {
       return item;
     },
     async list(limit = 100) {
-      return items.slice(-limit).reverse();
+      return items.slice(-limit).reverse().map((i) => ({ ...i }));
+    },
+    async handle(id, note, by) {
+      const item = items.find((i) => i.id === id);
+      if (!item) return null;
+      Object.assign(item, { state: "handled", note: note.slice(0, MODERATION_NOTE_MAX), handled_by: by, handled_at: new Date().toISOString() });
+      return { ...item };
     },
   };
 }

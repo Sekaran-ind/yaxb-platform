@@ -140,6 +140,18 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
   - `dohResolver` defaults to Cloudflare's family resolver; an answer of 0.0.0.0 or :: means "blocked as unsafe".
   - `siteGuard({ allow, block, safeBrowsingKey })` runs on every hop. Its settings come from `siteRulesFromEnv`: `WEBSITE_SOURCE_DOMAINS`, `WEBSITE_BLOCKED_DOMAINS` and `SAFE_BROWSING_API_KEY`. If Safe Browsing can't be reached, the page is refused.
 
+## Answer reviews and quality (F1)
+
+- `reviews/` (core, export `./reviews`):
+  - `citedRefs(answer)` reads the "(sources: …)" lines; notebook parts count once (`refKey` drops `#n`). The server always derives the cited sources; `answerSubmissionSchema` is strict, so a client can't send them.
+  - `newReview` requires every cited source to be marked; missing sources are ids or web addresses (`missingRefKey` → `url:host/path`). A later review names the one it `replaces` and is always timed after it; the latest one counts.
+  - `scoreNotebooks`: a row per notebook plus the knowledge-base row (curated sources only; answers that touch one, or have no notebook). `MIN_REVIEWS` (5) or the numbers are null. Weeks are Monday UTC by answer time. `worst` lists answers to look at first.
+  - `createReviewService(store, moderatorStore)` counts reviews on the moderator and audits `answer.reviewed` (rating and counts only). Stores: memory and D1 (`createD1ReviewStore`, migration 0005, which also adds the queue's handled state).
+- The moderation queue (MOD-4): `ModerationStore.handle` (memory and D1; the CLI's file store has none) and `filterModeration`; `kiosk.moderation(limit, { state, reason })`, `kiosk.handle`.
+- Worker: `POST /api/agent/review` (visitor or moderator, same origin, session, form limit) and, behind one moderator middleware, `/api/reviews/answers[/:id]`, `/api/reviews/scores?weeks=`, `/api/reviews/proposals`, `/api/reviews/moderation/:id/handle`. `/api/agent/moderation?state=&reason=`.
+- Web: "Ask a moderator to check this answer" under each answer (`TranscriptPane`, `KioskShell.reviewAnswer`), `/kiosk/review` (`AnswerReviews.vue`), `/kiosk/quality` (`QualityDashboard.vue`: sortable table, weeks, worst answers, proposals to copy into `curated_qa.json`), and handled/filters on Curate. `ModeratorSignIn.vue` and `lib/api.ts` are shared.
+- Run core tests from PowerShell with an upper-case `C:` path: under Git Bash's `/c/` vitest loads twice and every file fails with "reading 'config'".
+
 ## Websites as notebook sources
 
 - `web/pages.ts` (core, export `./web/pages`): `fetchPage` and `fetchSite` (KNW-20..22) guard against SSRF (SEC-4):

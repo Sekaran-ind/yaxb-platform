@@ -21,13 +21,30 @@ What the kiosk answers from, and how it finds the right passage.
 | KNW-22 | A website source must be refreshable on request, showing when it was last read. It may optionally include pages linked from it on the same site, up to a stated number. | Built |
 | KNW-23 | Answers that use a website source must cite it as `notebook:<id>` and show its address. | Built |
 | KNW-24 | Website text is untrusted data like any document (OVR-6). | Built |
-
 | KNW-25 | Sites known for malware, phishing or adult content must be refused, with the reason ("blocked as unsafe"). Host names are resolved through a family-safe DNS resolver (Cloudflare 1.1.1.1 for Families), which answers 0.0.0.0 for them. | Built |
 | KNW-26 | The organisation may limit website sources to a list of trusted sites (`WEBSITE_SOURCE_DOMAINS`; subdomains included), and block sites (`WEBSITE_BLOCKED_DOMAINS`). The Notebook screen shows the list when there is one. | Built |
 | KNW-27 | When the organisation sets `SAFE_BROWSING_API_KEY`, every page address (each redirect too) must also be checked with Google Safe Browsing (malware, phishing, unwanted software); only the address is sent, and a page whose safety can't be checked is refused. | Built |
 | KNW-28 | No automatic check can recognise every illegal or harmful site. Where only vetted sources are acceptable (a health kiosk for the public), the organisation should use the trusted-site list (KNW-26); moderators may block a site that slips through. | Built (guidance) |
 
 Check: a test that a request to `http://192.168.1.1`, `http://localhost` or a redirect to them is refused; a demonstration of adding, citing and refreshing a page.
+
+## Child safety (parked)
+
+Layers on top of KNW-25..28, so that what a child can reach through the kiosk is age-appropriate. Agreed and deferred: build after the current roadmap.
+
+| ID | Requirement | Status |
+|---|---|---|
+| CHS-1 | A fetched page's text must be classified before it is added as a source (a safety classifier such as Llama Guard on Workers AI), and refused with the category when it is flagged: child sexual exploitation, sexual content, violent crime, self-harm, weapons, hate. Only the text goes to the classifier. A page that can't be classified is refused while child safety is on. | Parked |
+| CHS-2 | The organisation may set the DNS resolver used for website sources (`WEBSITE_DNS_RESOLVER`), so that a filtering resolver with wider categories (for example Cloudflare Gateway blocking child abuse, gambling, violence, drugs, weapons, hate and adult themes) replaces the family resolver of KNW-25. | Parked |
+| CHS-3 | A page that declares itself adult (`<meta name="rating" content="adult">`, the RTA label) or sits behind an age gate must be refused. | Parked |
+| CHS-4 | **Child mode**: while a profile with the age range "Under 18" is open, or when the kiosk is set to child mode, websites may be added only from the trusted-site list (KNW-26); with no list, adding websites is off. | Parked |
+| CHS-5 | In child mode the web fallback (KNW-40) must use strict safe search, or be off when the configured search provider has no safe search. The assistant's instructions add a rule to keep answers age-appropriate. | Parked |
+| CHS-6 | Web search results (KNW-40) must pass the same address checks (KNW-25..27) and content check (CHS-1) as website sources before the assistant sees them. | Parked |
+| CHS-7 | Visitors must be able to report a notebook source or a web-sourced answer ("Report this source"). The report reaches the moderation queue with the address only. A moderator may block the site at once; the blocklist is then kept on the server (with `WEBSITE_BLOCKED_DOMAINS` still applying), and every block is in the audit log (MOD-25). | Parked |
+| CHS-8 | Refused and blocked attempts must be counted for moderators (address and category only, never page text), so repeated attempts show. | Parked |
+| CHS-9 | The organisation must have a written child-safety policy, named people who handle reports, and the national route for reporting illegal content involving children (in India the National Cybercrime Reporting Portal, cybercrime.gov.in; elsewhere NCMEC or the IWF). Moderators must never re-share reported material. | Parked (organisation) |
+
+Check: tests with classifier and resolver fakes that flagged pages, adult-rated pages and non-listed sites in child mode are refused; a demonstration of a report reaching the queue and a moderator's block taking effect.
 
 ## Finding the right passage
 

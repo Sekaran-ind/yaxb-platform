@@ -38,7 +38,7 @@ import { webSearchFromEnv, type WebSearch } from "../web/index.js";
 import { ROUTE_LIMIT, routeTools } from "./routing.js";
 import type { TurnWeb } from "./tools.js";
 import { createMemoryFeedbackStore, feedbackSchema, summarizeFeedback, type FeedbackStore } from "../feedback/index.js";
-import type { ModerationStore, ThreadState, ThreadStore } from "../stores/index.js";
+import { filterModeration, type ModerationStore, type ThreadState, type ThreadStore } from "../stores/index.js";
 import { createKioskAgent, createLeanKioskAgent, translate, type FinalState, type Harness, type HarnessOptions, type KioskAgent } from "./harness.js";
 import { deepPromptAddendum, turnPromptAddendum } from "./prompts.js";
 import { AUTO_ESCALATION_REASON, looksLikeEmergency } from "./safety.js";
@@ -489,7 +489,11 @@ export function createKiosk(deps: KioskDeps) {
     content: () => ({ services: kioskContent.services, journeys: kioskContent.journeys, screens: kioskContent.screens }),
     sources: () => knowledgeSources,
     curated: () => curatedQA,
-    moderation: (limit?: number) => deps.moderation.list(limit),
+    /** The queue, newest first, optionally by state and reason (MOD-4). */
+    moderation: async (limit = 100, filter: { state?: "open" | "handled"; reason?: string } = {}) =>
+      filter.state || filter.reason ? filterModeration(await deps.moderation.list(500), filter).slice(0, limit) : deps.moderation.list(limit),
+    /** Mark an escalated question handled (MOD-4); null when the item is unknown or the store can't. */
+    handle: async (id: string, note: string, by: string) => (deps.moderation.handle ? deps.moderation.handle(id, note, by) : null),
     /** Escalate a question answered without the agent (on-device answers). */
     flag: (question: string, reason: string) => deps.moderation.add(question, reason),
     forget: (threadId: string) => deps.threads.delete(threadId),

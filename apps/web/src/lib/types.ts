@@ -22,6 +22,8 @@ export type ChatTurn = {
   local?: boolean;
   /** A kiosk command, shown as a card in the conversation (CMD-1..6). */
   card?: CommandCard;
+  /** Sent to the moderators to check (MOD-10), on this screen only. */
+  review?: "sending" | "sent" | "failed";
 };
 
 /**

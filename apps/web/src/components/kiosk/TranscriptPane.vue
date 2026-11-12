@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The Transcript screen: ask box and the conversation with live agent activity.
 import { MAX_MESSAGE_CHARS } from "@sekaran-ind/yaxb-core/schemas";
-import { Bot, CheckCircle2, HardDrive, Circle, CircleDot, Loader2, NotebookPen, RotateCcw, Send, Settings2, Wrench } from "@lucide/vue";
+import { Bot, CheckCircle2, HardDrive, Circle, CircleDot, Loader2, NotebookPen, RotateCcw, Send, Settings2, ShieldCheck, Wrench } from "@lucide/vue";
 import { computed, nextTick, ref, watch } from "vue";
 import { cn } from "@/lib/cn";
 import CommandCard from "./CommandCard.vue";
@@ -23,7 +23,7 @@ const props = defineProps<{
   sourceCount: number;
 }>();
 /** card: a command card's button (yes, no, start, sign-in, ask-assistant) for the shell to carry out. */
-const emit = defineEmits<{ ask: [question: string]; reset: []; card: [turnId: string, action: "yes" | "no" | "start" | "sign-in" | "ask-assistant"] }>();
+const emit = defineEmits<{ ask: [question: string]; reset: []; card: [turnId: string, action: "yes" | "no" | "start" | "sign-in" | "ask-assistant"]; review: [turnId: string] }>();
 
 const TOOL_LABELS: Record<string, string> = {
   search_knowledge_base: "Searching the knowledge base",
@@ -133,6 +133,20 @@ function submit() {
               @ask-assistant="emit('card', t.id, 'ask-assistant')"
             />
             <p v-if="t.text" class="leading-relaxed whitespace-pre-wrap text-ink">{{ t.text }}</p>
+            <div v-if="t.text && !t.card && !t.pending && !t.error" class="text-xs text-gray-500">
+              <p v-if="t.review === 'sent'" role="status" class="inline-flex items-center gap-1"><ShieldCheck class="size-3.5 text-success" aria-hidden="true" /> Sent to the moderators to check. Thank you.</p>
+              <button
+                v-else
+                type="button"
+                class="inline-flex items-center gap-1 hover:text-ink disabled:opacity-50"
+                :disabled="t.review === 'sending'"
+                title="Sends this question and answer, and your notebook's name, to the moderators. Nothing else."
+                @click="emit('review', t.id)"
+              >
+                <ShieldCheck class="size-3.5" aria-hidden="true" />
+                {{ t.review === "failed" ? "Couldn't send. Try again" : "Ask a moderator to check this answer" }}
+              </button>
+            </div>
             <p v-if="t.pending && !t.text && !t.tools.length" class="flex items-center gap-2 text-sm text-gray-400"><Loader2 class="size-4 animate-spin" aria-hidden="true" /> Thinking…</p>
             <p v-if="t.error" role="alert" class="rounded-md bg-danger/10 px-3 py-2 text-sm text-red-800">{{ t.error }}</p>
           </div>

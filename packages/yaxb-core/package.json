@@ -114,6 +114,10 @@
     "./moderators": {
       "types": "./dist/moderators/index.d.ts",
       "default": "./dist/moderators/index.js"
+    },
+    "./reviews": {
+      "types": "./dist/reviews/index.d.ts",
+      "default": "./dist/reviews/index.js"
     }
   },
   "files": [
