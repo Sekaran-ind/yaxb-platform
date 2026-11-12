@@ -8,6 +8,7 @@ import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import AdaptiveNav from "@/components/kiosk/AdaptiveNav.vue";
 import ThemePicker from "./ThemePicker.vue";
+import { NATIVE } from "@/lib/platform";
 import { effectiveSelection, settings, updateSettings, useCapabilities, useProviders } from "@/composables/settings";
 import { useSpeechOutput } from "@/composables/speech";
 import { useWidth } from "@/composables/width";
@@ -295,9 +296,11 @@ async function clearBrowser() {
       </template>
     </AdaptiveNav>
     <p class="text-center text-sm text-gray-500">
-      Settings are saved in this browser automatically. <RouterLink to="/kiosk" class="font-medium text-brand-dark underline">Open the kiosk</RouterLink> ·
-      <RouterLink to="/kiosk/curate" class="font-medium text-brand-dark underline">Moderation queue</RouterLink> (moderators) ·
-      <RouterLink to="/kiosk/admin" class="font-medium text-brand-dark underline">Administration</RouterLink>
+      Settings are saved in this browser automatically. <RouterLink to="/kiosk" class="font-medium text-brand-dark underline">Open the kiosk</RouterLink>
+      <template v-if="!NATIVE">
+        · <RouterLink to="/kiosk/curate" class="font-medium text-brand-dark underline">Moderation queue</RouterLink> (moderators) ·
+        <RouterLink to="/kiosk/admin" class="font-medium text-brand-dark underline">Administration</RouterLink>
+      </template>
     </p>
   </div>
 </template>

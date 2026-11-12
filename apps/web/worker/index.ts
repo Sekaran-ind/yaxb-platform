@@ -12,7 +12,7 @@ import { settings, stringEnv, type Bindings } from "./env";
 import { kiosk, moderators, reviews } from "./kiosk";
 import { proposalEntry, ReviewError, type Reviewer } from "@sekaran-ind/yaxb-core/reviews";
 import { auditEvent, looksLikeKey, statusOf } from "@sekaran-ind/yaxb-core/moderators";
-import { clientId, isAdmin, moderatorCookie, moderatorOf, safeEqual, sessionId, setAdminCookie, setModeratorCookie } from "./session";
+import { clientId, fromApp, isAdmin, moderatorCookie, moderatorOf, safeEqual, sessionId, setAdminCookie, setModeratorCookie } from "./session";
 
 export type AppEnv = { Bindings: Bindings; Variables: { reviewer: Reviewer } };
 
@@ -39,10 +39,15 @@ const jsonError = (c: Context<AppEnv>, status: number, message: string) => {
   return c.json({ error: message }, status as 400);
 };
 
-/** CSRF defence for state-changing routes: the request must come from our own origin. */
+/**
+ * CSRF defence for state-changing routes: the request must come from our own origin, or from the
+ * native app (PLT-14), which carries no cookies (its session is a header), so it can't be forged
+ * from another site.
+ */
 function sameOrigin(c: Context<AppEnv>): boolean {
   const origin = c.req.header("origin");
   if (!origin) return false;
+  if (fromApp(c)) return true;
   try {
     return new URL(origin).host === new URL(c.req.url).host;
   } catch {
@@ -74,9 +79,27 @@ async function readJson(c: Context<AppEnv>, max: number): Promise<{ body: unknow
 // ---- API ------------------------------------------------------------------------------------------
 
 app.use("/api/*", async (c, next) => {
+  // CORS for the native app's origins only (PLT-14); no credentials: its session is a header.
+  const app = fromApp(c);
+  if (app && c.req.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": c.req.header("origin")!,
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE",
+        "Access-Control-Allow-Headers": "Content-Type, X-Yaxb-Session",
+        "Access-Control-Max-Age": "600",
+        Vary: "Origin",
+      },
+    });
+  }
   await next();
   c.header("Cache-Control", "no-store");
   c.header("X-Content-Type-Options", "nosniff");
+  if (app) {
+    c.header("Access-Control-Allow-Origin", c.req.header("origin")!);
+    c.header("Vary", "Origin");
+  }
 });
 
 /** One kiosk turn, streamed as Server-Sent Events. */

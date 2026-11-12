@@ -1,5 +1,12 @@
-// Speech in (Web Speech API recognition) and speech out (the browser's voices).
+// Speech in (Web Speech API recognition) and speech out (the browser's voices). In the native app
+// on a device, the platform's speech services through Capacitor plugins (PLT-12, lib/native-speech).
 import { onBeforeUnmount, onMounted, ref } from "vue";
+import { onDevice } from "@/lib/platform";
+
+type NativeSpeech = typeof import("@/lib/native-speech");
+let native: Promise<NativeSpeech | null> | null = null;
+/** The native speech module on a device; null on the web (loaded once). */
+const nativeSpeech = () => (native ??= onDevice().then((yes) => (yes ? import("@/lib/native-speech") : null)));
 
 type RecognitionResultEvent = { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> };
 interface Recognition {
@@ -27,10 +34,28 @@ export function useSpeechInput(onFinal: (text: string) => void, lang: () => stri
   const interim = ref("");
   let rec: Recognition | null = null;
 
-  onMounted(() => (supported.value = recognitionCtor() !== null));
-  onBeforeUnmount(() => rec?.abort());
+  let device: NativeSpeech | null = null;
+  onMounted(async () => {
+    supported.value = recognitionCtor() !== null;
+    device = await nativeSpeech();
+    if (device) supported.value = await device.recognitionAvailable();
+  });
+  onBeforeUnmount(() => (device ? void device.stopListening() : rec?.abort()));
 
   function start() {
+    if (device) {
+      if (listening.value) return;
+      listening.value = true;
+      device
+        .listenOnce(lang(), (t) => (interim.value = t))
+        .then((text) => text && onFinal(text))
+        .catch(() => {})
+        .finally(() => {
+          listening.value = false;
+          interim.value = "";
+        });
+      return;
+    }
     const Ctor = recognitionCtor();
     if (!Ctor || rec) return;
     const r = new Ctor();
@@ -56,7 +81,7 @@ export function useSpeechInput(onFinal: (text: string) => void, lang: () => stri
     r.start();
   }
 
-  return { supported, listening, interim, start, stop: () => rec?.stop() };
+  return { supported, listening, interim, start, stop: () => (device ? void device.stopListening() : rec?.stop()) };
 }
 
 /** Text-to-speech using the browser's built-in voices. */
@@ -67,16 +92,36 @@ export function useSpeechOutput() {
   const synth = () => (typeof window !== "undefined" ? window.speechSynthesis : undefined);
   const loadVoices = () => (voices.value = synth()?.getVoices() ?? []);
 
-  onMounted(() => {
+  let device: NativeSpeech | null = null;
+  onMounted(async () => {
     loadVoices();
     synth()?.addEventListener("voiceschanged", loadVoices);
+    device = await nativeSpeech();
+    // The device's voices, shaped like the browser's (name and lang are all the kiosk uses).
+    if (device) voices.value = (await device.nativeVoices()).map((v) => ({ name: v.name, lang: v.lang }) as SpeechSynthesisVoice);
   });
   onBeforeUnmount(() => {
     synth()?.removeEventListener("voiceschanged", loadVoices);
     synth()?.cancel();
+    void device?.stopSpeaking();
   });
 
+  async function speakOnDevice(d: NativeSpeech, text: string, opts: { voiceName?: string | null; rate?: number; lang?: string }) {
+    const spoken = text.replace(/\(sources?:[^)]*\)/gi, "").trim();
+    if (!spoken) return;
+    await d.stopSpeaking();
+    const index = voices.value.findIndex((v) => v.name === opts.voiceName && (!opts.lang || v.lang.toLowerCase().startsWith(opts.lang.slice(0, 2).toLowerCase())));
+    speaking.value = true;
+    try {
+      await d.speakNative(spoken, { lang: opts.lang, rate: opts.rate, ...(index >= 0 ? { voice: index } : {}) });
+    } finally {
+      speaking.value = false;
+      paused.value = false;
+    }
+  }
+
   function speak(text: string, opts: { voiceName?: string | null; rate?: number; lang?: string } = {}) {
+    if (device) return speakOnDevice(device, text, opts).catch(() => {});
     return new Promise<void>((resolve) => {
       const s = synth();
       if (!s || !text.trim()) return resolve();
@@ -105,6 +150,8 @@ export function useSpeechOutput() {
     paused,
     speak,
     pause: () => {
+      // The device's text-to-speech can't pause: pausing there stops.
+      if (device) return void device.stopSpeaking();
       synth()?.pause();
       paused.value = true;
     },
@@ -113,6 +160,7 @@ export function useSpeechOutput() {
       paused.value = false;
     },
     cancel: () => {
+      void device?.stopSpeaking();
       synth()?.cancel();
       speaking.value = false;
       paused.value = false;

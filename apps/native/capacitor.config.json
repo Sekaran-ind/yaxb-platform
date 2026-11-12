@@ -1,0 +1,8 @@
+{
+  "appId": "ai.yaxb.kiosk",
+  "appName": "YAXB Kiosk",
+  "webDir": "../web/dist/native",
+  "backgroundColor": "#fafaf9",
+  "android": { "allowMixedContent": false, "captureInput": true },
+  "ios": { "contentInset": "never", "limitsNavigationsToAppBoundDomains": false }
+}

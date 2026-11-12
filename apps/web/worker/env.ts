@@ -20,7 +20,19 @@ const schema = z.object({
   MAILCHIMP_API_KEY: z.string().regex(/-[a-z]{2}\d+$/, "expected a Mailchimp key ending in -<dc>").optional(),
   MAILCHIMP_AUDIENCE_ID: z.string().optional(),
   KIOSK_BOX_ORIGINS: z.string().optional(),
+  /**
+   * Origins of the native app's pages (PLT-14), comma-separated. The app sends its session id in
+   * X-Yaxb-Session instead of a cookie. Default: Capacitor's iOS and Android origins.
+   */
+  KIOSK_APP_ORIGINS: z.string().default("capacitor://localhost,https://localhost"),
 });
+
+/** The native app's origins (PLT-14). */
+export const appOrigins = (env: Bindings) =>
+  settings(env)
+    .KIOSK_APP_ORIGINS.split(",")
+    .map((o) => o.trim().replace(/\/+$/, ""))
+    .filter(Boolean);
 export type Settings = z.infer<typeof schema>;
 
 const cache = new WeakMap<object, Settings>();

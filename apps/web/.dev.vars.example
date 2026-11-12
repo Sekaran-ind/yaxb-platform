@@ -48,3 +48,6 @@ FEEDBACK_RATE=
 WEBSITE_SOURCE_DOMAINS=
 WEBSITE_BLOCKED_DOMAINS=
 SAFE_BROWSING_API_KEY=
+
+# Origins of the native app (apps/native, PLT-14). Default: capacitor://localhost,https://localhost
+# KIOSK_APP_ORIGINS=capacitor://localhost,https://localhost

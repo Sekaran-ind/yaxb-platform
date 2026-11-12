@@ -252,3 +252,8 @@
   color: #a8a8a8;
   font-style: italic;
 }
+
+/* The native app: keep content clear of notches and the home indicator. */
+@utility native-safe {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}

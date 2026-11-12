@@ -12,11 +12,11 @@
 
 | ID | Requirement | Status |
 |---|---|---|
-| PLT-10 | The kiosk must be packaged as a native Android and iOS app with Capacitor, from the same Vue app, following clinux-diary's setup. | Planned |
-| PLT-11 | The app must talk to the organisation's kiosk server for the agent and moderation (its address set at build time), and keep notebooks, profiles and on-device models on the device as the web kiosk does. | Planned |
-| PLT-12 | The app must use the device's microphone and speech where the web APIs aren't available in the app's web view, asking for permission with a clear reason. | Planned |
+| PLT-10 | The kiosk must be packaged as a native Android and iOS app with Capacitor, from the same Vue app, following clinux-diary's setup (`apps/native`). The app is the kiosk alone: it opens straight into the kiosk, with Settings, and has no website, moderator or administration pages. | Built (not yet built on a device) |
+| PLT-11 | The app must talk to the organisation's kiosk server for the agent and moderation (its address set at build time), and keep notebooks, profiles and on-device models on the device as the web kiosk does. The server address is `VITE_API_BASE`. | Built |
+| PLT-12 | The app must use the device's microphone and speech where the web APIs aren't available in the app's web view, asking for permission with a clear reason. The app uses the device's speech recognition and text-to-speech through Capacitor plugins; the permission texts are in the Android manifest and Info.plist. | Built (not yet tried on a device) |
 | PLT-13 | The app should support a kiosk (single-app) mode on Android tablets. | Proposed |
-| PLT-14 | The server must accept the app's requests (its origin) with the same session, rate-limit and validation rules as the web kiosk. | Planned |
+| PLT-14 | The server must accept the app's requests (its origin) with the same session, rate-limit and validation rules as the web kiosk. Only the origins in `KIOSK_APP_ORIGINS` (default `capacitor://localhost,https://localhost`) get CORS; the app sends its session id (a UUID kept on the device) in `X-Yaxb-Session` instead of a cookie, and the server accepts that header only from those origins. | Built |
 
 ## Command line
 
