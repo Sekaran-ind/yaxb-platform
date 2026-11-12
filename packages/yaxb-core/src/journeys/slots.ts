@@ -42,6 +42,12 @@ export type SlotHelpers = {
 /** Calibrated per sentence-transformer (clause vs. field description). */
 export const MEANING_THRESHOLDS = { minilm: { minScore: 0.45, margin: 0.08 }, labse: { minScore: 0.6, margin: 0.05 } } as const;
 
+/**
+ * Picking an option by meaning: on MiniLM the right option leads by 0.08 or more; on LaBSE its
+ * wrong picks lead by 0.025 or less. Below this margin the field is left for the visitor or the model.
+ */
+export const OPTION_BY_MEANING = { minScore: 0.4, margin: 0.07 } as const;
+
 const fold = (s: unknown) =>
   String(s ?? "")
     .toLowerCase()
@@ -261,6 +267,13 @@ export async function matchFields(fields: readonly Field[], text: string, helper
         if (f.type === "boolean") v = { value: !NEGATION.test(clause) };
         else if (f.type === "text" || f.type === "textarea") v = { value: clause };
         else v = valueFor(f, clause, helpers);
+        // A choice the words describe without naming it ("elaborate answers" -> "A fuller
+        // explanation"): the option closest in meaning, only when it clearly leads.
+        if (!v && f.type === "select" && f.options?.length) {
+          const [cv2, ...ov] = await helpers.embed([clause, ...f.options.map((o) => o.label)]);
+          const ranked = ov.map((o, i) => ({ i, s: similarity(o, cv2!) })).sort((a, b) => b.s - a.s);
+          if (ranked[0] && ranked[0].s >= OPTION_BY_MEANING.minScore && ranked[0].s - (ranked[1]?.s ?? 0) >= OPTION_BY_MEANING.margin) v = { value: f.options[ranked[0].i]!.value };
+        }
         if (!v) continue;
         usedClauses.add(c.ci);
         apply(f, v, "meaning", clause);

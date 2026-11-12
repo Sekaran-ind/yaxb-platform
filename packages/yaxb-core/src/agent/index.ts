@@ -29,6 +29,7 @@ import { createChatModel, listProviders, ProviderError, resolveSelection, type E
 import { askSchema, extractSchema, LANGUAGES, type AskInput, type ExtractInput, type Selection } from "../schemas/index.js";
 import { checkExtracted, fieldsJsonSchema, type SlotFill } from "../journeys/slots.js";
 import { journeysText } from "../journeys/summary.js";
+import { PROFILE_FORM, profileFields } from "../commands/index.js";
 import { offeringsText, servicesFor } from "../services/index.js";
 import { capabilities, effectiveSettings, isOn, languageName, SUBAGENT_OPTIONS, type AgentSettings } from "../settings/index.js";
 import { createPassedRetriever, EMBEDDING_MODELS, embeddingModelFor, resolveRetrieved, type Embed } from "../knowledge/semantic.js";
@@ -251,7 +252,8 @@ export function createKiosk(deps: KioskDeps) {
     const parsed = extractSchema.safeParse(input);
     if (!parsed.success) return { error: "That request isn't valid." };
     const { journey, step, text, selection } = parsed.data;
-    const fields = kioskContent.journeys.find((j) => j.id === journey)?.steps[step]?.fields;
+    // The visitor's profile is a form too (CMD-10); still the core's own fields, never the client's.
+    const fields = journey === PROFILE_FORM.journey && step === PROFILE_FORM.step ? profileFields() : kioskContent.journeys.find((j) => j.id === journey)?.steps[step]?.fields;
     if (!fields?.length) return { error: "That form isn't available." };
     const languages = LANGUAGES.map((l) => l.code);
     const schema = fieldsJsonSchema(fields, { languages });

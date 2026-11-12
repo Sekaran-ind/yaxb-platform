@@ -6,7 +6,7 @@ import type { AgentSettings } from "@sekaran-ind/yaxb-core/settings";
 import type { ThreadState } from "@sekaran-ind/yaxb-core/stores";
 import { ref, type Ref } from "vue";
 import { notebookForAgent, nowIso, type KioskStore, type NotebookRecord, type ThreadRecord } from "@/lib/browser/store";
-import type { ChatTurn } from "@/lib/types";
+import type { ChatTurn, CommandCard } from "@/lib/types";
 
 export type Selection = { provider: string; model: string; temperature: number };
 type TurnContext = {
@@ -161,6 +161,22 @@ export function useChat(store: Ref<KioskStore>, onStored?: () => void) {
     }
   }
 
+  /** A kiosk command, answered with a card on this device (CMD-1): no AI, nothing sent. Returns the card's turn id. */
+  async function addCard(message: string, card: CommandCard, ctx: Omit<TurnContext, "thread">): Promise<string> {
+    const id = crypto.randomUUID();
+    turns.value.push({ id: crypto.randomUUID(), role: "user", text: message, tools: [], todos: [] }, { id, role: "assistant", text: "", tools: [], todos: [], card, local: true });
+    await keep(message, ctx, record?.state ?? null);
+    return id;
+  }
+
+  /** Change a command card (confirmed, cancelled, filled in). */
+  async function updateCard(id: string, patch: Partial<CommandCard>, ctx: Omit<TurnContext, "thread">) {
+    const turn = turns.value.find((t) => t.id === id);
+    if (!turn?.card) return;
+    turn.card = { ...turn.card, ...patch };
+    await keep(turns.value.find((t) => t.role === "user")?.text ?? "", ctx, record?.state ?? null);
+  }
+
   function reset() {
     controller?.abort();
     record = null;
@@ -177,5 +193,5 @@ export function useChat(store: Ref<KioskStore>, onStored?: () => void) {
     turns.value = t.turns;
   }
 
-  return { turns, busy, threadId, send, sendLocal, reset, open, stop: () => controller?.abort() };
+  return { turns, busy, threadId, send, sendLocal, addCard, updateCard, reset, open, stop: () => controller?.abort() };
 }
