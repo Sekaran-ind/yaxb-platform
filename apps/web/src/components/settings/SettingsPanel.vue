@@ -4,7 +4,8 @@ import { LAYOUTS, type LayoutChoice } from "@sekaran-ind/yaxb-core/screens";
 import { EMBEDDING_MODELS, embeddingModelFor } from "@sekaran-ind/yaxb-core/knowledge/semantic";
 import type { AgentSettings, LanguageCode } from "@sekaran-ind/yaxb-core/settings";
 import { Check, Lock, ServerCrash } from "@lucide/vue";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import AdaptiveNav from "@/components/kiosk/AdaptiveNav.vue";
 import { effectiveSelection, settings, updateSettings, useCapabilities, useProviders } from "@/composables/settings";
 import { useSpeechOutput } from "@/composables/speech";
@@ -28,7 +29,14 @@ const SECTIONS = [
   { id: "kiosk", label: "Layout & voice", icon: "message-square" },
 ];
 
-const section = ref("model");
+// A kiosk command may open a section directly: /settings?section=model (CMD-1).
+const route = useRoute();
+const sectionFrom = (q: unknown) => (typeof q === "string" && SECTIONS.some((x) => x.id === q) ? q : "model");
+const section = ref(sectionFrom(route.query.section));
+watch(
+  () => route.query.section,
+  (q) => (section.value = sectionFrom(q)),
+);
 const { el, width } = useWidth();
 const { data: catalog, error: catalogError } = useProviders();
 const { data: caps, error: capsError } = useCapabilities();

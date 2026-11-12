@@ -102,6 +102,10 @@
     "./feedback": {
       "types": "./dist/feedback/index.d.ts",
       "default": "./dist/feedback/index.js"
+    },
+    "./commands": {
+      "types": "./dist/commands/index.d.ts",
+      "default": "./dist/commands/index.js"
     }
   },
   "files": [

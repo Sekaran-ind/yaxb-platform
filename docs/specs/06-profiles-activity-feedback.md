@@ -13,7 +13,7 @@ A profile lets the kiosk set itself up for a visitor. It follows clinux-diary's 
 | PRF-5 | "How you like to be helped" asks five questions: answer depth (short or detailed), channel (voice, text, both), where answers come from (device only, the assistant, the assistant and the web), comfort with technology, and a second check for health answers. All optional. | Built |
 | PRF-6 | A shared kiosk must sign a profile out after 10 minutes without a touch or key press, and on sign-out restore the kiosk's own settings for the next visitor. | Built |
 | PRF-7 | A visitor must be able to edit their answers, change the passphrase, export the profile and its activity log as a file, sign out, and erase the profile (confirmed by typing the nickname). | Built |
-| PRF-8 | A visitor should be able to update the profile by talking to the kiosk ("update my profile: I prefer detailed answers"), with the changes shown for confirmation before they are saved (CMD-10). | Planned |
+| PRF-8 | A visitor should be able to update the profile by talking to the kiosk ("update my profile: I prefer detailed answers"), with the changes shown for confirmation before they are saved (CMD-10). | Built |
 
 ## Suggested settings
 

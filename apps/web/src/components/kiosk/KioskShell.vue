@@ -4,6 +4,7 @@
 //   pod   the "pod player": the console as a strip, screens below
 //   mini  a compact card: orb and mic, one screen at a time
 // Owns the conversation, voice, notebook and journey handlers, and passes them to the screens.
+import { aboutKiosk, confirmText, PROFILE_FORM, profileFields, profilePatch, type CommandEffect, type CommandMatch } from "@sekaran-ind/yaxb-core/commands";
 import { kioskContent } from "@sekaran-ind/yaxb-core/content";
 import type { ServiceHandler } from "@sekaran-ind/yaxb-core/journeys";
 import { composeLocalAnswer, EMBEDDING_MODELS, looksLikeEmergency, type LocalAnswer } from "@sekaran-ind/yaxb-core/knowledge/semantic";
@@ -11,6 +12,7 @@ import { LAYOUTS, resolveLayout, screensFor, type LayoutChoice } from "@sekaran-
 import { DEFAULT_LANGUAGE, type LanguageCode } from "@sekaran-ind/yaxb-core/settings";
 import { Languages, Settings2, UserRound, X } from "@lucide/vue";
 import { computed, onBeforeUnmount, onMounted, ref, toRef } from "vue";
+import { useRouter } from "vue-router";
 import { logActivity, useAccount } from "@/composables/account";
 import { askOnce, useChat } from "@/composables/chat";
 import { useNotebook } from "@/composables/notebook";
@@ -19,10 +21,12 @@ import { effectiveSelection, settings, updateSettings, useCapabilities, useProvi
 import { useSpeechInput, useSpeechOutput } from "@/composables/speech";
 import { useWidth } from "@/composables/width";
 import { answer, classify, onOfflineProgress, summarize, translate, type OfflineProgress } from "@/lib/browser/offline";
+import { recognizeCommand, yesOrNo } from "@/lib/browser/commands";
 import { modelFor, searchLocal, semanticReady, warmUp, type LocalSearch } from "@/lib/browser/semantic";
+import { extractWithModel, matchOnDevice } from "@/lib/browser/slots";
 import { cn } from "@/lib/cn";
-import { LANGUAGES, speechLangFor } from "@/lib/languages";
-import type { KioskStatus } from "@/lib/types";
+import { LANGUAGES, languageLabel, speechLangFor } from "@/lib/languages";
+import type { CommandCard, KioskStatus } from "@/lib/types";
 import AccountScreen from "@/components/account/AccountScreen.vue";
 import AdaptiveNav, { type NavScreen } from "./AdaptiveNav.vue";
 import FeedbackPrompt from "./FeedbackPrompt.vue";
@@ -103,7 +107,138 @@ async function present(a: LocalAnswer, signal: AbortSignal) {
   }
 }
 
+// ---- kiosk commands (CMD-1..6, 10, 11): a card in the conversation, handled on this device ----------
+const router = useRouter();
+const ANSWER_LABELS: Record<string, string> = { agent: "AI agent, grounded", local: "This device only", auto: "Automatic" };
+const LAYOUT_NAMES: Record<string, string> = { auto: "Automatic", mini: "Simple (one thing at a time)", pod: "Pod", full: "Full" };
+const clampRate = (r: number) => Math.round(Math.min(1.6, Math.max(0.6, r)) * 10) / 10;
+const yesNo = (b: boolean) => (b ? "Yes" : "No");
+
+/** What a settings command will change, now and after. */
+function settingsChanges(e: Extract<CommandEffect, { type: "settings" }>) {
+  const out: { label: string; from: string; to: string }[] = [];
+  const k = settings.agent.knowledge;
+  if (e.agent?.language) out.push({ label: "Language", from: languageLabel(settings.agent.language), to: languageLabel(e.agent.language) });
+  if (e.agent?.knowledge?.answers) out.push({ label: "Answers come from", from: ANSWER_LABELS[k.answers] ?? k.answers, to: ANSWER_LABELS[e.agent.knowledge.answers] ?? e.agent.knowledge.answers });
+  if (e.agent?.knowledge?.web) out.push({ label: "Web search", from: k.web === "off" ? "Off" : "On", to: e.agent.knowledge.web === "off" ? "Off" : "On" });
+  if (e.kiosk?.speakResponses !== undefined) out.push({ label: "Read answers aloud", from: yesNo(settings.speakResponses), to: yesNo(e.kiosk.speakResponses) });
+  if (e.kiosk?.layout) out.push({ label: "Layout", from: LAYOUT_NAMES[settings.layout] ?? settings.layout, to: LAYOUT_NAMES[e.kiosk.layout] ?? e.kiosk.layout });
+  if (e.kiosk?.speechRateDelta) out.push({ label: "Speaking rate", from: `${settings.speechRate.toFixed(1)}×`, to: `${clampRate(settings.speechRate + e.kiosk.speechRateDelta).toFixed(1)}×` });
+  return out.filter((c) => c.from !== c.to);
+}
+
+function applySettings(e: Extract<CommandEffect, { type: "settings" }>) {
+  if (e.agent) updateSettings({ agent: { ...settings.agent, ...(e.agent.language ? { language: e.agent.language } : {}), knowledge: { ...settings.agent.knowledge, ...e.agent.knowledge } } });
+  const k = e.kiosk ?? {};
+  updateSettings({
+    ...(k.speakResponses !== undefined ? { speakResponses: k.speakResponses } : {}),
+    ...(k.layout ? { layout: k.layout } : {}),
+    ...(k.speechRateDelta ? { speechRate: clampRate(settings.speechRate + k.speechRateDelta) } : {}),
+  });
+}
+
+/** The visitor's words after "update my profile …", for slot filling. */
+const profileWords = (text: string) => text.replace(/^.*?\bprofile\b[\s:,.-]*(?:with\s+|to\s+say\s+)?/i, "").trim();
+
+/** Read the words into the profile's fields: the card's changes, or "nothing found". */
+async function profileCard(match: CommandMatch, said: string): Promise<Partial<CommandCard>> {
+  const current = account.profile.value!;
+  const fills = said ? (await matchOnDevice(profileFields(), said, settings.agent).catch(() => null))?.fills ?? [] : [];
+  const { profile, changes } = profilePatch(current, fills);
+  return changes.length
+    ? { title: `${match.command.label}?`, changes, profile, said, canAskAssistant: true }
+    : { title: said ? "I couldn't tell what to change from that on this device." : "What would you like to change in your profile?", changes: [], profile: undefined, said, canAskAssistant: Boolean(said) };
+}
+
+async function cardFor(question: string, m: CommandMatch): Promise<CommandCard> {
+  const e = m.effect;
+  const base = { command: m.command.id, effect: e };
+  if (m.command.needsProfile && !account.profile.value) return { ...base, title: `${m.command.label}: please sign in to your profile first.`, state: "needs-profile" };
+  switch (e.type) {
+    case "open-screen":
+      setScreen(e.screen);
+      return { ...base, title: `${m.command.label}.`, state: "done" };
+    case "open-settings":
+      void router.push({ path: "/settings", query: { section: e.section } });
+      return { ...base, title: `${m.command.label}.`, state: "done" };
+    case "about":
+      return { ...base, title: m.command.label, state: "info", text: aboutKiosk(e.topic, { journeys: kioskContent.journeys, webSearch: Boolean(caps.value?.web) && settings.agent.knowledge.web !== "off" }) };
+    case "journey":
+      return { ...base, title: `${m.command.label}: here is what it does.`, state: "info", journey: e.journey };
+    case "refuse":
+      return { ...base, title: "I can't do that from here.", state: "refused", text: e.reason };
+    case "settings": {
+      const changes = settingsChanges(e);
+      return changes.length ? { ...base, title: confirmText(m), state: "confirm", changes } : { ...base, title: "That's already how the kiosk is set.", state: "done" };
+    }
+    case "profile":
+      if (e.action === "open") {
+        setScreen("account");
+        return { ...base, title: `${m.command.label}.`, state: "done" };
+      }
+      if (e.action === "sign-out") return { ...base, title: `${m.command.label}?`, state: "confirm" };
+      return { ...base, state: "confirm", ...(await profileCard(m, profileWords(question))) } as CommandCard;
+  }
+}
+
+async function runCommand(question: string, m: CommandMatch) {
+  const ctx = { settings: settings.agent, notebook: nb.notebook.value };
+  const card = await cardFor(question, m);
+  await chat.addCard(question, card, ctx);
+  if (card.state === "done" || card.state === "info") void logActivity("command.used", { command: m.command.id });
+  if (settings.speakResponses) {
+    const spoken = [card.title, card.state === "confirm" && card.changes?.length ? "Say yes or no." : "", card.text ?? ""].filter(Boolean).join(" ");
+    void voiceOut.speak(spoken, { voiceName: settings.voiceName, rate: settings.speechRate, lang: speechLangFor(language.value) });
+  }
+}
+
+/** A command card's button, or a spoken yes / no. */
+async function onCard(turnId: string, action: "yes" | "no" | "start" | "sign-in" | "ask-assistant") {
+  const ctx = { settings: settings.agent, notebook: nb.notebook.value };
+  const card = chat.turns.value.find((t) => t.id === turnId)?.card;
+  if (!card) return;
+  if (action === "no") return chat.updateCard(turnId, { state: "cancelled" }, ctx);
+  if (action === "sign-in") return setScreen("account");
+  if (action === "start" && card.journey) {
+    journey.value = card.journey;
+    screen.value = "services";
+    void logActivity("command.used", { command: card.command });
+    return;
+  }
+  if (action === "ask-assistant" && card.said && selection.value && account.profile.value) {
+    try {
+      const fills = await extractWithModel(PROFILE_FORM.journey, PROFILE_FORM.step, card.said, selection.value);
+      const { profile, changes } = profilePatch(account.profile.value, fills);
+      await chat.updateCard(turnId, changes.length ? { title: "Update your profile?", changes, profile, canAskAssistant: false } : { title: "The assistant found nothing to change either.", canAskAssistant: false }, ctx);
+    } catch (e) {
+      await chat.updateCard(turnId, { text: (e as Error).message }, ctx);
+    }
+    return;
+  }
+  if (action !== "yes" || card.state !== "confirm") return;
+  const e = card.effect;
+  if (e.type === "settings") applySettings(e);
+  else if (e.type === "profile" && e.action === "sign-out") await account.lock();
+  else if (e.type === "profile" && e.action === "update") {
+    if (!card.profile) return;
+    await account.update(card.profile);
+  }
+  void logActivity("command.used", { command: card.command });
+  await chat.updateCard(turnId, { state: "done" }, ctx);
+}
+
 async function ask(question: string) {
+  const pendingCard = [...chat.turns.value].reverse().find((t) => t.card?.state === "confirm");
+  const reply = pendingCard ? yesOrNo(question) : null;
+  if (pendingCard && reply) return onCard(pendingCard.id, reply);
+  // A kiosk command is handled here, on this device, whatever the answer mode (CMD-1).
+  const command = await recognizeCommand(question, settings.agent).catch(() => null);
+  if (command) {
+    screen.value = "transcript";
+    journey.value = null;
+    voiceOut.cancel();
+    return runCommand(question, command);
+  }
   const mode = answers.value;
   if (mode !== "local" && !selection.value) return;
   screen.value = "transcript";
@@ -328,6 +463,8 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
                 :selection="selection"
                 :can-ask="canAsk"
                 :answers="answers"
+                :has-assistant="!!selection"
+                @card="onCard"
                 :catalog="catalog"
                 :catalog-error="catalogError"
                 :notebook-title="nb.notebook.value?.title ?? null"

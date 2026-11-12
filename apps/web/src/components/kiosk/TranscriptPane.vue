@@ -4,6 +4,7 @@ import { MAX_MESSAGE_CHARS } from "@sekaran-ind/yaxb-core/schemas";
 import { Bot, CheckCircle2, HardDrive, Circle, CircleDot, Loader2, NotebookPen, RotateCcw, Send, Settings2, Wrench } from "@lucide/vue";
 import { computed, nextTick, ref, watch } from "vue";
 import { cn } from "@/lib/cn";
+import CommandCard from "./CommandCard.vue";
 import type { ChatTurn, ProvidersResponse, ToolActivity } from "@/lib/types";
 
 const props = defineProps<{
@@ -12,6 +13,8 @@ const props = defineProps<{
   selection: { provider: string; model: string } | null;
   /** Whether a question can be sent now (a provider, or on-device answers). */
   canAsk: boolean;
+  /** An AI provider is available (for a command card's "ask the assistant"). */
+  hasAssistant?: boolean;
   /** How questions are answered (Settings → Knowledge); "auto" has already fallen back to "local" without a provider. */
   answers: "agent" | "local" | "auto";
   catalog: ProvidersResponse | null;
@@ -19,7 +22,8 @@ const props = defineProps<{
   notebookTitle: string | null;
   sourceCount: number;
 }>();
-const emit = defineEmits<{ ask: [question: string]; reset: [] }>();
+/** card: a command card's button (yes, no, start, sign-in, ask-assistant) for the shell to carry out. */
+const emit = defineEmits<{ ask: [question: string]; reset: []; card: [turnId: string, action: "yes" | "no" | "start" | "sign-in" | "ask-assistant"] }>();
 
 const TOOL_LABELS: Record<string, string> = {
   search_knowledge_base: "Searching the knowledge base",
@@ -118,6 +122,16 @@ function submit() {
                 {{ toolLabel(tool) }}
               </span>
             </div>
+            <CommandCard
+              v-if="t.card"
+              :card="t.card"
+              :can-ask-assistant="hasAssistant"
+              @yes="emit('card', t.id, 'yes')"
+              @no="emit('card', t.id, 'no')"
+              @start="emit('card', t.id, 'start')"
+              @sign-in="emit('card', t.id, 'sign-in')"
+              @ask-assistant="emit('card', t.id, 'ask-assistant')"
+            />
             <p v-if="t.text" class="leading-relaxed whitespace-pre-wrap text-ink">{{ t.text }}</p>
             <p v-if="t.pending && !t.text && !t.tools.length" class="flex items-center gap-2 text-sm text-gray-400"><Loader2 class="size-4 animate-spin" aria-hidden="true" /> Thinking…</p>
             <p v-if="t.error" role="alert" class="rounded-md bg-danger/10 px-3 py-2 text-sm text-red-800">{{ t.error }}</p>
