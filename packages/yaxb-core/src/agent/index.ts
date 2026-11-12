@@ -121,6 +121,19 @@ function skillFiles(skills: Skill[], now = new Date().toISOString()): Record<str
   );
 }
 
+/** A closing "(sources: web:1 · who.int/page)" line for the web ids an answer cites, or "". */
+export function webSourcesLine(answer: string, urls: Record<string, string>): string {
+  const cited = [...new Set(answer.match(/\bweb:\d+\b/g) ?? [])].filter((id) => urls[id]);
+  if (!cited.length) return "";
+  // Brackets would end the (sources: …) line early, and the speech filter with it.
+  const where = (url: string) =>
+    url
+      .replace(/^https?:\/\/(www\.)?/, "")
+      .replace(/[()]/g, (c) => (c === "(" ? "%28" : "%29"))
+      .slice(0, 120);
+  return `\n\n(sources: ${cited.map((id) => `${id} · ${where(urls[id]!)}`).join("; ")})`;
+}
+
 /** The harness and options a turn runs with, from the visitor's settings and the model's catalog entry. */
 export function planTurn(
   settings: AgentSettings,
@@ -318,7 +331,7 @@ export function createKiosk(deps: KioskDeps) {
     // offered as a tool when coverage is unknown. Never for a possible emergency: the question
     // would go to an outside service, and the answer is the emergency line anyway.
     const webAllowed = Boolean(webSearch) && settings.knowledge.web === "fallback" && searchOn && !emergency;
-    const turnWeb: TurnWeb = { next: 1 };
+    const turnWeb: TurnWeb = { next: 1, urls: {} };
     const webFound: Passage[] = [];
     let web: "none" | "searched" | "available" = webAllowed && covered !== true ? "available" : "none";
     if (webAllowed && covered === false) {
@@ -328,6 +341,7 @@ export function createKiosk(deps: KioskDeps) {
         const ranked = await rerankWeb(message, await webSearch!.search(message, { count: 8, signal }), embed);
         webFound.push(...webPassages(ranked));
         turnWeb.next = webFound.length + 1;
+        ranked.slice(0, webFound.length).forEach((r, i) => (turnWeb.urls[webFound[i]!.source] = r.url));
         if (webFound.length) web = "searched";
       } catch (e) {
         deps.onError?.(e, { where: "web-search", ...ctx });
@@ -411,9 +425,16 @@ export function createKiosk(deps: KioskDeps) {
           },
         } as never,
       );
-      yield* translate(stream as AsyncIterable<unknown>, (s) => {
+      let answer = "";
+      for await (const ev of translate(stream as AsyncIterable<unknown>, (s) => {
         final = s;
-      });
+      })) {
+        if (ev.type === "token") answer += ev.text;
+        yield ev;
+      }
+      // Web sources the answer cites, by site and address, so the visitor can see where it came from.
+      const line = webSourcesLine(answer, turnWeb.urls);
+      if (line) yield { type: "token", text: line };
     } catch (e) {
       if (signal?.aborted) return; // the caller went away; nothing to report or save
       if (timeout.aborted) {

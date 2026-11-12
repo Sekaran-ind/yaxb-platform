@@ -1,7 +1,7 @@
 // Web fallback, re-ranking and semantic tool routing, with a fake sentence-transformer (shared
 // words make similar vectors) and a fake search service. Nothing calls the network.
 import { describe, expect, it } from "vitest";
-import { createKiosk } from "../src/agent/index.js";
+import { createKiosk, webSourcesLine } from "../src/agent/index.js";
 import { routeTools } from "../src/agent/routing.js";
 import type { AgentEvent } from "../src/events/index.js";
 import { curatedQA } from "../src/knowledge/index.js";
@@ -168,6 +168,15 @@ describe("web fallback", () => {
     expect(reply).toContain("source=web:1");
     expect(reply).toContain("URL: https://labour.example.gov/holiday-pay");
     expect(reply).not.toContain("cats.example.com"); // re-ranked away
+    // The kiosk names the cited site itself, whatever the model wrote.
+    const text = events.filter((e) => e.type === "token").map((e) => (e as { text: string }).text).join("");
+    expect(text.endsWith("\n\n(sources: web:1 · labour.example.gov/holiday-pay)")).toBe(true);
+  });
+
+  it("lists only the web ids an answer cites, without brackets that would end the line early", () => {
+    const urls = { "web:1": "https://en.wikipedia.org/wiki/Delhi_(city)", "web:2": "https://who.int/x" };
+    expect(webSourcesLine("New Delhi (sources: web:1)", urls)).toBe("\n\n(sources: web:1 · en.wikipedia.org/wiki/Delhi_%28city%29)");
+    expect(webSourcesLine("No web here (sources: curated:qa-001)", urls)).toBe("");
   });
 
   it("doesn't search or offer the web when the knowledge base covers the question", async () => {

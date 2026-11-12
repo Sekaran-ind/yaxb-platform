@@ -109,11 +109,13 @@ describe("on-device answers (option A)", () => {
     expect(a.flag).toBeNull();
   });
 
-  it("says plainly when nothing matches, and escalates", () => {
+  it("says plainly when nothing matches, without bothering the moderators", () => {
     const a = composeLocalAnswer("What is the capital of France?", { curated: [{ id: "qa-010", score: 0.17 }] });
     expect(a.kind).toBe("none");
     expect(a.text).toBe(LOCAL_MESSAGES.notCovered);
-    expect(a.flag?.reason).toMatch(/Not covered/);
+    expect(a.flag).toBeNull();
+    // A possible emergency is still escalated, covered or not.
+    expect(composeLocalAnswer("I have chest pain", { curated: [] }).flag?.reason).toMatch(/emergency/i);
   });
 
   it("escalates red-flag topics and possible emergencies", () => {

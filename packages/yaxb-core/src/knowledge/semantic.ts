@@ -177,7 +177,7 @@ export type LocalAnswer = {
 
 export const LOCAL_MESSAGES = {
   emergency: "If this is an emergency, call your local emergency number now or tell the nearest staff member.",
-  notCovered: "The kiosk's knowledge base and your notebook do not cover this question. It has been passed to the moderation team. A staff member can help you.",
+  notCovered: "The kiosk's knowledge base and your notebook do not cover this question. A staff member can help you.",
   redFlag: "This topic is marked for follow-up by a person. It has been passed to the moderation team.",
 } as const;
 
@@ -230,7 +230,8 @@ export function composeLocalAnswer(
     text: body,
     references: [],
     score: null,
-    flag: emergencyFlag ?? { question, reason: "Not covered by the knowledge base (on-device answers)" },
+    // Not covered is not a reason for a moderator: only red flags and possible emergencies are.
+    flag: emergencyFlag,
     emergency,
   };
 }
