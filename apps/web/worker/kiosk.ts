@@ -1,12 +1,21 @@
 import { createKiosk, type Kiosk } from "@sekaran-ind/yaxb-core/agent";
 import { createVectorizeRetriever } from "@sekaran-ind/yaxb-core/knowledge";
 import { createModeratorService, type ModeratorService } from "@sekaran-ind/yaxb-core/moderators";
-import { createD1FeedbackStore, createD1Kv, createD1ModerationStore, createD1ModeratorStore, createD1ThreadStore } from "@sekaran-ind/yaxb-core/stores/d1";
+import { createReviewService, type ReviewService } from "@sekaran-ind/yaxb-core/reviews";
+import { createD1FeedbackStore, createD1Kv, createD1ModerationStore, createD1ModeratorStore, createD1ReviewStore, createD1ThreadStore } from "@sekaran-ind/yaxb-core/stores/d1";
 import { KvStore } from "@sekaran-ind/yaxb-core/stores/kv";
 import { stringEnv, type Bindings } from "./env";
 
 const kiosks = new WeakMap<object, Kiosk>();
 const moderatorServices = new WeakMap<object, ModeratorService>();
+const reviewServices = new WeakMap<object, ReviewService>();
+
+/** Answers sent for review and moderators' reviews, in D1 (MOD-10..13, MOD-30..34). */
+export function reviews(env: Bindings): ReviewService {
+  let r = reviewServices.get(env);
+  if (!r) reviewServices.set(env, (r = createReviewService(createD1ReviewStore(env.DB), moderators(env).store)));
+  return r;
+}
 
 /** Moderators, their keys and profiles, and the audit log, in D1 (MOD-20..25). */
 export function moderators(env: Bindings): ModeratorService {

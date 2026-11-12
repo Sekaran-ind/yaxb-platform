@@ -1,6 +1,8 @@
-// Stores on Cloudflare D1. Schema: migrations/0001_init.sql, 0002_kv.sql and 0003_feedback.sql (apply with `wrangler d1 migrations apply`).
+// Stores on Cloudflare D1. Schema: migrations/0001..0005 (apply with `wrangler d1 migrations apply`).
 // Typed against the subset of D1's API used here, so the core doesn't depend on Workers types.
+import type { Review, ReviewAnswer, ReviewStore } from "../reviews/index.js";
 import {
+  MODERATION_NOTE_MAX,
   newModerationItem,
   type ModerationItem,
   type ModerationStore,
@@ -54,17 +56,101 @@ export function createD1ModerationStore(db: D1Like): ModerationStore {
     async add(question, reason) {
       const item = newModerationItem(question, reason);
       await db
-        .prepare("INSERT INTO moderation (id, question, reason, created_at) VALUES (?1, ?2, ?3, ?4)")
+        .prepare("INSERT INTO moderation (id, question, reason, created_at, state) VALUES (?1, ?2, ?3, ?4, 'open')")
         .bind(item.id, item.question, item.reason, item.created_at)
         .run();
       return item;
     },
     async list(limit = 100) {
       const { results } = await db
-        .prepare("SELECT id, question, reason, created_at FROM moderation ORDER BY created_at DESC LIMIT ?1")
+        .prepare(`SELECT ${MOD_COLS} FROM moderation ORDER BY created_at DESC LIMIT ?1`)
         .bind(Math.min(Math.max(limit, 1), 500))
         .all<ModerationItem>();
       return results;
+    },
+    async handle(id, note, by) {
+      await db
+        .prepare("UPDATE moderation SET state = 'handled', note = ?2, handled_by = ?3, handled_at = ?4 WHERE id = ?1")
+        .bind(id, note.slice(0, MODERATION_NOTE_MAX), by, new Date().toISOString())
+        .run();
+      return db.prepare(`SELECT ${MOD_COLS} FROM moderation WHERE id = ?1`).bind(id).first<ModerationItem>();
+    },
+  };
+}
+const MOD_COLS = "id, question, reason, created_at, state, note, handled_by, handled_at";
+
+/** Answers sent for review and moderators' reviews on D1 (migrations/0005_reviews.sql). */
+export function createD1ReviewStore(db: D1Like): ReviewStore {
+  type ARow = Omit<ReviewAnswer, "refs" | "notebook"> & { refs: string; notebook_id: string | null; notebook_title: string | null };
+  type RRow = Omit<Review, "marks" | "missing" | "proposal"> & { marks: string; missing: string; proposal: string | null };
+  const A = "a.id, a.created_at, a.origin, a.question, a.answer, a.refs, a.notebook_id, a.notebook_title, a.mode, a.language, a.state";
+  const R = "id, answer_id, at, moderator_id, moderator_name, rating, marks, missing, context, proposal, replaces";
+  const toAnswer = ({ refs, notebook_id, notebook_title, ...r }: ARow): ReviewAnswer => ({ ...r, refs: JSON.parse(refs), notebook: notebook_id ? { id: notebook_id, title: notebook_title ?? "" } : null });
+  const toReview = (r: RRow | null): Review | null => (r ? { ...r, marks: JSON.parse(r.marks), missing: JSON.parse(r.missing), proposal: r.proposal ? JSON.parse(r.proposal) : null } : null);
+  // The latest review of an answer is the one no other review replaces.
+  const LATEST = `SELECT ${R} FROM reviews r WHERE r.answer_id = ?1 AND NOT EXISTS (SELECT 1 FROM reviews n WHERE n.replaces = r.id) ORDER BY r.at DESC, r.id DESC LIMIT 1`;
+  const getAnswer = async (id: string) => {
+    const r = await db.prepare(`SELECT ${A} FROM review_answers a WHERE a.id = ?1`).bind(id).first<ARow>();
+    return r ? toAnswer(r) : null;
+  };
+  const latest = async (id: string) => toReview(await db.prepare(LATEST).bind(id).first<RRow>());
+  return {
+    async addAnswer(a) {
+      await db
+        .prepare("INSERT INTO review_answers (id, created_at, origin, question, answer, refs, notebook_id, notebook_title, mode, language, state) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)")
+        .bind(a.id, a.created_at, a.origin, a.question, a.answer, JSON.stringify(a.refs), a.notebook?.id ?? null, a.notebook?.title ?? null, a.mode, a.language, a.state)
+        .run();
+    },
+    getAnswer,
+    async listAnswers({ state, notebook, limit = 100 } = {}) {
+      const where: string[] = [];
+      const values: unknown[] = [];
+      if (state) where.push(`a.state = ?${values.push(state)}`);
+      if (notebook) where.push(`a.notebook_id = ?${values.push(notebook)}`);
+      values.push(Math.min(Math.max(limit, 1), 500));
+      const { results } = await db
+        .prepare(`SELECT ${A} FROM review_answers a ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY a.created_at DESC, a.id DESC LIMIT ?${values.length}`)
+        .bind(...values)
+        .all<ARow>();
+      return Promise.all(results.map(async (r) => ({ answer: toAnswer(r), review: await latest(r.id) })));
+    },
+    async addReview(r) {
+      await db
+        .prepare(`INSERT INTO reviews (${R}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`)
+        .bind(r.id, r.answer_id, r.at, r.moderator_id, r.moderator_name, r.rating, JSON.stringify(r.marks), JSON.stringify(r.missing), r.context, r.proposal ? JSON.stringify(r.proposal) : null, r.replaces)
+        .run();
+      await db.prepare("UPDATE review_answers SET state = 'reviewed' WHERE id = ?1").bind(r.answer_id).run();
+    },
+    async history(id) {
+      const { results } = await db.prepare(`SELECT ${R} FROM reviews WHERE answer_id = ?1 ORDER BY at DESC, id DESC`).bind(id).all<RRow>();
+      return results.map((r) => toReview(r)!);
+    },
+    async reviewed({ since } = {}) {
+      const { results } = await db
+        .prepare(
+          `SELECT ${A}, r.id AS r_id, r.at AS r_at, r.moderator_id, r.moderator_name, r.rating, r.marks, r.missing, r.context, r.proposal, r.replaces
+           FROM review_answers a JOIN reviews r ON r.answer_id = a.id
+           WHERE a.state = 'reviewed' AND NOT EXISTS (SELECT 1 FROM reviews n WHERE n.replaces = r.id)${since ? " AND a.created_at >= ?1" : ""}
+           ORDER BY a.created_at, a.id LIMIT 5000`,
+        )
+        .bind(...(since ? [since] : []))
+        .all<ARow & Omit<RRow, "id" | "at" | "answer_id"> & { r_id: string; r_at: string }>();
+      return results.map(({ r_id, r_at, moderator_id, moderator_name, rating, marks, missing, context, proposal, replaces, ...a }) => ({
+        answer: toAnswer(a),
+        review: toReview({ id: r_id, answer_id: a.id, at: r_at, moderator_id, moderator_name, rating, marks, missing, context, proposal, replaces })!,
+      }));
+    },
+    async proposals(limit = 50) {
+      const { results } = await db
+        .prepare(`SELECT ${R} FROM reviews r WHERE r.proposal IS NOT NULL AND NOT EXISTS (SELECT 1 FROM reviews n WHERE n.replaces = r.id) ORDER BY r.at DESC LIMIT ?1`)
+        .bind(Math.min(Math.max(limit, 1), 200))
+        .all<RRow>();
+      const out: { answer: ReviewAnswer; review: Review }[] = [];
+      for (const r of results) {
+        const a = await getAnswer(r.answer_id);
+        if (a) out.push({ answer: a, review: toReview(r)! });
+      }
+      return out;
     },
   };
 }

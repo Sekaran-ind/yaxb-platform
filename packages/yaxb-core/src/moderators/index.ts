@@ -52,6 +52,8 @@ export const AUDIT_ACTIONS = {
   "moderator.updated": "Moderator details changed",
   "moderator.profile_updated": "Moderator profile changed",
   "moderation.viewed": "Moderation queue opened",
+  "moderation.handled": "Escalated question handled",
+  "answer.reviewed": "Answer reviewed",
 } as const;
 export type AuditAction = keyof typeof AUDIT_ACTIONS;
 
@@ -139,7 +141,7 @@ export interface ModeratorStore {
   /** The stored hash for a moderator (to bind their session to the current key). */
   keyHashOf(id: string): Promise<string | null>;
   create(m: Omit<Moderator, "last_seen_at" | "reviews">, keyHash: string): Promise<Moderator>;
-  update(id: string, patch: Partial<Pick<Moderator, "name" | "label" | "roles" | "status" | "key_prefix" | "expires_at" | "last_seen_at">>, keyHash?: string): Promise<Moderator | null>;
+  update(id: string, patch: Partial<Pick<Moderator, "name" | "label" | "roles" | "status" | "key_prefix" | "expires_at" | "last_seen_at" | "reviews">>, keyHash?: string): Promise<Moderator | null>;
   getProfile(id: string): Promise<ModeratorProfile | null>;
   putProfile(p: ModeratorProfile): Promise<void>;
   audit(e: AuditEvent): Promise<void>;

@@ -193,6 +193,28 @@ async function runCommand(question: string, m: CommandMatch) {
 }
 
 /** A command card's button, or a spoken yes / no. */
+/** Send an answer for the moderators to check (MOD-10): only on request, with the question and the notebook's name. */
+async function reviewAnswer(turnId: string) {
+  const turns = chat.turns.value;
+  const i = turns.findIndex((t) => t.id === turnId);
+  const turn = turns[i];
+  const question = turns.slice(0, i).reverse().find((t) => t.role === "user")?.text;
+  if (!turn || !question || turn.review === "sending" || turn.review === "sent") return;
+  turn.review = "sending";
+  const n = nb.notebook.value;
+  try {
+    const res = await fetch("/api/agent/review", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: question.slice(0, 1000), answer: turn.text.slice(0, 8000), notebook: n ? { id: n.id, title: n.title.slice(0, 120) || "Untitled notebook" } : null, mode: turn.local ? "local" : "agent", language: language.value }),
+    });
+    turn.review = res.ok ? "sent" : "failed";
+    if (res.ok) void logActivity("answer.sent_for_review");
+  } catch {
+    turn.review = "failed";
+  }
+}
+
 async function onCard(turnId: string, action: "yes" | "no" | "start" | "sign-in" | "ask-assistant") {
   const ctx = { settings: settings.agent, notebook: nb.notebook.value };
   const card = chat.turns.value.find((t) => t.id === turnId)?.card;
@@ -465,6 +487,7 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
                 :answers="answers"
                 :has-assistant="!!selection"
                 @card="onCard"
+                @review="reviewAnswer"
                 :catalog="catalog"
                 :catalog-error="catalogError"
                 :notebook-title="nb.notebook.value?.title ?? null"
