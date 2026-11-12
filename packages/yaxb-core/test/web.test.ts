@@ -242,3 +242,13 @@ describe("kiosk only (no AI model): web results quoted as found (KNW-45)", () =>
     expect(await setup([], { web: null }).kiosk.searchWeb("anything")).toEqual([]);
   });
 });
+
+describe("re-ranking that fails", () => {
+  it("keeps the search engine's order instead of losing the results (a rate limit, an outage)", async () => {
+    const failing: Embed = async () => {
+      throw new Error("Workers AI embedding failed: HTTP 429");
+    };
+    const ranked = await rerankWeb("holiday pay", RESULTS, failing, { keep: 3 });
+    expect(ranked.map((r) => [r.url, r.score])).toEqual(RESULTS.map((r) => [r.url, null]));
+  });
+});

@@ -79,7 +79,7 @@ function submit() {
     <div class="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
       <RouterLink :to="{ path: '/kiosk', query: { prefs: answers === 'local' ? 'knowledge' : 'model' } }" class="chip hover:text-ink">
         <Settings2 class="size-3.5" aria-hidden="true" />
-        <template v-if="answers === 'local'">Knowledge base only · on this device</template>
+        <template v-if="answers === 'local'">Kiosk only · no AI model</template>
         <template v-else>{{ catalogError ? "Agent offline" : modelLabel ? `${provider?.label} · ${modelLabel}` : "Loading model…" }}{{ answers === "auto" ? " · curated answers on this device" : "" }}</template>
       </RouterLink>
       <button v-if="turns.length" type="button" class="inline-flex items-center gap-1 hover:text-ink" @click="emit('reset')"><RotateCcw class="size-3.5" aria-hidden="true" /> New conversation</button>

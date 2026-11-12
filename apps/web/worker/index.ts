@@ -156,7 +156,8 @@ app.post("/api/agent/search", async (c) => {
   if (!parsed.success) return jsonError(c, 422, "Invalid request.");
   try {
     return c.json({ results: await kiosk(c.env).searchWeb(parsed.data.question, { signal: c.req.raw.signal }) });
-  } catch {
+  } catch (e) {
+    console.error(JSON.stringify({ msg: "web search failure", error: e instanceof Error ? `${e.name}: ${e.message.slice(0, 160)}` : "unknown" }));
     return jsonError(c, 502, "The web search couldn't be reached.");
   }
 });

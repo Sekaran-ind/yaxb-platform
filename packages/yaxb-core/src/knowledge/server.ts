@@ -86,13 +86,21 @@ export function createServerIndex(embed: Embed) {
 
 /**
  * Re-rank web results by meaning: the question and each result (title and snippet) are embedded,
- * and results are kept best first above the threshold. Without an embedder, the search engine's
- * own order is kept.
+ * and results are kept best first above the threshold. Without an embedder, or when it fails (a
+ * rate limit, an outage), the search engine's own order is kept: ranking is an improvement, never
+ * a reason to lose the results.
  */
 export async function rerankWeb(question: string, results: WebResult[], embed: Embed | null, { keep = 4, minScore: min = SERVER_EMBEDDING.thresholds.web as number } = {}): Promise<(WebResult & { score: number | null })[]> {
   if (!results.length) return [];
-  if (!embed) return results.slice(0, keep).map((r) => ({ ...r, score: null }));
-  const [query, ...docs] = await embed([question, ...results.map((r) => `${r.title}. ${r.snippet}`)]);
+  const unranked = () => results.slice(0, keep).map((r) => ({ ...r, score: null }));
+  if (!embed) return unranked();
+  let vectors: number[][];
+  try {
+    vectors = await embed([question, ...results.map((r) => `${r.title}. ${r.snippet}`)]);
+  } catch {
+    return unranked();
+  }
+  const [query, ...docs] = vectors;
   return results
     .map((r, i) => ({ ...r, score: Math.round(similarity(docs[i]!, query!) * 1000) / 1000 }))
     .filter((r) => r.score >= min)
