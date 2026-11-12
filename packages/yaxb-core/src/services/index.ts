@@ -15,11 +15,15 @@
 import { load } from "js-yaml";
 import { LAYOUTS, type Layout } from "../screens/index.js";
 
-export type ServiceItem = { key: string; label: string; summary?: string; icon?: string; screen?: string; journey?: string; layouts?: Layout[] };
+/** The staff's sections, which a service item may open inside Services (SET-16). */
+export const STAFF_SECTIONS = ["quality", "review", "moderation", "team", "profile", "admin"] as const;
+export type StaffSection = (typeof STAFF_SECTIONS)[number];
+
+export type ServiceItem = { key: string; label: string; summary?: string; icon?: string; screen?: string; journey?: string; staff?: StaffSection; layouts?: Layout[] };
 export type Service = { kind: "service"; id: string; title: string; summary?: string; icon?: string; order: number; layouts?: Layout[]; hidden?: boolean; items: ServiceItem[] };
 
 const SERVICE_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "order", "layouts", "hidden", "items"]);
-const ITEM_KEYS = new Set(["key", "label", "summary", "icon", "screen", "journey", "layouts"]);
+const ITEM_KEYS = new Set(["key", "label", "summary", "icon", "screen", "journey", "staff", "layouts"]);
 
 export function serviceProblems(doc: unknown, { journeys, screens }: { journeys?: readonly string[]; screens?: readonly string[] } = {}): string[] {
   const problems: string[] = [];
@@ -44,8 +48,10 @@ export function serviceProblems(doc: unknown, { journeys, screens }: { journeys?
     if (seen.has(String(raw.key))) problems.push(`${at} is listed twice`);
     seen.add(String(raw.key));
     if (!raw.label) problems.push(`${at} has no label`);
-    if (!raw.screen && !raw.journey) problems.push(`${at} needs a screen or a journey`);
-    if (raw.screen && raw.journey) problems.push(`${at} opens a screen or a journey, not both`);
+    const opens = [raw.screen, raw.journey, raw.staff].filter(Boolean).length;
+    if (opens === 0) problems.push(`${at} needs a screen, a journey or a staff section`);
+    if (opens > 1) problems.push(`${at} opens one thing: a screen, a journey or a staff section`);
+    if (raw.staff && !(STAFF_SECTIONS as readonly string[]).includes(String(raw.staff))) problems.push(`${at}: no staff section '${String(raw.staff)}'`);
     for (const k of Object.keys(raw)) if (!ITEM_KEYS.has(k)) problems.push(`${at}: unknown key '${k}'`);
     if (raw.journey && journeys && !journeys.includes(String(raw.journey))) problems.push(`${at}: no journey '${String(raw.journey)}'`);
     if (raw.screen && screens && !screens.includes(String(raw.screen))) problems.push(`${at}: no screen '${String(raw.screen)}'`);

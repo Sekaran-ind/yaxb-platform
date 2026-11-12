@@ -17,8 +17,11 @@ describe("built-in content", () => {
     const mini = screensFor(kioskContent.screens, "mini").map((s) => s.id);
     const full = screensFor(kioskContent.screens, "full").map((s) => s.id);
     expect(mini).toEqual(["transcript", "services", "notebook"]);
-    expect(full).toContain("staff");
     expect(full).not.toContain("sandbox"); // removed: the services cover it
+    expect(full).not.toContain("staff"); // staff sections are a service group (SET-16)
+    expect(full).not.toContain("patient-info");
+    const staff = servicesFor(kioskContent.services, { layout: "mini" }).find((s) => s.id === "staff");
+    expect(staff?.items.map((i) => i.staff)).toEqual(["quality", "review", "moderation", "team", "profile", "admin"]);
     expect(full).not.toContain("translate"); // hidden
     const tools = servicesFor(kioskContent.services, { layout: "mini" }).find((s) => s.id === "tools");
     expect(tools?.items.map((i) => i.key)).toEqual(["translate"]);
@@ -110,7 +113,9 @@ steps:
 describe("services", () => {
   it("checks items point at real screens and journeys", () => {
     const r = compileService({ kind: "service", id: "s", title: "S", items: [{ key: "a", label: "A", journey: "nope" }, { key: "b", label: "B" }] }, { journeys: ["x"] });
-    expect(!r.ok && r.problems).toEqual(["item 'a': no journey 'nope'", "item 'b' needs a screen or a journey"]);
+    expect(!r.ok && r.problems).toEqual(["item 'a': no journey 'nope'", "item 'b' needs a screen, a journey or a staff section"]);
+    const staff = compileService({ kind: "service", id: "t", title: "T", items: [{ key: "c", label: "C", staff: "payroll" }, { key: "d", label: "D", staff: "team", screen: "x" }] });
+    expect(!staff.ok && staff.problems).toEqual(["item 'c': no staff section 'payroll'", "item 'd' opens one thing: a screen, a journey or a staff section"]);
   });
 });
 
