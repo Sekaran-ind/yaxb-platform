@@ -6,6 +6,7 @@ import { EMBEDDING_MODEL_IDS, EMBEDDING_MODELS } from "../knowledge/semantic.js"
 import { mcpServerInfo, parseMcpServers, type McpServerInfo } from "../mcp/index.js";
 import { webSearchFromEnv } from "../web/index.js";
 import { feedbackRate } from "../feedback/index.js";
+import { siteRulesFromEnv } from "../web/pages.js";
 import type { Env } from "../providers/index.js";
 
 export const STORAGE_OPTIONS = [
@@ -108,6 +109,8 @@ export type Capabilities = {
   web: { provider: "tavily" | "brave"; domains: readonly string[] } | null;
   /** How often sessions are asked for feedback: 0 (never) to 1 (every session). FEEDBACK_RATE. */
   feedback: { rate: number };
+  /** Websites as sources: the trusted-site list (empty = any public site) and whether Safe Browsing checks them. */
+  websites: { allow: string[]; safeBrowsing: boolean };
   languages: typeof LANGUAGES;
   skills: { name: string; description: string }[];
   mcp: McpServerInfo[];
@@ -125,6 +128,10 @@ export function capabilities(env: Env): Capabilities {
     answers: ANSWER_OPTIONS,
     embeddingModels: EMBEDDING_OPTIONS,
     feedback: { rate: feedbackRate(env) },
+    websites: (() => {
+      const r = siteRulesFromEnv(env);
+      return { allow: r.allow, safeBrowsing: Boolean(r.safeBrowsingKey) };
+    })(),
     web: (() => {
       const w = webSearchFromEnv(env);
       return w ? { provider: w.provider, domains: w.domains } : null;

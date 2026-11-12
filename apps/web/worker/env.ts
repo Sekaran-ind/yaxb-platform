@@ -12,6 +12,8 @@ const schema = z.object({
   SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
   /** Moderators sign in to the curation view with this. Unset = the moderation queue is closed. */
   MODERATOR_TOKEN: z.string().min(24, "MODERATOR_TOKEN must be at least 24 characters").optional(),
+  /** The administrator signs in to /kiosk/admin with this, to issue and manage moderator keys. Unset = no administration. */
+  ADMIN_TOKEN: z.string().min(24, "ADMIN_TOKEN must be at least 24 characters").optional(),
   AIRTABLE_API_TOKEN: z.string().optional(),
   AIRTABLE_BASE_ID: z.string().regex(/^app[A-Za-z0-9]+$/).optional(),
   AIRTABLE_TABLE_NAME: z.string().default("Contacts"),

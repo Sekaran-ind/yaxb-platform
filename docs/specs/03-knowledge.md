@@ -22,6 +22,11 @@ What the kiosk answers from, and how it finds the right passage.
 | KNW-23 | Answers that use a website source must cite it as `notebook:<id>` and show its address. | Built |
 | KNW-24 | Website text is untrusted data like any document (OVR-6). | Built |
 
+| KNW-25 | Sites known for malware, phishing or adult content must be refused, with the reason ("blocked as unsafe"). Host names are resolved through a family-safe DNS resolver (Cloudflare 1.1.1.1 for Families), which answers 0.0.0.0 for them. | Built |
+| KNW-26 | The organisation may limit website sources to a list of trusted sites (`WEBSITE_SOURCE_DOMAINS`; subdomains included), and block sites (`WEBSITE_BLOCKED_DOMAINS`). The Notebook screen shows the list when there is one. | Built |
+| KNW-27 | When the organisation sets `SAFE_BROWSING_API_KEY`, every page address (each redirect too) must also be checked with Google Safe Browsing (malware, phishing, unwanted software); only the address is sent, and a page whose safety can't be checked is refused. | Built |
+| KNW-28 | No automatic check can recognise every illegal or harmful site. Where only vetted sources are acceptable (a health kiosk for the public), the organisation should use the trusted-site list (KNW-26); moderators may block a site that slips through. | Built (guidance) |
+
 Check: a test that a request to `http://192.168.1.1`, `http://localhost` or a redirect to them is refused; a demonstration of adding, citing and refreshing a page.
 
 ## Finding the right passage

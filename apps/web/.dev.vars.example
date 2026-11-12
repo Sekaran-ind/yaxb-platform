@@ -25,6 +25,8 @@ MCP_SERVERS=
 
 # Moderators sign in on /kiosk/curate with this. Leave empty to keep the queue closed.
 MODERATOR_TOKEN=
+# Administrator sign-in on /kiosk/admin: issues, revokes and rotates moderator keys (MOD-20..23). At least 24 characters.
+ADMIN_TOKEN=
 
 # Contact form -> Airtable, newsletter -> Mailchimp (optional)
 AIRTABLE_API_TOKEN=
@@ -40,3 +42,9 @@ WEB_SEARCH_DOMAINS=
 # How often a session is asked "How is YAXB doing this session?" (FBK): 0 = never, 1 = every
 # session. Default about one in three.
 FEEDBACK_RATE=
+
+# Websites as notebook sources (KNW-25..28): only these sites (empty = any public site), never
+# these, and Google Safe Browsing (malware, phishing) when a key is set. Family-safe DNS always applies.
+WEBSITE_SOURCE_DOMAINS=
+WEBSITE_BLOCKED_DOMAINS=
+SAFE_BROWSING_API_KEY=

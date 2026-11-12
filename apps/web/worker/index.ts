@@ -3,14 +3,15 @@
 // leave the Worker.
 import { toSSEStream } from "@sekaran-ind/yaxb-core/events";
 import { feedbackSchema } from "@sekaran-ind/yaxb-core/feedback";
-import { dohResolver, fetchSite, PageError } from "@sekaran-ind/yaxb-core/web/pages";
+import { dohResolver, fetchSite, PageError, siteGuard, siteRulesFromEnv } from "@sekaran-ind/yaxb-core/web/pages";
 import { chatRequestSchema, extractRequestSchema } from "@sekaran-ind/yaxb-core/schemas";
 import { createMemoryRateLimiter } from "@sekaran-ind/yaxb-core/stores";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
-import { settings, type Bindings } from "./env";
-import { kiosk } from "./kiosk";
-import { clientId, isModerator, moderatorProof, safeEqual, sessionId, setModeratorCookie } from "./session";
+import { settings, stringEnv, type Bindings } from "./env";
+import { kiosk, moderators } from "./kiosk";
+import { auditEvent, looksLikeKey, statusOf } from "@sekaran-ind/yaxb-core/moderators";
+import { clientId, isAdmin, moderatorCookie, moderatorOf, safeEqual, sessionId, setAdminCookie, setModeratorCookie } from "./session";
 
 export type AppEnv = { Bindings: Bindings };
 
@@ -153,7 +154,8 @@ app.post("/api/sources/web", async (c) => {
   const parsed = webSourceSchema.safeParse((await readJson(c, MAX_FORM_BODY)).body);
   if (!parsed.success) return jsonError(c, 422, "Enter a web address.");
   try {
-    const site = await fetchSite(parsed.data.url, parsed.data.follow, { resolve: dohResolver() });
+    // Family DNS (blocks malware, phishing, adult sites), the organisation's allow/block lists, and Safe Browsing if configured.
+    const site = await fetchSite(parsed.data.url, parsed.data.follow, { resolve: dohResolver(), check: siteGuard(siteRulesFromEnv(stringEnv(c.env))) });
     return c.json({ pages: site.pages.map(({ url, title, text, fetchedAt }) => ({ url, title, text, fetchedAt })), skipped: site.skipped });
   } catch (e) {
     if (e instanceof PageError) return jsonError(c, 422, e.message);
@@ -176,27 +178,138 @@ app.get("/api/agent/:resource", async (c) => {
     case "curated":
       return c.json({ items: k.curated().slice(0, 10) });
     case "feedback":
-      if (!(await isModerator(c))) return jsonError(c, 401, "Moderator sign-in required.");
+      if (!(await moderatorOf(c, moderators(c.env)))) return jsonError(c, 401, "Moderator sign-in required.");
       return c.json(await k.feedbackSummary());
     case "moderation":
-      if (!(await isModerator(c))) return jsonError(c, 401, "Moderator sign-in required.");
+      if (!(await moderatorOf(c, moderators(c.env)))) return jsonError(c, 401, "Moderator sign-in required.");
       return c.json({ items: await k.moderation(100) });
     default:
       return jsonError(c, 404, "Not found");
   }
 });
 
-app.get("/api/moderator", async (c) => c.json({ moderator: await isModerator(c), enabled: Boolean(settings(c.env).MODERATOR_TOKEN) }));
+// ---- moderators (MOD-20..25) -------------------------------------------------------------------------
 
+/** Who is signed in as a moderator (name and roles; no key). */
+app.get("/api/moderator", async (c) => {
+  const who = await moderatorOf(c, moderators(c.env));
+  return c.json({ moderator: Boolean(who), ...(who ? { name: who.name, roles: who.roles, shared: who.shared } : {}), enabled: true });
+});
+
+/** Sign in with a moderator key (or, while it is set, the shared MODERATOR_TOKEN). */
 app.post("/api/moderator", async (c) => {
   if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
   if (!(await withinLimit("form", c.env.FORM_LIMITER, `moderator:${ip(c)}`))) return jsonError(c, 429, "Too many attempts. Please wait a minute.");
-  const { MODERATOR_TOKEN } = settings(c.env);
-  if (!MODERATOR_TOKEN) return jsonError(c, 503, "Moderation is not enabled on this site.");
   const parsed = signInSchema.safeParse((await readJson(c, MAX_FORM_BODY)).body);
-  if (!parsed.success || !safeEqual(parsed.data.token, MODERATOR_TOKEN)) return jsonError(c, 401, "That token isn't right.");
-  setModeratorCookie(c, await moderatorProof(c));
-  return c.json({ moderator: true });
+  if (!parsed.success) return jsonError(c, 401, "That key isn't right.");
+  const token = parsed.data.token.trim();
+  const svc = moderators(c.env);
+  if (looksLikeKey(token)) {
+    const m = await svc.signIn(token);
+    if (!m) return jsonError(c, 401, "That key isn't right, or it has been revoked or has expired.");
+    setModeratorCookie(c, await moderatorCookie(c, m, await svc.store.keyHashOf(m.id)));
+    return c.json({ moderator: true, name: m.name, roles: m.roles });
+  }
+  const { MODERATOR_TOKEN } = settings(c.env);
+  if (!MODERATOR_TOKEN || !safeEqual(token, MODERATOR_TOKEN)) return jsonError(c, 401, "That key isn't right, or it has been revoked or has expired.");
+  setModeratorCookie(c, await moderatorCookie(c, null, null));
+  return c.json({ moderator: true, name: "Shared moderator token", shared: true });
+});
+
+/** The signed-in moderator's profile and their own activity (MOD-24). */
+app.get("/api/moderator/me", async (c) => {
+  const svc = moderators(c.env);
+  const who = await moderatorOf(c, svc);
+  if (!who) return jsonError(c, 401, "Moderator sign-in required.");
+  if (!who.moderator) return c.json({ moderator: { id: who.id, name: who.name, roles: who.roles, shared: true }, profile: null, activity: [] });
+  const m = who.moderator;
+  return c.json({
+    moderator: { id: m.id, name: m.name, label: m.label, roles: m.roles, status: statusOf(m), key_prefix: m.key_prefix, created_at: m.created_at, expires_at: m.expires_at, last_seen_at: m.last_seen_at, reviews: m.reviews, shared: false },
+    profile: await svc.profile(m),
+    activity: await svc.store.auditLog({ actorId: m.id, limit: 50 }),
+  });
+});
+
+app.put("/api/moderator/me", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  const svc = moderators(c.env);
+  const who = await moderatorOf(c, svc);
+  if (!who) return jsonError(c, 401, "Moderator sign-in required.");
+  if (!who.moderator) return jsonError(c, 409, "Sign in with your own moderator key to have a profile.");
+  try {
+    return c.json({ profile: await svc.saveProfile(who.moderator, (await readJson(c, MAX_FORM_BODY)).body) });
+  } catch (e) {
+    return jsonError(c, 422, (e as { issues?: { message: string }[] }).issues?.[0]?.message ?? "Check the profile.");
+  }
+});
+
+// ---- the administrator (MOD-20..23, MOD-25) -----------------------------------------------------------
+
+app.get("/api/admin", async (c) => c.json({ admin: await isAdmin(c), enabled: Boolean(settings(c.env).ADMIN_TOKEN) }));
+
+app.post("/api/admin", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  if (!(await withinLimit("form", c.env.FORM_LIMITER, `admin:${ip(c)}`))) return jsonError(c, 429, "Too many attempts. Please wait a minute.");
+  const { ADMIN_TOKEN } = settings(c.env);
+  if (!ADMIN_TOKEN) return jsonError(c, 503, "Administration is not enabled on this site (ADMIN_TOKEN is not set).");
+  const parsed = signInSchema.safeParse((await readJson(c, MAX_FORM_BODY)).body);
+  if (!parsed.success || !safeEqual(parsed.data.token.trim(), ADMIN_TOKEN)) return jsonError(c, 401, "That administrator token isn't right.");
+  await setAdminCookie(c, true);
+  await moderators(c.env).store.audit(auditEvent({ actor_type: "admin", actor_id: null, actor_name: "Administrator", action: "admin.signed_in", target_id: null }));
+  return c.json({ admin: true });
+});
+
+app.delete("/api/admin", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  await setAdminCookie(c, false);
+  return c.json({ admin: false });
+});
+
+/** Every admin route below: same origin for changes, and the administrator's cookie. */
+app.use("/api/admin/*", async (c, next) => {
+  if (c.req.method !== "GET" && !sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  if (!(await isAdmin(c))) return jsonError(c, 401, "Administrator sign-in required.");
+  await next();
+});
+
+app.get("/api/admin/moderators", async (c) => {
+  const list = await moderators(c.env).store.list();
+  return c.json({ moderators: list.map((m) => ({ ...m, status: statusOf(m) })) });
+});
+
+/** Issue a key. The key is in this response only. */
+app.post("/api/admin/moderators", async (c) => {
+  try {
+    const { moderator, key } = await moderators(c.env).issue((await readJson(c, MAX_FORM_BODY)).body as never, { name: "Administrator" });
+    return c.json({ moderator: { ...moderator, status: statusOf(moderator) }, key });
+  } catch (e) {
+    return jsonError(c, 422, (e as { issues?: { message: string }[] }).issues?.[0]?.message ?? "Check the details.");
+  }
+});
+
+app.patch("/api/admin/moderators/:id", async (c) => {
+  try {
+    const m = await moderators(c.env).change(c.req.param("id"), (await readJson(c, MAX_FORM_BODY)).body);
+    return m ? c.json({ moderator: { ...m, status: statusOf(m) } }) : jsonError(c, 404, "No such moderator.");
+  } catch (e) {
+    return jsonError(c, 422, (e as { issues?: { message: string }[] }).issues?.[0]?.message ?? "Check the details.");
+  }
+});
+
+app.post("/api/admin/moderators/:id/revoke", async (c) => {
+  const m = await moderators(c.env).revoke(c.req.param("id"));
+  return m ? c.json({ moderator: { ...m, status: statusOf(m) } }) : jsonError(c, 404, "No such moderator.");
+});
+
+/** A new key for the same moderator; the old one stops working. The key is in this response only. */
+app.post("/api/admin/moderators/:id/rotate", async (c) => {
+  const r = await moderators(c.env).rotate(c.req.param("id"));
+  return r ? c.json({ moderator: { ...r.moderator, status: statusOf(r.moderator) }, key: r.key }) : jsonError(c, 404, "No such moderator.");
+});
+
+app.get("/api/admin/audit", async (c) => {
+  const before = c.req.query("before");
+  return c.json({ events: await moderators(c.env).store.auditLog({ limit: 50, ...(before && /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(before) ? { before } : {}) }) });
 });
 
 app.delete("/api/moderator", (c) => {

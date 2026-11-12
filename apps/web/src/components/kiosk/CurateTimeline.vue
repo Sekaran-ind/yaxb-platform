@@ -41,12 +41,13 @@ async function signIn() {
     <section aria-labelledby="mod-heading">
       <div class="mb-3 flex items-center justify-between">
         <h3 id="mod-heading" class="font-semibold text-ink">Awaiting moderation</h3>
+        <RouterLink v-if="!signInNeeded" to="/kiosk/moderator" class="text-xs font-medium text-brand-dark hover:underline">My moderator profile</RouterLink>
         <button type="button" class="inline-flex items-center gap-1 text-xs hover:text-ink" @click="moderation.refresh()"><RefreshCw class="size-3.5" aria-hidden="true" /> Refresh</button>
       </div>
       <form v-if="signInNeeded" class="flex flex-wrap items-center gap-2 rounded-lg bg-mist px-4 py-3 text-sm" @submit.prevent="signIn">
         <Lock class="size-4 text-gray-500" aria-hidden="true" />
-        <label for="moderator-token">Moderators: sign in to see escalated questions.</label>
-        <input id="moderator-token" v-model="token" type="password" autocomplete="current-password" required class="input max-w-xs" />
+        <label for="moderator-token">Moderators: sign in with your key to see escalated questions.</label>
+        <input id="moderator-token" v-model="token" type="password" autocomplete="current-password" required class="input max-w-xs" placeholder="yaxb_mod_…" />
         <button type="submit" class="btn-primary" :disabled="busy">Sign in</button>
         <p v-if="signInError" role="alert" class="w-full text-red-800">{{ signInError }}</p>
       </form>

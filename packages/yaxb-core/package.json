@@ -110,6 +110,10 @@
     "./web/pages": {
       "types": "./dist/web/pages.d.ts",
       "default": "./dist/web/pages.js"
+    },
+    "./moderators": {
+      "types": "./dist/moderators/index.d.ts",
+      "default": "./dist/moderators/index.js"
     }
   },
   "files": [

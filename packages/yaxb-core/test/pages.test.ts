@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { webSourcesLine } from "../src/agent/index.js";
 import { notebookFiles, notebookSchema } from "../src/notebook/index.js";
 import { resolveRetrieved } from "../src/knowledge/semantic.js";
-import { checkResolved, fetchPage, fetchSite, isPrivateAddress, parseIPv4, readableText, urlProblem, type Resolve } from "../src/web/pages.js";
+import { BLOCKED_BY_ORGANISATION, BLOCKED_UNSAFE, checkResolved, fetchPage, fetchSite, isPrivateAddress, NOT_ON_ALLOWLIST, parseIPv4, readableText, siteGuard, siteRulesFromEnv, urlProblem, type Resolve } from "../src/web/pages.js";
 
 const publicDns: Resolve = async () => ["93.184.216.34"];
 const html = (body: string, head = "<title>Holiday pay | Labour Office</title>") => `<!doctype html><html lang="en"><head>${head}</head><body>${body}</body></html>`;
@@ -124,5 +124,43 @@ describe("a website in the notebook", () => {
 
   it("is cited with its address after the answer (KNW-23)", () => {
     expect(webSourcesLine("Paid twice (sources: notebook:pay)", { "notebook:pay": "https://labour.example/holiday" })).toBe("\n\n(sources: notebook:pay · labour.example/holiday)");
+  });
+});
+
+describe("which sites may be added (KNW-25..28)", () => {
+  it("refuses a site the family resolver blocks (malware, phishing, adult content)", async () => {
+    await expect(checkResolved("malware.testcategory.com", async () => ["0.0.0.0"])).rejects.toThrow(BLOCKED_UNSAFE);
+    await expect(checkResolved("nudity.testcategory.com", async () => ["::"])).rejects.toThrow(BLOCKED_UNSAFE);
+  });
+
+  it("follows the organisation's allowlist and blocklist, subdomains included, on every redirect", async () => {
+    const guard = siteGuard({ allow: ["who.int", "mohfw.gov.in"], block: ["bad.who.int"] });
+    await expect(guard(new URL("https://www.who.int/x"))).resolves.toBeUndefined();
+    await expect(guard(new URL("https://bad.who.int/x"))).rejects.toThrow(BLOCKED_BY_ORGANISATION);
+    await expect(guard(new URL("https://notwho.int/x"))).rejects.toThrow(NOT_ON_ALLOWLIST);
+    const { f } = fakeFetch({ "https://www.who.int/go": () => new Response(null, { status: 302, headers: { location: "https://example.com/" } }) });
+    await expect(fetchPage("https://www.who.int/go", { fetch: f, resolve: publicDns, check: guard })).rejects.toThrow(NOT_ON_ALLOWLIST);
+  });
+
+  it("asks Google Safe Browsing when configured, sending only the address, and refuses when it can't check", async () => {
+    let sent: unknown = null;
+    const safe = (matches: unknown[] | "down") =>
+      (async (_u: string, init: RequestInit) => {
+        sent = JSON.parse(String(init.body));
+        return matches === "down" ? new Response("", { status: 503 }) : new Response(JSON.stringify(matches.length ? { matches } : {}));
+      }) as unknown as typeof fetch;
+    await expect(siteGuard({ safeBrowsingKey: "k", fetch: safe([]) })(new URL("https://www.who.int/"))).resolves.toBeUndefined();
+    expect(sent).toMatchObject({ threatInfo: { threatEntries: [{ url: "https://www.who.int/" }] } });
+    await expect(siteGuard({ safeBrowsingKey: "k", fetch: safe([{ threatType: "MALWARE" }]) })(new URL("https://x.example/"))).rejects.toThrow(BLOCKED_UNSAFE);
+    await expect(siteGuard({ safeBrowsingKey: "k", fetch: safe("down") })(new URL("https://x.example/"))).rejects.toThrow(/couldn't be checked/);
+  });
+
+  it("reads the rules from the deployment's settings", () => {
+    expect(siteRulesFromEnv({ WEBSITE_SOURCE_DOMAINS: "who.int, https://www.nhs.uk/, *.gov.in, nonsense", WEBSITE_BLOCKED_DOMAINS: "piracy.example", SAFE_BROWSING_API_KEY: " key " })).toEqual({
+      allow: ["who.int", "www.nhs.uk", "gov.in"],
+      block: ["piracy.example"],
+      safeBrowsingKey: "key",
+    });
+    expect(siteRulesFromEnv({})).toEqual({ allow: [], block: [], safeBrowsingKey: undefined });
   });
 });

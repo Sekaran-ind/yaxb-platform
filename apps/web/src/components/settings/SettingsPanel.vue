@@ -290,7 +290,8 @@ async function clearBrowser() {
     </AdaptiveNav>
     <p class="text-center text-sm text-gray-500">
       Settings are saved in this browser automatically. <RouterLink to="/kiosk" class="font-medium text-brand-dark underline">Open the kiosk</RouterLink> ·
-      <RouterLink to="/kiosk/curate" class="font-medium text-brand-dark underline">Moderation queue</RouterLink> (moderators)
+      <RouterLink to="/kiosk/curate" class="font-medium text-brand-dark underline">Moderation queue</RouterLink> (moderators) ·
+      <RouterLink to="/kiosk/admin" class="font-medium text-brand-dark underline">Administration</RouterLink>
     </p>
   </div>
 </template>

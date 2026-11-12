@@ -173,6 +173,11 @@ function ensureDevVars() {
     setVar(DEV_VARS, "MODERATOR_TOKEN", token);
     info(`Generated MODERATOR_TOKEN (moderator sign-in on /kiosk/curate): ${token}`);
   }
+  if (!vars.ADMIN_TOKEN) {
+    const token = secret(32);
+    setVar(DEV_VARS, "ADMIN_TOKEN", token);
+    info(`Generated ADMIN_TOKEN (administrator sign-in on /kiosk/admin: issue and manage moderator keys): ${token}`);
+  }
   if (!PROVIDER_KEYS.some((k) => vars[k])) {
     warn("No LLM provider configured. Add a key to apps/web/.dev.vars (e.g. ANTHROPIC_API_KEY) to chat in the kiosk.");
   }
