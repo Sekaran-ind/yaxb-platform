@@ -10,8 +10,8 @@ const NATIVE_ROUTES: RouteRecordRaw[] = [
   { path: "/:rest(.*)*", redirect: "/kiosk" },
 ];
 
-/** An old staff page's address, as the kiosk's Staff screen with that section. */
-const staff = (section: string) => (to: { query: Record<string, unknown> }) => ({ path: "/kiosk", query: { ...(to.query as Record<string, string>), screen: "staff", staff: section } });
+/** An old staff page's address, as that staff section inside the kiosk's Services. */
+const staff = (section: string) => (to: { query: Record<string, unknown> }) => ({ path: "/kiosk", query: { ...(to.query as Record<string, string>), screen: "services", staff: section } });
 
 export const router = createRouter({
   // The app's pages are files on the device: hash URLs need no server.
@@ -19,7 +19,7 @@ export const router = createRouter({
   routes: NATIVE ? NATIVE_ROUTES : [
     { path: "/", component: () => import("./pages/HomePage.vue"), meta: { title: "Meet YAXB" } },
     { path: "/kiosk", component: () => import("./pages/KioskPage.vue"), meta: { title: "AI Kiosk" } },
-    // The staff pages live inside the kiosk (Staff screen); their old addresses open the section.
+    // The staff pages live inside the kiosk (Services → For staff); their old addresses open the section.
     { path: "/kiosk/curate", redirect: staff("moderation") },
     { path: "/kiosk/review", redirect: staff("review") },
     { path: "/kiosk/quality", redirect: staff("quality") },

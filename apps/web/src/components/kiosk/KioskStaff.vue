@@ -1,8 +1,8 @@
 <script setup lang="ts">
-// The staff's side of the kiosk, inside it (the Staff screen): answer quality, reviewing answers,
+// The staff's side of the kiosk, inside Services (For staff): answer quality, reviewing answers,
 // the moderation queue, the team (chat and calls), your moderator profile and administration.
 // Each needs a moderator key (administration: the administrator); visitors see a sign-in.
-// The section is in the kiosk's address (/kiosk?screen=staff&staff=team), so links and the old
+// The section is in the kiosk's address (/kiosk?screen=services&staff=team), so links and the old
 // /kiosk/curate, /kiosk/admin… addresses open the right one.
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -29,7 +29,7 @@ const { el, width } = useWidth();
 const section = computed({
   get: () => (typeof route.query.staff === "string" && SECTIONS.some((s) => s.id === route.query.staff) ? route.query.staff : "quality"),
   // A section's own state (an open answer, a shared link) belongs to that section only.
-  set: (id: string) => void router.replace({ path: "/kiosk", query: { screen: "staff", staff: id } }),
+  set: (id: string) => void router.replace({ path: "/kiosk", query: { screen: "services", staff: id } }),
 });
 </script>
 

@@ -31,10 +31,7 @@ import AdaptiveNav, { type NavScreen } from "./AdaptiveNav.vue";
 import FeedbackPrompt from "./FeedbackPrompt.vue";
 import KnowledgeSources from "./KnowledgeSources.vue";
 import NotebookScreen from "./NotebookScreen.vue";
-import PatientInfo from "./PatientInfo.vue";
 import PlayerPanel from "./PlayerPanel.vue";
-import KioskStaff from "./KioskStaff.vue";
-import { NATIVE } from "@/lib/platform";
 import ServicesScreen from "./ServicesScreen.vue";
 import TranscriptPane from "./TranscriptPane.vue";
 import KioskPreferences from "./KioskPreferences.vue";
@@ -389,10 +386,7 @@ const status = computed<KioskStatus>(() => {
 
 const sourceCount = computed(() => nb.notebook.value?.sources.length ?? 0);
 const navScreens = computed<NavScreen[]>(() =>
-  // The native app is for visitors: staff work in the web kiosk (their sign-in is a cookie there).
-  screensFor(kioskContent.screens, layout.value)
-    .filter((s) => !(NATIVE && s.component === "staff"))
-    .map((s) => ({
+  screensFor(kioskContent.screens, layout.value).map((s) => ({
     id: s.id,
     label: s.label,
     icon: s.icon,
@@ -400,7 +394,7 @@ const navScreens = computed<NavScreen[]>(() =>
   })),
 );
 const componentOf = (id: string) => kioskContent.screens.screens.find((s) => s.id === id)?.component;
-// A link may open a screen (/kiosk?screen=staff&staff=team): the old staff pages redirect here.
+// A link may open a screen (/kiosk?screen=services&staff=team): the old staff pages redirect here.
 watch(
   () => route.query.screen,
   (id) => {
@@ -530,9 +524,7 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
                 @open-thread="(id) => (chat.open(id), (screen = 'transcript'))"
                 @new-thread="() => (chat.reset(), (screen = 'transcript'))"
               />
-              <PatientInfo v-else-if="componentOf(s.id) === 'patient-info'" />
               <KnowledgeSources v-else-if="componentOf(s.id) === 'records'" />
-              <KioskStaff v-else-if="componentOf(s.id) === 'staff'" />
               <TranslatePane v-else-if="componentOf(s.id) === 'translate'" :initial-text="lastAnswer" @speak="(t, lang) => voiceOut.speak(t, { lang })" />
             </template>
           </AdaptiveNav>
