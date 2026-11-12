@@ -1,0 +1,89 @@
+{
+  "name": "@sekaran-ind/yaxb-journeys",
+  "version": "0.1.0",
+  "description": "Service → Journey → Questionnaire, authored in YAML: compile and check the content, run journeys, and (in ./vue) render them with the adaptive navigation, including a studio to edit YAML and preview it. Headless core with no DOM; Vue 3 components optional.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./journeys": {
+      "types": "./dist/journeys.d.ts",
+      "default": "./dist/journeys.js"
+    },
+    "./services": {
+      "types": "./dist/services.d.ts",
+      "default": "./dist/services.js"
+    },
+    "./screens": {
+      "types": "./dist/screens.d.ts",
+      "default": "./dist/screens.js"
+    },
+    "./bundle": {
+      "types": "./dist/bundle.d.ts",
+      "default": "./dist/bundle.js"
+    },
+    "./vue": {
+      "types": "./dist/vue/index.d.ts",
+      "default": "./dist/vue/index.js"
+    },
+    "./style.css": "./dist/vue/style.css",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "!dist/**/*.test.*"
+  ],
+  "scripts": {
+    "build": "npm run build:core && npm run build:vue",
+    "build:core": "tsc -p tsconfig.build.json",
+    "build:vue": "vite build && vue-tsc -p tsconfig.vue.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "typecheck": "tsc --noEmit && vue-tsc -p tsconfig.vue.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "js-yaml": "5.5.0"
+  },
+  "peerDependencies": {
+    "vue": "^3.5.0"
+  },
+  "peerDependenciesMeta": {
+    "vue": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/js-yaml": "4.0.9",
+    "@types/node": "22.19.1",
+    "@vitejs/plugin-vue": "6.0.10",
+    "eslint": "9.39.5",
+    "eslint-plugin-vue": "10.12.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.2",
+    "vite": "8.3.7",
+    "vitest": "4.1.12",
+    "vue": "3.5.45",
+    "vue-eslint-parser": "10.4.2",
+    "vue-tsc": "3.3.14"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sekaran-ind/yaxb-platform.git",
+    "directory": "packages/yaxb-journeys"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

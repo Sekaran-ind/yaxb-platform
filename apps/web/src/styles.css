@@ -280,3 +280,24 @@
     animation: none;
   }
 }
+
+/* ---- @sekaran-ind/yaxb-journeys components (the studio) ------------------------------------------ */
+/* Its tokens follow the site's, so every theme above applies; the package's defaults are in :where(). */
+.yj {
+  --yj-font: var(--font-sans);
+  --yj-ink: var(--color-ink);
+  --yj-body: var(--color-body);
+  --yj-muted: var(--color-gray-500);
+  --yj-line: var(--color-gray-200);
+  --yj-mist: var(--color-mist);
+  --yj-surface: var(--color-surface);
+  --yj-canvas: var(--color-canvas);
+  --yj-accent: var(--color-brand);
+  --yj-strong: var(--color-brand-dark);
+  --yj-on-strong: var(--color-on-brand);
+  --yj-info: var(--color-info);
+  --yj-success: var(--color-success);
+  --yj-danger: var(--color-red-800);
+  --yj-warning: var(--color-gray-700);
+  --yj-shadow: var(--shadow-soft);
+}

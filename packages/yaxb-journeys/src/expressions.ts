@@ -144,6 +144,11 @@ export function conditionProblem(src: string): string | null {
   }
 }
 
+/** The data paths a condition reads, such as `values.smoker`. Throws on a malformed condition. */
+export function conditionPaths(src: string): string[] {
+  return tokenize(src).flatMap((t) => (t.t === "path" ? [t.v] : []));
+}
+
 /** Evaluate a condition. Malformed conditions are refused when a journey compiles, so this throws only on misuse. */
 export function holds(src: string, scope: Scope): boolean {
   return present(run(parse(tokenize(src)), scope));

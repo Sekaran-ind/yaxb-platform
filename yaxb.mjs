@@ -6,11 +6,11 @@
  *   node yaxb.mjs start --preview    the production build on local workerd (vite preview)
  *   node yaxb.mjs stop | restart | status | logs
  *   node yaxb.mjs cli <args>         the yaxb CLI, with provider keys from apps/web/.dev.vars
- *   node yaxb.mjs test               core tests, CLI tests, web typecheck + lint
+ *   node yaxb.mjs test               journeys and core tests, CLI tests, web typecheck + lint
  *   node yaxb.mjs deploy             D1 migrations + Worker deploy to Cloudflare
  *
  * Commands also work as flags (--start, --stop, ...). Options: --preview (alias --prod), --port N.
- * First start installs dependencies, builds yaxb-core, creates apps/web/.dev.vars with generated
+ * First start installs dependencies, builds yaxb-journeys and yaxb-core, creates apps/web/.dev.vars with generated
  * secrets, and applies the D1 migrations locally. Logs and PIDs live in .run/ (git-ignored).
  */
 import { spawn, spawnSync } from "node:child_process";
@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const CORE_DIR = join(ROOT, "packages", "yaxb-core");
+const JOURNEYS_DIR = join(ROOT, "packages", "yaxb-journeys");
 const WEB_DIR = join(ROOT, "apps", "web");
 const CLI_MAIN = join(ROOT, "apps", "cli", "src", "main.js");
 const DEV_VARS = join(WEB_DIR, ".dev.vars");
@@ -89,7 +90,7 @@ Commands (also accepted as flags, e.g. --start):
   status     Show what's running and whether it responds
   logs       Print the last 40 lines of each log
   cli ...    Run the yaxb CLI, e.g.  node yaxb.mjs cli ask "visiting hours?"
-  test       yaxb-core tests, CLI tests, web typecheck and lint
+  test       yaxb-journeys and yaxb-core tests, CLI tests, web typecheck and lint
   deploy     Apply D1 migrations and deploy the Worker (needs \`npx wrangler login\`)
   box        Run a yaxb-box on this computer (local storage for testing; stop with stop)
   box-deploy Install yaxb-box on a Raspberry Pi over SSH:
@@ -195,6 +196,15 @@ function run(cmd, args, cwd, what, { quiet = false } = {}) {
 
 const node = (script, args, cwd, what, o) => run(process.execPath, [script, ...args], cwd, what, o);
 
+/** yaxb-journeys (the engine and its Vue components) first: yaxb-core and the web import its dist. */
+function buildCore() {
+  info("Building yaxb-journeys and yaxb-core...");
+  node(TSC, ["-p", "tsconfig.build.json"], JOURNEYS_DIR, "Building yaxb-journeys", { quiet: true });
+  node(VITE, ["build"], JOURNEYS_DIR, "Building yaxb-journeys/vue", { quiet: true });
+  node(VUE_TSC, ["-p", "tsconfig.vue.json"], JOURNEYS_DIR, "Typing yaxb-journeys/vue", { quiet: true });
+  node(TSC, ["-p", "tsconfig.build.json"], CORE_DIR, "Building yaxb-core", { quiet: true });
+}
+
 function ensureSetup() {
   if (!existsSync(VITE) || !existsSync(WRANGLER)) {
     info("Installing dependencies (first run)...");
@@ -202,8 +212,7 @@ function ensureSetup() {
     const r = spawnSync(WIN ? "npm.cmd" : "npm", ["install", "--no-audit", "--no-fund"], { cwd: ROOT, stdio: "inherit", shell: WIN });
     if (r.status !== 0) fail("npm install failed.");
   }
-  info("Building yaxb-core...");
-  node(TSC, ["-p", "tsconfig.build.json"], CORE_DIR, "Building yaxb-core", { quiet: true });
+  buildCore();
   ensureDevVars();
   node(WRANGLER, ["d1", "migrations", "apply", "yaxb", "--local"], WEB_DIR, "Applying local D1 migrations", { quiet: true });
 }
@@ -361,8 +370,7 @@ function logs() {
 
 function cli(rest) {
   if (!existsSync(join(CORE_DIR, "dist", "agent", "index.js"))) {
-    info("Building yaxb-core...");
-    node(TSC, ["-p", "tsconfig.build.json"], CORE_DIR, "Building yaxb-core", { quiet: true });
+    buildCore();
   }
   // Same provider keys as the local web app; real environment variables win.
   const vars = readVars(DEV_VARS);
@@ -373,6 +381,12 @@ function cli(rest) {
 }
 
 function test() {
+  buildCore();
+  info("yaxb-journeys tests");
+  node(bin("vitest", "vitest.mjs"), ["run"], JOURNEYS_DIR, "yaxb-journeys tests");
+  node(TSC, ["--noEmit"], JOURNEYS_DIR, "yaxb-journeys typecheck");
+  node(VUE_TSC, ["-p", "tsconfig.vue.json", "--noEmit"], JOURNEYS_DIR, "yaxb-journeys/vue typecheck");
+  node(bin("eslint", "bin", "eslint.js"), ["."], JOURNEYS_DIR, "yaxb-journeys lint");
   info("yaxb-core tests");
   node(bin("vitest", "vitest.mjs"), ["run"], CORE_DIR, "yaxb-core tests");
   node(TSC, ["--noEmit"], CORE_DIR, "yaxb-core typecheck");
