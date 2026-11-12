@@ -119,11 +119,11 @@ async function erase() {
 
     <section class="card p-5">
       <h3 class="font-semibold text-ink">Passphrase</h3>
-      <form class="mt-3 grid gap-3 sm:grid-cols-3" @submit.prevent="changePassphrase">
+      <form class="mt-3 grid gap-3 @lg:grid-cols-3" @submit.prevent="changePassphrase">
         <input v-model="pw.current" type="password" class="input" placeholder="Current" autocomplete="current-password" aria-label="Current passphrase" required />
         <input v-model="pw.next" type="password" class="input" placeholder="New" autocomplete="new-password" aria-label="New passphrase" required />
         <input v-model="pw.confirm" type="password" class="input" placeholder="New, again" autocomplete="new-password" aria-label="New passphrase again" required />
-        <div class="flex flex-wrap items-center gap-3 sm:col-span-3">
+        <div class="flex flex-wrap items-center gap-3 @lg:col-span-3">
           <button type="submit" class="btn-light" :disabled="pw.busy">Change passphrase</button>
           <span v-if="pw.msg" role="status" class="text-sm text-ink">{{ pw.msg }}</span>
           <span v-if="pw.err" role="alert" class="text-sm text-red-800">{{ pw.err }}</span>

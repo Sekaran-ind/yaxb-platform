@@ -128,7 +128,7 @@ onMounted(load);
           </div>
         </div>
 
-        <form v-if="form" class="mb-4 grid gap-3 rounded-lg bg-mist p-4 sm:grid-cols-2" @submit.prevent="issue">
+        <form v-if="form" class="mb-4 grid gap-3 rounded-lg bg-mist p-4 @lg:grid-cols-2" @submit.prevent="issue">
           <div><label for="m-name" class="mb-1 block text-sm font-medium text-ink">Name</label><input id="m-name" v-model="form.name" class="input" required maxlength="80" /></div>
           <div><label for="m-label" class="mb-1 block text-sm font-medium text-ink">Label <span class="font-normal text-gray-500">(optional)</span></label><input id="m-label" v-model="form.label" class="input" maxlength="80" placeholder="e.g. Pharmacy team" /></div>
           <fieldset>
@@ -145,7 +145,7 @@ onMounted(load);
               <option :value="365">1 year</option>
             </select>
           </div>
-          <div class="flex justify-end gap-2 sm:col-span-2">
+          <div class="flex justify-end gap-2 @lg:col-span-2">
             <button type="button" class="btn-light" @click="form = null">Cancel</button>
             <button type="submit" class="btn-primary" :disabled="busy || !form.name.trim() || !form.roles.length">Issue key</button>
           </div>

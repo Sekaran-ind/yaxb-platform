@@ -89,10 +89,10 @@ async function clearBrowser() {
           <p v-if="catalogError" role="alert" class="mt-4 flex items-center gap-2 rounded-md bg-danger/10 px-4 py-3 text-sm text-red-800"><ServerCrash class="size-4" /> Could not load providers: {{ catalogError }}.</p>
           <p v-else-if="!catalog" class="mt-4 text-sm text-gray-500">Loading providers…</p>
           <template v-else>
-            <fieldset class="mt-4 grid gap-3 sm:grid-cols-2">
+            <fieldset class="mt-4 grid gap-3 @lg:grid-cols-2">
               <legend class="sr-only">Provider</legend>
               <!-- Kiosk only: no AI model at all (Settings → Knowledge → answers "on this device"). -->
-              <label :class="cn('relative flex cursor-pointer flex-col rounded-lg border-2 p-3 sm:col-span-2', kioskOnly ? 'border-brand bg-brand/5' : 'border-gray-200 bg-surface hover:border-gray-300')">
+              <label :class="cn('relative flex cursor-pointer flex-col rounded-lg border-2 p-3 @lg:col-span-2', kioskOnly ? 'border-brand bg-brand/5' : 'border-gray-200 bg-surface hover:border-gray-300')">
                 <input type="radio" name="provider" value="kiosk-only" class="sr-only" :checked="kioskOnly" @change="setKioskOnly(true)" />
                 <span class="flex items-center justify-between text-sm font-medium text-ink">
                   Kiosk only (no AI model)
@@ -118,7 +118,7 @@ async function clearBrowser() {
                 <span class="mt-1 text-xs text-gray-500">{{ p.configured ? `${p.models.length} models${p.local ? " · local network" : ""}` : "Not configured on this server" }}</span>
               </label>
             </fieldset>
-            <div v-if="active && !kioskOnly" class="mt-5 grid gap-6 sm:grid-cols-2">
+            <div v-if="active && !kioskOnly" class="mt-5 grid gap-6 @lg:grid-cols-2">
               <div>
                 <label for="model" class="block text-sm font-medium text-ink">Model</label>
                 <select id="model" class="input mt-1" :value="active.model" @change="updateSettings({ provider: active.provider, model: ($event.target as HTMLSelectElement).value })">
@@ -298,7 +298,7 @@ async function clearBrowser() {
           <section class="card p-5">
             <h2 class="text-lg font-semibold text-ink">Voice</h2>
             <ToggleRow class="mt-3" label="Read answers aloud" :checked="settings.speakResponses" @change="(v) => updateSettings({ speakResponses: v })" />
-            <div class="mt-3 grid gap-6 sm:grid-cols-2">
+            <div class="mt-3 grid gap-6 @lg:grid-cols-2">
               <div>
                 <label for="voice" class="block text-sm font-medium text-ink">Voice</label>
                 <select id="voice" class="input mt-1" :value="settings.voiceName ?? ''" @change="updateSettings({ voiceName: ($event.target as HTMLSelectElement).value || null })">

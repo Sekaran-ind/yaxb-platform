@@ -19,7 +19,7 @@ const choose = (t: ThemeChoice) => updateSettings({ theme: t });
     </select>
   </label>
 
-  <div v-else role="radiogroup" aria-label="Theme" class="grid gap-3 sm:grid-cols-3">
+  <div v-else role="radiogroup" aria-label="Theme" class="grid gap-3 @lg:grid-cols-3">
     <button
       type="button"
       role="radio"

@@ -393,6 +393,12 @@ const navScreens = computed<NavScreen[]>(() =>
     badge: s.id === "notebook" && sourceCount.value ? String(sourceCount.value) : undefined,
   })),
 );
+/**
+ * The Mini kiosk is the size of a phone whatever it shows: its screens area has one fixed height
+ * (a standard phone's, less the player and tabs; shorter on small screens) and scrolls inside.
+ */
+const MINI_HEIGHT = "h-[min(37rem,calc(100dvh-12rem))] min-h-96";
+const MINI_BODY = "overflow-y-auto [scrollbar-width:thin]";
 const componentOf = (id: string) => kioskContent.screens.screens.find((s) => s.id === id)?.component;
 // A link may open a screen (/kiosk?screen=services&staff=team): the old staff pages redirect here.
 watch(
@@ -467,11 +473,11 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
             cn(
               layout === 'full' && 'h-[600px] overflow-y-auto px-3 pt-3 [scrollbar-width:thin]',
               layout === 'pod' && 'min-h-[520px] px-3 pt-2 pb-1',
-              layout === 'mini' && 'px-1.5 pt-1',
+              layout === 'mini' && cn('px-1.5 pt-1', MINI_HEIGHT),
             )
           "
         >
-          <KioskPreferences v-if="prefsOpen" :nickname="account.profile.value?.nickname ?? null" @close="closePrefs" />
+          <div v-if="prefsOpen" :class="layout === 'mini' ? cn('h-full', MINI_BODY) : ''"><KioskPreferences :nickname="account.profile.value?.nickname ?? null" @close="closePrefs" /></div>
           <AdaptiveNav
             v-else
             :screens="navScreens"
@@ -479,7 +485,8 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
             :storage-key="`kiosk-${layout}`"
             :active="screen"
             :width="navWidth"
-            :body-class="layout === 'mini' ? 'max-h-[70vh] overflow-y-auto [scrollbar-width:thin]' : ''"
+            :fill="layout === 'mini'"
+            :body-class="layout === 'mini' ? MINI_BODY : ''"
             @update:active="setScreen"
           >
             <template v-for="s in navScreens" :key="s.id" #[s.id]>
@@ -489,7 +496,7 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
                 :busy="chat.busy.value"
                 :listening="voiceIn.listening.value"
                 :voice-supported="voiceIn.supported.value"
-                :height-class="layout === 'full' ? 'h-[504px]' : undefined"
+                :height-class="layout === 'full' ? 'h-[504px]' : layout === 'mini' ? 'h-full' : undefined"
                 @mic="onMic"
                 :selection="selection"
                 :can-ask="canAsk"

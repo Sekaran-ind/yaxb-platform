@@ -7,7 +7,7 @@ const emit = defineEmits<{ change: [value: T] }>();
 </script>
 
 <template>
-  <fieldset class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+  <fieldset class="grid gap-3 @lg:grid-cols-2 @4xl:grid-cols-4">
     <legend class="sr-only">{{ name }}</legend>
     <label v-for="o in options" :key="o.id" :class="cn('flex cursor-pointer flex-col rounded-lg border-2 p-3', value === o.id ? 'border-brand bg-brand/5' : 'border-gray-200 hover:border-gray-300')">
       <input type="radio" :name="name" :value="o.id" class="sr-only" :checked="value === o.id" @change="emit('change', o.id)" />

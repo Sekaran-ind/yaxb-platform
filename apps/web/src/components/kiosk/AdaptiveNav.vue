@@ -17,7 +17,8 @@ import PopMenu from "./PopMenu.vue";
 
 export type NavScreen = { id: string; label: string; icon?: string; badge?: string };
 
-const props = defineProps<{ screens: NavScreen[]; mode?: NavMode; storageKey: string; active: string | null; width: number; bodyClass?: string }>();
+// fill: take the parent's height; the navigation stays put and only the screen scrolls (the Mini kiosk).
+const props = defineProps<{ screens: NavScreen[]; mode?: NavMode; storageKey: string; active: string | null; width: number; bodyClass?: string; fill?: boolean }>();
 const emit = defineEmits<{ "update:active": [id: string] }>();
 const uid = useId();
 
@@ -51,8 +52,8 @@ const itemClass = (on: boolean) => cn("flex w-full items-center justify-between 
 
 <template>
   <!-- Compact: one screen and a section menu. -->
-  <div v-if="compact">
-    <div class="mb-2 flex items-center justify-between">
+  <div v-if="compact" :class="fill && 'flex h-full min-h-0 flex-col'">
+    <div class="mb-2 flex shrink-0 items-center justify-between">
       <h2 v-if="currentScreen" class="inline-flex items-center gap-1.5 text-sm font-bold text-ink">
         <component :is="iconFor(currentScreen.icon)" v-if="iconFor(currentScreen.icon)" class="size-4" aria-hidden="true" />{{ currentScreen.label }}
       </h2>
@@ -63,14 +64,14 @@ const itemClass = (on: boolean) => cn("flex w-full items-center justify-between 
         </button>
       </PopMenu>
     </div>
-    <div :class="bodyClass"><slot v-if="current" :name="current" /></div>
+    <div :class="cn('@container', fill && 'min-h-0 flex-1', bodyClass)"><slot v-if="current" :name="current" /></div>
   </div>
 
   <!-- Panes: every screen at once. -->
-  <div v-else-if="mode === 'panes'" class="grid gap-4 md:grid-cols-2">
+  <div v-else-if="mode === 'panes'" class="grid gap-4 @2xl:grid-cols-2">
     <section v-for="s in screens" :key="s.id" :aria-label="s.label" class="rounded-xl bg-surface p-3 ring-1 ring-gray-100">
       <h2 class="mb-2 text-xs font-bold tracking-wide text-gray-500 uppercase">{{ s.label }}</h2>
-      <div class="max-h-[480px] overflow-y-auto"><slot :name="s.id" /></div>
+      <div class="@container max-h-[480px] overflow-y-auto"><slot :name="s.id" /></div>
     </section>
   </div>
 
@@ -85,7 +86,7 @@ const itemClass = (on: boolean) => cn("flex w-full items-center justify-between 
         <button v-for="m in SWITCHABLE_NAV_MODES" :key="m" type="button" role="menuitemradio" :aria-checked="m === mode" :class="itemClass(m === mode)" @click="choose(m), close()"><span class="capitalize">{{ m }}</span></button>
       </PopMenu>
     </nav>
-    <div :class="cn('min-w-0 flex-1', bodyClass)"><slot v-if="current" :name="current" /></div>
+    <div :class="cn('@container min-w-0 flex-1', bodyClass)"><slot v-if="current" :name="current" /></div>
   </div>
 
   <!-- Accordion. -->
@@ -103,14 +104,14 @@ const itemClass = (on: boolean) => cn("flex w-full items-center justify-between 
             <ChevronDown :class="cn('size-4 text-gray-400 transition-transform', s.id === current && 'rotate-180')" aria-hidden="true" />
           </button>
         </h2>
-        <div v-if="s.id === current" :id="`${uid}-${s.id}`" :class="cn('px-3 pb-3', bodyClass)"><slot :name="s.id" /></div>
+        <div v-if="s.id === current" :id="`${uid}-${s.id}`" :class="cn('@container px-3 pb-3', bodyClass)"><slot :name="s.id" /></div>
       </section>
     </div>
   </div>
 
   <!-- Tabs. -->
-  <div v-else>
-    <div class="mb-3 flex items-center justify-between gap-2">
+  <div v-else :class="fill && 'flex h-full min-h-0 flex-col'">
+    <div class="mb-3 flex shrink-0 items-center justify-between gap-2">
       <div role="tablist" aria-label="Screens" class="no-scrollbar flex min-w-0 gap-0.5 overflow-x-auto rounded-full bg-mist p-0.5">
         <button
           v-for="s in screens"
@@ -131,6 +132,6 @@ const itemClass = (on: boolean) => cn("flex w-full items-center justify-between 
         <button v-for="m in SWITCHABLE_NAV_MODES" :key="m" type="button" role="menuitemradio" :aria-checked="m === mode" :class="itemClass(m === mode)" @click="choose(m), close()"><span class="capitalize">{{ m }}</span></button>
       </PopMenu>
     </div>
-    <div :id="`${uid}-panel`" role="tabpanel" :aria-labelledby="`${uid}-tab-${current}`" :class="bodyClass"><slot v-if="current" :name="current" /></div>
+    <div :id="`${uid}-panel`" role="tabpanel" :aria-labelledby="`${uid}-tab-${current}`" :class="cn('@container', fill && 'min-h-0 flex-1', bodyClass)"><slot v-if="current" :name="current" /></div>
   </div>
 </template>

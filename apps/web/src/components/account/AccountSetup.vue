@@ -86,8 +86,8 @@ async function next() {
       <label class="flex items-center gap-2 text-sm text-ink"><input v-model="accepted" type="checkbox" class="size-4 accent-brand" /> I have read this and want a profile on this device.</label>
     </template>
 
-    <div v-else-if="name === 'About you'" class="grid gap-3 sm:grid-cols-2">
-      <div class="sm:col-span-2">
+    <div v-else-if="name === 'About you'" class="grid gap-3 @lg:grid-cols-2">
+      <div class="@lg:col-span-2">
         <label for="a-nick" class="mb-1 block text-sm font-medium text-ink">Nickname <span class="text-red-700">*</span></label>
         <input id="a-nick" v-model="form.nickname" class="input" maxlength="40" autocomplete="nickname" required />
         <p class="mt-1 text-xs text-gray-500">Shown on this kiosk to pick your profile. A first name or nickname, not your full name.</p>
@@ -105,7 +105,7 @@ async function next() {
           <option v-for="l in LANGUAGES" :key="l.code" :value="l.code" :lang="l.speech">{{ l.native === l.label ? l.label : `${l.native} · ${l.label}` }}</option>
         </select>
       </div>
-      <div class="sm:col-span-2">
+      <div class="@lg:col-span-2">
         <label for="a-city" class="mb-1 block text-sm font-medium text-ink">City or town <span class="font-normal text-gray-500">(optional)</span></label>
         <input id="a-city" v-model="form.city" class="input" maxlength="60" autocomplete="address-level2" />
       </div>
@@ -113,7 +113,7 @@ async function next() {
 
     <fieldset v-else-if="name === 'Interests'">
       <legend class="mb-2 text-sm text-gray-600">What would you like help with? Choose any.</legend>
-      <div class="grid gap-2 sm:grid-cols-2">
+      <div class="grid gap-2 @lg:grid-cols-2">
         <button
           v-for="d in INTEREST_DOMAINS"
           :key="d.id"
@@ -145,8 +145,8 @@ async function next() {
       </fieldset>
     </div>
 
-    <div v-else-if="name === 'Passphrase'" class="grid gap-3 sm:grid-cols-2">
-      <p class="text-sm text-gray-600 sm:col-span-2">Your profile is encrypted with this passphrase. There is no way to recover it: if you forget it, the profile can only be erased.</p>
+    <div v-else-if="name === 'Passphrase'" class="grid gap-3 @lg:grid-cols-2">
+      <p class="text-sm text-gray-600 @lg:col-span-2">Your profile is encrypted with this passphrase. There is no way to recover it: if you forget it, the profile can only be erased.</p>
       <div>
         <label for="a-p1" class="mb-1 block text-sm font-medium text-ink">Passphrase</label>
         <input id="a-p1" v-model="pass.one" type="password" class="input" autocomplete="new-password" :minlength="MIN_PASSPHRASE" required />
