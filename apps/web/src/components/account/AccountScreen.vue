@@ -47,7 +47,7 @@ async function unlock() {
             type="button"
             role="radio"
             :aria-checked="picked === r.id"
-            :class="cn('rounded-full px-4 py-1.5 text-sm ring-1', picked === r.id ? 'bg-brand text-white ring-brand' : 'bg-white text-ink ring-gray-200 hover:ring-brand')"
+            :class="cn('rounded-full px-4 py-1.5 text-sm ring-1', picked === r.id ? 'bg-brand-dark text-on-brand ring-brand' : 'bg-surface text-ink ring-gray-200 hover:ring-brand')"
             @click="(picked = r.id), (error = '')"
           >
             {{ r.nickname }}

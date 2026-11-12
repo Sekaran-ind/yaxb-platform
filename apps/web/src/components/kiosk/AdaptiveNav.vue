@@ -68,7 +68,7 @@ const itemClass = (on: boolean) => cn("flex w-full items-center justify-between 
 
   <!-- Panes: every screen at once. -->
   <div v-else-if="mode === 'panes'" class="grid gap-4 md:grid-cols-2">
-    <section v-for="s in screens" :key="s.id" :aria-label="s.label" class="rounded-xl bg-white p-3 ring-1 ring-gray-100">
+    <section v-for="s in screens" :key="s.id" :aria-label="s.label" class="rounded-xl bg-surface p-3 ring-1 ring-gray-100">
       <h2 class="mb-2 text-xs font-bold tracking-wide text-gray-500 uppercase">{{ s.label }}</h2>
       <div class="max-h-[480px] overflow-y-auto"><slot :name="s.id" /></div>
     </section>
@@ -77,7 +77,7 @@ const itemClass = (on: boolean) => cn("flex w-full items-center justify-between 
   <!-- Sidebar. -->
   <div v-else-if="mode === 'sidebar'" class="flex gap-4">
     <nav class="flex w-44 shrink-0 flex-col gap-1" aria-label="Screens">
-      <button v-for="s in screens" :key="s.id" type="button" :aria-current="s.id === current ? 'page' : undefined" :class="cn('rounded-lg px-3 py-2 text-left text-sm', s.id === current ? 'bg-brand text-white' : 'text-gray-600 hover:bg-mist')" @click="pick(s.id)">
+      <button v-for="s in screens" :key="s.id" type="button" :aria-current="s.id === current ? 'page' : undefined" :class="cn('rounded-lg px-3 py-2 text-left text-sm', s.id === current ? 'bg-brand-dark text-on-brand' : 'text-gray-600 hover:bg-mist')" @click="pick(s.id)">
         <span class="inline-flex items-center gap-1.5"><component :is="iconFor(s.icon)" v-if="iconFor(s.icon)" class="size-4" aria-hidden="true" />{{ s.label }}</span>
         <span v-if="s.badge" class="ml-1 rounded-full bg-mist px-1.5 text-[10px] font-bold text-gray-600">{{ s.badge }}</span>
       </button>
@@ -120,7 +120,7 @@ const itemClass = (on: boolean) => cn("flex w-full items-center justify-between 
           role="tab"
           :aria-selected="s.id === current"
           :aria-controls="`${uid}-panel`"
-          :class="cn('rounded-full px-3 py-1.5 text-sm font-medium', s.id === current ? 'bg-white text-ink shadow-sm' : 'text-gray-600 hover:text-ink')"
+          :class="cn('rounded-full px-3 py-1.5 text-sm font-medium', s.id === current ? 'bg-surface text-ink shadow-sm' : 'text-gray-600 hover:text-ink')"
           @click="pick(s.id)"
         >
           <span class="inline-flex items-center gap-1.5"><component :is="iconFor(s.icon)" v-if="iconFor(s.icon)" class="size-4" aria-hidden="true" />{{ s.label }}</span>

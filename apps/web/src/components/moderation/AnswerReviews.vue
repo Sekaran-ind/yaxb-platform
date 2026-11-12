@@ -122,7 +122,7 @@ watch(state, loadList);
         <fieldset>
           <legend class="mb-2 text-sm font-medium text-ink">The answer is</legend>
           <div class="flex flex-wrap gap-2">
-            <label v-for="(label, key) in RATINGS" :key="key" :class="['cursor-pointer rounded-full border px-3 py-1 text-sm', draft.rating === key ? 'border-brand bg-brand text-white' : 'border-gray-300 text-ink hover:border-brand']">
+            <label v-for="(label, key) in RATINGS" :key="key" :class="['cursor-pointer rounded-full border px-3 py-1 text-sm', draft.rating === key ? 'border-brand bg-brand-dark text-on-brand' : 'border-gray-300 text-ink hover:border-brand']">
               <input v-model="draft.rating" type="radio" name="rating" :value="key" class="sr-only" />{{ label }}
             </label>
           </div>
@@ -138,8 +138,8 @@ watch(state, loadList);
                 <span class="ml-2 text-gray-700">{{ detail.titles[r.id] ?? r.label ?? "" }}</span>
               </span>
               <span class="flex gap-1" role="group" :aria-label="`Is ${r.id} relevant?`">
-                <button type="button" :aria-pressed="draft.marks[r.id] === true" :class="['inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs', draft.marks[r.id] ? 'bg-success text-white' : 'bg-white text-ink']" @click="draft.marks[r.id] = true"><Check class="size-3" aria-hidden="true" /> Relevant</button>
-                <button type="button" :aria-pressed="draft.marks[r.id] === false" :class="['inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs', draft.marks[r.id] === false ? 'bg-danger text-white' : 'bg-white text-ink']" @click="draft.marks[r.id] = false"><X class="size-3" aria-hidden="true" /> Not relevant</button>
+                <button type="button" :aria-pressed="draft.marks[r.id] === true" :class="['inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs', draft.marks[r.id] ? 'bg-success text-white' : 'bg-surface text-ink']" @click="draft.marks[r.id] = true"><Check class="size-3" aria-hidden="true" /> Relevant</button>
+                <button type="button" :aria-pressed="draft.marks[r.id] === false" :class="['inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs', draft.marks[r.id] === false ? 'bg-danger text-white' : 'bg-surface text-ink']" @click="draft.marks[r.id] = false"><X class="size-3" aria-hidden="true" /> Not relevant</button>
               </span>
             </li>
           </ul>
@@ -203,7 +203,7 @@ watch(state, loadList);
     <template v-else-if="!signedOut && !answerId">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex gap-1" role="group" aria-label="Show">
-          <button v-for="s in [{ v: 'open', l: 'To review' }, { v: 'reviewed', l: 'Reviewed' }, { v: '', l: 'All' }] as const" :key="s.v" type="button" :aria-pressed="state === s.v" :class="['rounded-full px-3 py-1 text-sm', state === s.v ? 'bg-brand text-white' : 'bg-mist text-ink']" @click="state = s.v">{{ s.l }}</button>
+          <button v-for="s in [{ v: 'open', l: 'To review' }, { v: 'reviewed', l: 'Reviewed' }, { v: '', l: 'All' }] as const" :key="s.v" type="button" :aria-pressed="state === s.v" :class="['rounded-full px-3 py-1 text-sm', state === s.v ? 'bg-brand-dark text-on-brand' : 'bg-mist text-ink']" @click="state = s.v">{{ s.l }}</button>
         </div>
         <div class="flex items-center gap-3 text-xs">
           <RouterLink to="/kiosk/quality" class="font-medium text-brand-dark hover:underline">Quality (F1)</RouterLink>

@@ -15,6 +15,9 @@ Settings are kept in the browser and sent with each question; nothing in them is
 | SET-7 | **Memory and skills**: notebook memory on or off; each skill on or off. | Built |
 | SET-8 | **Storage**: this browser, this session only, a local box, or the server (09). | Built |
 | SET-9 | **Layout and voice**: automatic, mini, pod or full layout; read-aloud, voice for the chosen language, speaking rate. | Built |
+| SET-10 | **Theme**: Classic, Calm, Warm, Night and High contrast, or *Device* (Classic, or Night when the device is in dark mode, or High contrast when it asks for more contrast). Chosen in Settings and from the kiosk header (tablet width and up), kept in the browser, applied before the first paint. | Built |
+| SET-11 | In every theme, text and filled buttons must meet WCAG AA contrast (4.5:1 for body text); High contrast aims for AAA, with thick focus rings and outlined cards. Components use the theme tokens (surface, canvas, mist, ink, brand-dark with on-brand), never fixed colours. | Built |
+| SET-12 | Answers must be shown formatted (paragraphs, lists, bold) without rendering any HTML from the model, with their sources as chips under the answer. | Built |
 
 ## Layouts
 

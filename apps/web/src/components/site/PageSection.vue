@@ -2,7 +2,7 @@
 // The portal's Section: background colour, size and an optional image overlay, plus a header.
 import { cn } from "@/lib/cn";
 
-const COLORS = { white: "bg-white text-body", light: "bg-mist text-body", dark: "bg-ink text-white" } as const;
+const COLORS = { white: "bg-surface text-body", light: "bg-mist text-body", dark: "bg-console text-white" } as const;
 const SIZES = { normal: "py-12", medium: "py-16 md:py-20", large: "py-24 md:py-32" } as const;
 const TITLE_SIZES = { sm: "text-xl md:text-2xl", md: "text-2xl md:text-3xl", lg: "text-3xl md:text-5xl" } as const;
 

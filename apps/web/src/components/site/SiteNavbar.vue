@@ -33,12 +33,12 @@ const contactOpen = ref(false);
           :key="l.to"
           :to="l.to"
           :aria-current="route.path === l.to ? 'page' : undefined"
-          :class="cn('block rounded-md px-3 py-2 text-ink hover:bg-white', route.path === l.to && 'font-semibold text-brand-dark')"
+          :class="cn('block rounded-md px-3 py-2 text-ink hover:bg-surface', route.path === l.to && 'font-semibold text-brand-dark')"
           @click="menuOpen = false"
         >
           {{ l.label }}
         </RouterLink>
-        <button type="button" class="block w-full rounded-md px-3 py-2 text-left text-ink hover:bg-white md:w-auto" @click="(menuOpen = false), (contactOpen = true)">Contact Us</button>
+        <button type="button" class="block w-full rounded-md px-3 py-2 text-left text-ink hover:bg-surface md:w-auto" @click="(menuOpen = false), (contactOpen = true)">Contact Us</button>
       </div>
     </div>
     <BaseModal :open="contactOpen" title="Hello" @close="contactOpen = false"><ContactPanel /></BaseModal>

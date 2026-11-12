@@ -203,7 +203,7 @@ onBeforeUnmount(() => {
         <p v-if="slotNote" role="status" class="text-sm text-ink">{{ slotNote }}</p>
         <div v-for="c in confirms" :key="c.field" class="flex flex-wrap items-center gap-2 text-sm">
           <span class="text-gray-600">{{ c.label }}: which one?</span>
-          <button v-for="o in c.options" :key="o.value" type="button" class="rounded-full bg-white px-3 py-1 text-ink shadow-sm ring-1 ring-gray-200 hover:ring-brand" @click="pick(c, o.value)">{{ o.label }}</button>
+          <button v-for="o in c.options" :key="o.value" type="button" class="rounded-full bg-surface px-3 py-1 text-ink shadow-sm ring-1 ring-gray-200 hover:ring-brand" @click="pick(c, o.value)">{{ o.label }}</button>
         </div>
         <button v-if="missing.length && selection && said.trim()" type="button" class="inline-flex items-center gap-1 text-sm font-medium text-brand-dark hover:underline" :disabled="slotBusy" @click="fillWithModel">
           <Sparkles class="size-4" aria-hidden="true" /> Fill the rest with the assistant ({{ missing.map(labelOf).join(", ") }})

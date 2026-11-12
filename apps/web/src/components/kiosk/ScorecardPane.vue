@@ -19,7 +19,7 @@ const SCORES = [
 <template>
   <div>
     <div role="tablist" class="mb-5 flex justify-center gap-1">
-      <button v-for="t in ['team', 'curate'] as const" :key="t" type="button" role="tab" :aria-selected="tab === t" :class="cn('rounded-full px-4 py-1.5 text-sm font-medium capitalize', tab === t ? 'bg-brand text-white' : 'bg-mist text-gray-600 hover:text-ink')" @click="tab = t">{{ t }}</button>
+      <button v-for="t in ['team', 'curate'] as const" :key="t" type="button" role="tab" :aria-selected="tab === t" :class="cn('rounded-full px-4 py-1.5 text-sm font-medium capitalize', tab === t ? 'bg-brand-dark text-on-brand' : 'bg-mist text-gray-600 hover:text-ink')" @click="tab = t">{{ t }}</button>
     </div>
     <div v-if="tab === 'team'" class="grid gap-4 md:grid-cols-3">
       <article v-for="c in TEAM" :key="c.title" class="card flex flex-col overflow-hidden">

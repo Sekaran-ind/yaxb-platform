@@ -1,17 +1,28 @@
 @import "tailwindcss";
 
-/* Brand palette carried over from the portal's Bulma variables. */
+/*
+ * Theme tokens. The defaults are the Classic theme (the portal's teal); each [data-theme] below
+ * overrides them, and dark themes also invert Tailwind's gray scale, so components written with
+ * text-gray-500, border-gray-100 and so on follow the theme. Rules for components:
+ *   - surfaces: bg-surface (cards), bg-canvas (the page), bg-mist (quiet fills), bg-console (always dark);
+ *   - text: text-ink (headings), text-body, text-gray-500/600 (secondary);
+ *   - filled buttons and bubbles: bg-brand-dark with text-on-brand (AA contrast in every theme);
+ *     bg-brand is for accents (rings, icons, bars), never behind text.
+ */
 @theme {
   --color-brand: #00d1b2;
-  --color-brand-dark: #00a88f;
-  --color-info: #209cee;
-  --color-success: #23d160;
+  --color-brand-dark: #00796b;
+  --color-on-brand: #ffffff;
+  --color-info: #1a73b8;
+  --color-success: #15803d;
   --color-warning: #ffdd57;
-  --color-danger: #ff3860;
-  --color-ink: #363636;
+  --color-danger: #d92d4b;
+  --color-ink: #2b2b2b;
   --color-body: #4a4a4a;
-  --color-mist: #f5f5f5;
-  /* Kiosk "player" console */
+  --color-mist: #f3f4f4;
+  --color-surface: #ffffff;
+  --color-canvas: #ffffff;
+  /* Kiosk "player" console: dark in every theme. */
   --color-console: #313131;
   --font-sans: BlinkMacSystemFont, -apple-system, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans",
     "Helvetica Neue", Arial, sans-serif;
@@ -22,7 +33,12 @@
     scroll-behavior: smooth;
   }
   body {
-    @apply bg-white font-sans text-body antialiased;
+    @apply bg-canvas font-sans text-body antialiased;
+  }
+  select,
+  input,
+  textarea {
+    color-scheme: inherit;
   }
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-brand;
@@ -35,17 +51,17 @@
     disabled:cursor-not-allowed disabled:opacity-60;
 }
 @utility btn-primary {
-  @apply btn bg-brand text-white hover:bg-brand-dark;
+  @apply btn bg-brand-dark text-on-brand hover:brightness-110;
 }
 @utility btn-light {
-  @apply btn border border-gray-200 bg-white text-ink hover:bg-mist;
+  @apply btn border border-gray-200 bg-surface text-ink hover:bg-mist;
 }
 @utility input {
-  @apply w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-ink shadow-sm placeholder:text-gray-400
+  @apply w-full rounded-md border border-gray-300 bg-surface px-3 py-2 text-ink shadow-sm placeholder:text-gray-400
     focus:border-brand focus:ring-2 focus:ring-brand/30 focus:outline-none;
 }
 @utility card {
-  @apply rounded-xl border border-gray-100 bg-white shadow-sm;
+  @apply rounded-xl border border-gray-100 bg-surface shadow-sm;
 }
 
 /* Neumorphic console from the original kiosk player (.c-player). */
@@ -66,4 +82,111 @@
   box-shadow:
     -4px -4px 8px rgba(0, 0, 0, 0.8),
     -4px -4px 8px rgba(255, 255, 255, 0.25);
+}
+
+/* ---- themes (lib/themes.ts) ------------------------------------------------------------------------ */
+
+/* Calm: soft blue, for clinics and quiet spaces. */
+[data-theme="calm"] {
+  color-scheme: light;
+  --color-brand: #6b8cff;
+  --color-brand-dark: #3451b2;
+  --color-on-brand: #ffffff;
+  --color-info: #1d6fa5;
+  --color-ink: #1d2742;
+  --color-body: #3c4763;
+  --color-mist: #eef1f9;
+  --color-surface: #ffffff;
+  --color-canvas: #f6f8fc;
+  --color-console: #1f2a48;
+}
+
+/* Warm: saffron and clay. */
+[data-theme="warm"] {
+  color-scheme: light;
+  --color-brand: #f2a23a;
+  --color-brand-dark: #9a4a06;
+  --color-on-brand: #ffffff;
+  --color-info: #1f6f8b;
+  --color-warning: #f6d365;
+  --color-ink: #3a2616;
+  --color-body: #5b4430;
+  --color-mist: #f8eedf;
+  --color-surface: #fffdf9;
+  --color-canvas: #fdf7ee;
+  --color-console: #3a2616;
+}
+
+/* Night: dark, easy on the eyes in low light. */
+[data-theme="night"] {
+  color-scheme: dark;
+  --color-brand: #2dd4bf;
+  --color-brand-dark: #5eead4;
+  --color-on-brand: #042f2a;
+  --color-info: #7cc4fa;
+  --color-success: #4ade80;
+  --color-warning: #facc15;
+  --color-danger: #fb7185;
+  --color-ink: #eef2f5;
+  --color-body: #c9d2da;
+  --color-mist: #1d262e;
+  --color-surface: #151c22;
+  --color-canvas: #0e1317;
+  --color-console: #0a0e11;
+  --color-gray-50: #1a2229;
+  --color-gray-100: #232d35;
+  --color-gray-200: #2e3a44;
+  --color-gray-300: #475663;
+  --color-gray-400: #7d8b97;
+  --color-gray-500: #9eabb6;
+  --color-gray-600: #b6c1ca;
+  --color-gray-700: #cdd5dc;
+  --color-gray-800: #e1e6ea;
+  --color-gray-900: #f1f4f6;
+  --color-red-700: #fda4af;
+  --color-red-800: #fecdd3;
+  --color-green-800: #bbf7d0;
+}
+
+/* High contrast: black, white and yellow, with thick focus rings (WCAG AAA text). */
+[data-theme="contrast"] {
+  color-scheme: dark;
+  --color-brand: #ffd400;
+  --color-brand-dark: #ffd400;
+  --color-on-brand: #000000;
+  --color-info: #8fd3ff;
+  --color-success: #7dff9b;
+  --color-warning: #ffd400;
+  --color-danger: #ff8a8a;
+  --color-ink: #ffffff;
+  --color-body: #ffffff;
+  --color-mist: #111111;
+  --color-surface: #000000;
+  --color-canvas: #000000;
+  --color-console: #000000;
+  --color-gray-50: #111111;
+  --color-gray-100: #8a8a8a;
+  --color-gray-200: #a0a0a0;
+  --color-gray-300: #bdbdbd;
+  --color-gray-400: #e6e6e6;
+  --color-gray-500: #f0f0f0;
+  --color-gray-600: #f5f5f5;
+  --color-gray-700: #ffffff;
+  --color-gray-800: #ffffff;
+  --color-gray-900: #ffffff;
+  --color-red-700: #ff8a8a;
+  --color-red-800: #ffb3b3;
+  --color-green-800: #9dffb5;
+}
+[data-theme="contrast"] :focus-visible {
+  outline-width: 3px;
+  outline-color: #ffd400;
+}
+[data-theme="contrast"] .card,
+[data-theme="contrast"] .console {
+  border: 1px solid #ffffff;
+}
+[data-theme="contrast"] ::placeholder {
+  color: #a8a8a8;
+  font-style: italic;
 }

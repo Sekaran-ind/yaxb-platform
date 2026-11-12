@@ -38,6 +38,7 @@ import SandboxPane from "./SandboxPane.vue";
 import ScorecardPane from "./ScorecardPane.vue";
 import ServicesScreen from "./ServicesScreen.vue";
 import TranscriptPane from "./TranscriptPane.vue";
+import ThemePicker from "@/components/settings/ThemePicker.vue";
 import TranslatePane from "./TranslatePane.vue";
 
 
@@ -408,7 +409,7 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <div role="radiogroup" aria-label="Kiosk layout" class="flex rounded-full bg-mist p-1 text-xs">
+          <div role="radiogroup" aria-label="Kiosk layout" class="hidden rounded-full bg-mist p-1 text-xs sm:flex">
             <button
               v-for="l in layoutChoices"
               :key="l"
@@ -416,7 +417,7 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
               role="radio"
               :aria-checked="settings.layout === l"
               :title="l === 'auto' ? `Automatic (now ${LAYOUT_LABELS[layout]})` : undefined"
-              :class="cn('rounded-full px-2.5 py-1 font-medium', settings.layout === l ? 'bg-white text-ink shadow-sm' : 'text-gray-600 hover:text-ink')"
+              :class="cn('rounded-full px-2.5 py-1 font-medium', settings.layout === l ? 'bg-surface text-ink shadow-sm' : 'text-gray-600 hover:text-ink')"
               @click="updateSettings({ layout: l })"
             >
               {{ LAYOUT_LABELS[l] }}
@@ -426,7 +427,7 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
             <Languages class="size-4" aria-hidden="true" />
             <span class="sr-only">Language</span>
             <select
-              class="rounded-full border-0 bg-white py-1 pr-7 pl-2 text-xs font-medium text-ink shadow-sm"
+              class="rounded-full border-0 bg-surface py-1 pr-7 pl-2 text-xs font-medium text-ink max-w-36 shadow-sm sm:max-w-none"
               :value="language"
               aria-label="Language"
               @change="setLanguage(($event.target as HTMLSelectElement).value as LanguageCode)"
@@ -434,11 +435,12 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
               <option v-for="l in LANGUAGES" :key="l.code" :value="l.code" :lang="l.speech">{{ l.native === l.label ? l.label : `${l.native} · ${l.label}` }}</option>
             </select>
           </label>
+          <ThemePicker compact class="hidden sm:flex" />
           <button type="button" class="inline-flex items-center gap-1.5 rounded-full bg-mist px-3 py-1.5 text-xs font-medium text-ink hover:ring-1 hover:ring-brand" @click="setScreen('account')">
             <UserRound class="size-4" aria-hidden="true" />{{ account.profile.value ? account.profile.value.nickname : "Sign in" }}
           </button>
           <RouterLink to="/settings" class="btn-light px-3 py-2" aria-label="Settings"><Settings2 class="size-4" aria-hidden="true" /></RouterLink>
-          <RouterLink to="/" class="btn bg-warning px-3 py-2 text-ink hover:brightness-95"><X class="size-4" aria-hidden="true" /> Close</RouterLink>
+          <RouterLink to="/" class="btn-light px-3 py-2" aria-label="Close the kiosk" title="Close the kiosk"><X class="size-4" aria-hidden="true" /><span class="hidden lg:inline">Close</span></RouterLink>
         </div>
       </div>
 
@@ -461,7 +463,7 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
         <div
           :class="
             cn(
-              'rounded-2xl bg-white shadow-sm ring-1 ring-gray-100',
+              'rounded-2xl bg-surface shadow-sm ring-1 ring-gray-100',
               layout === 'full' && 'h-[600px] overflow-y-auto p-4 [scrollbar-width:thin]',
               layout === 'pod' && 'min-h-[520px] p-4',
               layout === 'mini' && 'p-3',

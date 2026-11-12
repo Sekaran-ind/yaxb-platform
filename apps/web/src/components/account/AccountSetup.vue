@@ -75,7 +75,7 @@ async function next() {
     <div class="flex flex-wrap items-center justify-between gap-2">
       <h2 class="text-lg font-semibold text-ink">{{ editing ? "Edit your profile" : "Create your profile" }}</h2>
       <ol class="flex flex-wrap gap-1 text-xs" aria-label="Steps">
-        <li v-for="(s, i) in STEPS" :key="s" :class="cn('rounded-full px-2.5 py-1', i === step ? 'bg-brand text-white' : i < step ? 'bg-success/10 text-ink' : 'bg-mist text-gray-600')" :aria-current="i === step ? 'step' : undefined">{{ s }}</li>
+        <li v-for="(s, i) in STEPS" :key="s" :class="cn('rounded-full px-2.5 py-1', i === step ? 'bg-brand-dark text-on-brand' : i < step ? 'bg-success/10 text-ink' : 'bg-mist text-gray-600')" :aria-current="i === step ? 'step' : undefined">{{ s }}</li>
       </ol>
     </div>
 
@@ -137,7 +137,7 @@ async function next() {
           <label
             v-for="o in q.options"
             :key="o.value"
-            :class="cn('cursor-pointer rounded-full px-3 py-1.5 text-sm ring-1', form.personality[q.id] === o.value ? 'bg-brand text-white ring-brand' : 'bg-white text-ink ring-gray-200 hover:ring-brand')"
+            :class="cn('cursor-pointer rounded-full px-3 py-1.5 text-sm ring-1', form.personality[q.id] === o.value ? 'bg-brand-dark text-on-brand ring-brand' : 'bg-surface text-ink ring-gray-200 hover:ring-brand')"
           >
             <input v-model="form.personality[q.id]" type="radio" class="sr-only" :name="`q-${q.id}`" :value="o.value" />{{ o.label }}
           </label>

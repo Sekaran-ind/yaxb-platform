@@ -25,11 +25,12 @@ const TEAM = [
 
 <template>
   <PageSection color="light" title-tag="h1" title="We focus on enabling AI interventions for enterprises through a tailored approach on our platform and seamlessly integrate into their ecosystem">
-    <div class="relative isolate overflow-hidden rounded-xl bg-ink px-6 py-20 text-white md:py-28">
+    <div class="relative isolate overflow-hidden rounded-xl bg-console px-6 py-20 text-white md:py-28">
       <div aria-hidden="true" class="absolute inset-0 -z-10 bg-cover bg-center opacity-80" style="background-image: url(/headphone.jpg)" />
+      <div aria-hidden="true" class="absolute inset-0 -z-10 bg-radial from-black/75 via-black/45 to-black/20" />
       <div class="flex flex-wrap items-center justify-center gap-8">
         <p class="text-3xl font-semibold drop-shadow md:text-4xl">Let us explore...</p>
-        <RouterLink to="/kiosk" class="btn bg-white px-6 py-3 text-base text-ink hover:bg-mist">Try me</RouterLink>
+        <RouterLink to="/kiosk" class="btn-primary px-6 py-3 text-base">Try me</RouterLink>
       </div>
     </div>
     <header class="mt-14 mb-10 text-center">

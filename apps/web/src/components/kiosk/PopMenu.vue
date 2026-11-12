@@ -27,7 +27,7 @@ onBeforeUnmount(close);
     <button type="button" class="rounded-md px-2 py-1 text-xs text-gray-500 hover:bg-mist hover:text-ink" :aria-label="label" :aria-expanded="open" @click="open = !open">
       <slot name="button"><EllipsisVertical class="size-4" aria-hidden="true" /></slot>
     </button>
-    <div v-if="open" role="menu" :class="['absolute z-30 mt-1 min-w-44 rounded-lg bg-white py-1 shadow-lg ring-1 ring-gray-200', align === 'end' ? 'right-0' : 'left-0']">
+    <div v-if="open" role="menu" :class="['absolute z-30 mt-1 min-w-44 rounded-lg bg-surface py-1 shadow-lg ring-1 ring-gray-200', align === 'end' ? 'right-0' : 'left-0']">
       <slot :close="close" />
     </div>
   </div>
