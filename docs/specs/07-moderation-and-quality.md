@@ -57,4 +57,4 @@ For a notebook, totals are summed over its reviewed answers, then:
 
 | ID | Requirement | Status |
 |---|---|---|
-| MOD-40 | Moderators must see session feedback (FBK): counts of Bad, Fine and Good by day and by answer mode, and the comments. | Planned |
+| MOD-40 | Moderators must see session feedback (FBK): counts of Bad, Fine and Good by day and by answer mode, and the comments. | Built |

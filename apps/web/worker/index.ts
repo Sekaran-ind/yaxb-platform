@@ -2,6 +2,7 @@
 // else, served with strict security headers. The agent runs here (yaxb-core); provider keys never
 // leave the Worker.
 import { toSSEStream } from "@sekaran-ind/yaxb-core/events";
+import { feedbackSchema } from "@sekaran-ind/yaxb-core/feedback";
 import { chatRequestSchema, extractRequestSchema } from "@sekaran-ind/yaxb-core/schemas";
 import { createMemoryRateLimiter } from "@sekaran-ind/yaxb-core/stores";
 import { Hono, type Context } from "hono";
@@ -127,6 +128,17 @@ app.post("/api/agent/extract", async (c) => {
   return c.json(out);
 });
 
+/** Session feedback (FBK): a rating and an optional comment, nothing identifying. Same origin, session and form rate limit. */
+app.post("/api/feedback", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  const id = await clientId(c);
+  if (!(await withinLimit("form", c.env.FORM_LIMITER, `feedback:${id}`))) return jsonError(c, 429, "Too many requests. Please try again later.");
+  const parsed = feedbackSchema.safeParse((await readJson(c, MAX_FORM_BODY)).body);
+  if (!parsed.success) return jsonError(c, 422, "Invalid feedback.");
+  await kiosk(c.env).addFeedback(parsed.data);
+  return c.json({ ok: true });
+});
+
 // Read-only kiosk resources. `moderation` holds visitors' escalated questions: moderators only.
 app.get("/api/agent/:resource", async (c) => {
   sessionId(c); // issue the session cookie on the kiosk's first call
@@ -140,6 +152,9 @@ app.get("/api/agent/:resource", async (c) => {
       return c.json({ sources: k.sources() });
     case "curated":
       return c.json({ items: k.curated().slice(0, 10) });
+    case "feedback":
+      if (!(await isModerator(c))) return jsonError(c, 401, "Moderator sign-in required.");
+      return c.json(await k.feedbackSummary());
     case "moderation":
       if (!(await isModerator(c))) return jsonError(c, 401, "Moderator sign-in required.");
       return c.json({ items: await k.moderation(100) });

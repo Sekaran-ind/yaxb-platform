@@ -36,8 +36,8 @@ A profile lets the kiosk set itself up for a visitor. It follows clinux-diary's 
 
 | ID | Requirement | Status |
 |---|---|---|
-| FBK-1 | Once in a while, the kiosk must ask "How is YAXB doing this session?" with three answers: *Bad*, *Fine* and *Good*, and an optional short comment. | Planned |
-| FBK-2 | It must ask at most once per session, only after the visitor has had at least one answer, never during a journey, an emergency answer or while speaking, and at random (by default about one session in three). Dismissing it counts as an answer of "skipped" and it won't ask again that session. | Planned |
-| FBK-3 | Feedback must be stored without identifying the visitor: the rating, the comment if given, the time, the answer mode, language and whether a profile was open. Never the conversation. | Planned |
-| FBK-4 | Feedback must be sent to the server so moderators can see totals and trends (MOD-40), and recorded in the activity log when a profile is open. Offline, it waits and is sent later. | Planned |
-| FBK-5 | The frequency must be settable by the organisation, including off. | Planned |
+| FBK-1 | Once in a while, the kiosk must ask "How is YAXB doing this session?" with three answers: *Bad*, *Fine* and *Good*, and an optional short comment. | Built |
+| FBK-2 | It must ask at most once per session, only after the visitor has had at least one answer, never during a journey, an emergency answer or while speaking, and at random (by default about one session in three). Dismissing it counts as an answer of "skipped" and it won't ask again that session. | Built |
+| FBK-3 | Feedback must be stored without identifying the visitor: the rating, the comment if given, the time, the answer mode, language and whether a profile was open. Never the conversation. | Built |
+| FBK-4 | Feedback must be sent to the server so moderators can see totals and trends (MOD-40), and recorded in the activity log when a profile is open. Offline, it waits and is sent later. | Built |
+| FBK-5 | The frequency must be settable by the organisation, including off. | Built |

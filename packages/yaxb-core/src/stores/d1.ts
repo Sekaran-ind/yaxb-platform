@@ -1,4 +1,4 @@
-// Stores on Cloudflare D1. Schema: migrations/0001_init.sql and 0002_kv.sql (apply with `wrangler d1 migrations apply`).
+// Stores on Cloudflare D1. Schema: migrations/0001_init.sql, 0002_kv.sql and 0003_feedback.sql (apply with `wrangler d1 migrations apply`).
 // Typed against the subset of D1's API used here, so the core doesn't depend on Workers types.
 import {
   newModerationItem,
@@ -7,6 +7,7 @@ import {
   type ThreadState,
   type ThreadStore,
 } from "./index.js";
+import { feedbackSchema, newFeedbackItem, type FeedbackItem, type FeedbackStore } from "../feedback/index.js";
 import type { Kv, KvItem } from "./kv.js";
 
 export interface D1Like {
@@ -97,6 +98,28 @@ export function createD1Kv(db: D1Like): Kv {
     async namespaces({ limit, offset }) {
       const { results } = await db.prepare("SELECT DISTINCT namespace FROM kv ORDER BY namespace LIMIT ?1 OFFSET ?2").bind(Math.min(limit, 1000), offset).all<{ namespace: string }>();
       return results.map((r) => r.namespace.split("."));
+    },
+  };
+}
+
+/** Session feedback on D1 (migrations/0003_feedback.sql). */
+export function createD1FeedbackStore(db: D1Like): FeedbackStore {
+  type Row = { id: string; rating: FeedbackItem["rating"]; comment: string | null; mode: FeedbackItem["mode"]; language: FeedbackItem["language"]; profile: number; answers: number; created_at: string };
+  return {
+    async add(input) {
+      const item = newFeedbackItem(feedbackSchema.parse(input));
+      await db
+        .prepare("INSERT INTO feedback (id, rating, comment, mode, language, profile, answers, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)")
+        .bind(item.id, item.rating, item.comment ?? null, item.mode, item.language, item.profile ? 1 : 0, item.answers, item.created_at)
+        .run();
+      return item;
+    },
+    async list(limit = 500) {
+      const { results } = await db
+        .prepare("SELECT id, rating, comment, mode, language, profile, answers, created_at FROM feedback ORDER BY created_at DESC LIMIT ?1")
+        .bind(Math.min(Math.max(limit, 1), 2000))
+        .all<Row>();
+      return results.map(({ comment, profile, ...r }) => ({ ...r, profile: profile === 1, ...(comment ? { comment } : {}) }));
     },
   };
 }
