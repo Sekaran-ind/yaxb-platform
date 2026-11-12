@@ -31,5 +31,5 @@
 | SEC-2 | State-changing requests must come from the kiosk's own origin, belong to a session (an HMAC-signed cookie), and be rate-limited; bodies have size limits and are validated. | Built |
 | SEC-3 | The agent has no shell, no file deletion and no arbitrary network access (ANS-43); MCP servers and web search are only those the organisation configured. | Built |
 | SEC-4 | Server-side fetching of websites (KNW-21) must refuse private and local addresses, re-check redirects, and cap size and time. | Built |
-| SEC-5 | Moderator keys (MOD-20) must be random, at least 128 bits, shown once, stored hashed, revocable and optionally expiring; administrator access uses a separate secret. | Planned |
+| SEC-5 | Moderator keys (MOD-20) must be random, at least 128 bits, shown once, stored hashed, revocable and optionally expiring; administrator access uses a separate secret. | Built |
 | SEC-6 | A local box must use TLS and a bearer token, and accept browser requests only from the kiosk's configured origins. | Built |

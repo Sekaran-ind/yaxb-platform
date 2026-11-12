@@ -5,7 +5,7 @@
 | ID | Requirement | Status |
 |---|---|---|
 | MOD-1 | Escalated questions (ANS-30, ANS-31, ANS-33) must reach a moderation queue with the question (without identifiers), the reason and the time. | Built |
-| MOD-2 | Only signed-in moderators may see the queue. Today moderators sign in with one shared token (`MODERATOR_TOKEN`); MOD-20 replaces it with a key per moderator. | Built (shared token) |
+| MOD-2 | Only signed-in moderators may see the queue. Each moderator signs in with their own key (MOD-20); the shared `MODERATOR_TOKEN` still works while it is set, without a profile. | Built |
 | MOD-3 | The queue is on the Curate & Moderate page (`/kiosk/curate`), linked from Settings. | Built |
 | MOD-4 | A moderator must be able to mark an item handled, with a note, and filter the queue by state (open, handled) and reason. | Planned |
 
@@ -46,12 +46,12 @@ For a notebook, totals are summed over its reviewed answers, then:
 
 | ID | Requirement | Status |
 |---|---|---|
-| MOD-20 | The organisation (YAXB administrator) must be able to issue a moderator key: a random secret shown once when it is created, stored only as a hash, with the moderator's name, an optional expiry and a label. | Planned |
-| MOD-21 | A moderator must sign in with their key. Signing in starts a session (a signed cookie); the key itself is never stored in the browser. | Planned |
-| MOD-22 | The administrator must have a Moderators page: list moderators with their status (active, expired, revoked), last sign-in and number of reviews; issue a key; revoke a key; rotate a key (issue a new one and revoke the old). | Planned |
-| MOD-23 | Only the administrator may manage moderators, signed in with the administrator secret (a deployment secret, not a moderator key). | Planned |
-| MOD-24 | Each moderator must have a profile page like a visitor's (06): display name, languages, the knowledge sources they look after, preferences, and their own activity log (reviews done, items handled, sign-ins), never the content of what they reviewed. Unlike a visitor's, it is kept on the server, because moderators work from several devices. | Planned |
-| MOD-25 | Every review, handled item and key change must be recorded in an audit log the administrator can read: who, what, when, metadata only. | Planned |
+| MOD-20 | The organisation (YAXB administrator) must be able to issue a moderator key: a random secret shown once when it is created, stored only as a hash, with the moderator's name, an optional expiry and a label. | Built |
+| MOD-21 | A moderator must sign in with their key. Signing in starts a session (a signed cookie); the key itself is never stored in the browser. | Built |
+| MOD-22 | The administrator must have a Moderators page: list moderators with their status (active, expired, revoked), last sign-in and number of reviews; issue a key; revoke a key; rotate a key (issue a new one and revoke the old). | Built |
+| MOD-23 | Only the administrator may manage moderators, signed in with the administrator secret (a deployment secret, not a moderator key). | Built |
+| MOD-24 | Each moderator must have a profile page like a visitor's (06): display name, languages, the knowledge sources they look after, preferences, and their own activity log (reviews done, items handled, sign-ins), never the content of what they reviewed. Unlike a visitor's, it is kept on the server, because moderators work from several devices. | Built |
+| MOD-25 | Every review, handled item and key change must be recorded in an audit log the administrator can read: who, what, when, metadata only. | Built |
 
 ## Feedback
 

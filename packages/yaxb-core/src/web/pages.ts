@@ -91,14 +91,21 @@ export async function checkResolved(host: string, resolve?: Resolve): Promise<vo
     throw new PageError("That website's address couldn't be found.");
   });
   if (!addresses.length) throw new PageError("That website's address couldn't be found.");
+  // The family resolver's answer for a blocked site (malware, phishing, adult content).
+  if (addresses.some((a) => a === "0.0.0.0" || a === "::")) throw new PageError(BLOCKED_UNSAFE);
   if (addresses.some(isPrivateAddress)) throw new PageError("That address is on a local network, which the kiosk can't fetch from.");
 }
 
-/** DNS over HTTPS (Cloudflare's resolver): A and AAAA records. */
-export function dohResolver(fetchImpl: typeof fetch = (i, o) => fetch(i, o)): Resolve {
+/**
+ * DNS over HTTPS: A and AAAA records. By default Cloudflare's family resolver (1.1.1.1 for
+ * Families), which answers 0.0.0.0 / :: for sites known for malware, phishing or adult content;
+ * checkResolved turns that into "blocked as unsafe" (KNW-25).
+ */
+export const FAMILY_DOH = "https://family.cloudflare-dns.com/dns-query";
+export function dohResolver(fetchImpl: typeof fetch = (i, o) => fetch(i, o), endpoint = FAMILY_DOH): Resolve {
   return async (host) => {
     const ask = async (type: "A" | "AAAA") => {
-      const r = await fetchImpl(`https://cloudflare-dns.com/dns-query?${new URLSearchParams({ name: host, type })}`, { headers: { Accept: "application/dns-json" } });
+      const r = await fetchImpl(`${endpoint}?${new URLSearchParams({ name: host, type })}`, { headers: { Accept: "application/dns-json" } });
       if (!r.ok) throw new Error(`DNS ${r.status}`);
       const body = (await r.json()) as { Answer?: { type: number; data: string }[] };
       return (body.Answer ?? []).filter((a) => a.type === (type === "A" ? 1 : 28)).map((a) => a.data);
@@ -106,6 +113,66 @@ export function dohResolver(fetchImpl: typeof fetch = (i, o) => fetch(i, o)): Re
     const [a, aaaa] = await Promise.all([ask("A"), ask("AAAA").catch(() => [])]);
     return [...a, ...aaaa];
   };
+}
+
+// ---- which sites may be added (KNW-25..28) ----------------------------------------------------------
+
+export const BLOCKED_UNSAFE = "That website is blocked as unsafe (it is known for malware, phishing or adult content).";
+export const BLOCKED_BY_ORGANISATION = "That website isn't allowed as a source on this kiosk.";
+export const NOT_ON_ALLOWLIST = "This kiosk only accepts websites from its list of trusted sites.";
+
+/** host is the domain or a subdomain of it ("www.who.int" is on "who.int"). */
+export const onDomain = (host: string, domain: string) => host === domain || host.endsWith(`.${domain}`);
+
+/** Checks a URL must pass before every request (each redirect too). Throws PageError to refuse. */
+export type PageCheck = (url: URL) => Promise<void>;
+
+/**
+ * The organisation's rules and the optional Google Safe Browsing check:
+ *   allow   only these sites (and their subdomains); empty = any public site
+ *   block   never these sites
+ *   safeBrowsingKey  Google Safe Browsing v4 Lookup: malware, phishing, unwanted software.
+ *     Only the page's address is sent. If the check can't be made, the page is refused.
+ */
+export function siteGuard({ allow = [], block = [], safeBrowsingKey, fetch: fetchImpl = (i, o) => fetch(i, o) }: { allow?: string[]; block?: string[]; safeBrowsingKey?: string; fetch?: typeof fetch }): PageCheck {
+  return async (url) => {
+    const host = url.hostname.toLowerCase().replace(/\.$/, "");
+    if (block.some((d) => onDomain(host, d))) throw new PageError(BLOCKED_BY_ORGANISATION);
+    if (allow.length && !allow.some((d) => onDomain(host, d))) throw new PageError(`${NOT_ON_ALLOWLIST} (${allow.join(", ")})`);
+    if (!safeBrowsingKey) return;
+    let res: Response;
+    try {
+      res = await fetchImpl(`https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${encodeURIComponent(safeBrowsingKey)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client: { clientId: "yaxb-kiosk", clientVersion: "1.0" },
+          threatInfo: {
+            threatTypes: ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION"],
+            platformTypes: ["ANY_PLATFORM"],
+            threatEntryTypes: ["URL"],
+            threatEntries: [{ url: url.toString() }],
+          },
+        }),
+      });
+    } catch {
+      throw new PageError("That website's safety couldn't be checked right now. Please try again later.");
+    }
+    if (!res.ok) throw new PageError("That website's safety couldn't be checked right now. Please try again later.");
+    const body = (await res.json().catch(() => ({}))) as { matches?: unknown[] };
+    if (body.matches?.length) throw new PageError(BLOCKED_UNSAFE);
+  };
+}
+
+/** The deployment's rules from its env: WEBSITE_SOURCE_DOMAINS, WEBSITE_BLOCKED_DOMAINS, SAFE_BROWSING_API_KEY. */
+export function siteRulesFromEnv(env: Readonly<Record<string, unknown>>) {
+  const list = (k: string) =>
+    (typeof env[k] === "string" ? (env[k] as string) : "")
+      .split(/[\s,]+/)
+      .map((d) => d.toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^\*\./, ""))
+      .filter((d) => /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(d));
+  const key = typeof env.SAFE_BROWSING_API_KEY === "string" && env.SAFE_BROWSING_API_KEY.trim() ? env.SAFE_BROWSING_API_KEY.trim() : undefined;
+  return { allow: list("WEBSITE_SOURCE_DOMAINS"), block: list("WEBSITE_BLOCKED_DOMAINS"), safeBrowsingKey: key };
 }
 
 // ---- fetching ----------------------------------------------------------------------------------------
@@ -144,13 +211,17 @@ async function readCapped(res: Response, maxBytes: number): Promise<string> {
 }
 
 /** Fetch one page safely (see the header) and extract its readable text. */
-export async function fetchPage(raw: string, { fetch: fetchImpl = (i, o) => fetch(i, o), resolve, limits = PAGE_LIMITS }: { fetch?: typeof fetch; resolve?: Resolve; limits?: typeof PAGE_LIMITS } = {}): Promise<FetchedPage> {
+export async function fetchPage(
+  raw: string,
+  { fetch: fetchImpl = (i, o) => fetch(i, o), resolve, check, limits = PAGE_LIMITS }: { fetch?: typeof fetch; resolve?: Resolve; check?: PageCheck; limits?: typeof PAGE_LIMITS } = {},
+): Promise<FetchedPage> {
   let url = raw.trim();
   const signal = AbortSignal.timeout(limits.timeoutMs);
   for (let hop = 0; ; hop++) {
     const problem = urlProblem(url);
     if (problem) throw new PageError(problem);
     await checkResolved(new URL(url).hostname, resolve);
+    await check?.(new URL(url));
     let res: Response;
     try {
       res = await fetchImpl(url, { redirect: "manual", signal, headers: { Accept: "text/html,application/xhtml+xml,text/plain;q=0.8", "User-Agent": "YAXB-Kiosk/1.0 (+notebook source)" } });

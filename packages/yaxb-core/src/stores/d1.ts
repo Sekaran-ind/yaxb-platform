@@ -8,6 +8,7 @@ import {
   type ThreadStore,
 } from "./index.js";
 import { feedbackSchema, newFeedbackItem, type FeedbackItem, type FeedbackStore } from "../feedback/index.js";
+import type { AuditEvent, Moderator, ModeratorStore } from "../moderators/index.js";
 import type { Kv, KvItem } from "./kv.js";
 
 export interface D1Like {
@@ -120,6 +121,80 @@ export function createD1FeedbackStore(db: D1Like): FeedbackStore {
         .bind(Math.min(Math.max(limit, 1), 2000))
         .all<Row>();
       return results.map(({ comment, profile, ...r }) => ({ ...r, profile: profile === 1, ...(comment ? { comment } : {}) }));
+    },
+  };
+}
+
+/** Moderators, profiles and the audit log on D1 (migrations/0004_moderators.sql). */
+export function createD1ModeratorStore(db: D1Like): ModeratorStore {
+  type Row = Omit<Moderator, "roles"> & { roles: string };
+  const COLS = "id, name, label, roles, status, key_prefix, created_at, expires_at, last_seen_at, reviews";
+  const mod = (r: Row | null): Moderator | null => (r ? { ...r, roles: JSON.parse(r.roles) as Moderator["roles"] } : null);
+  return {
+    async list() {
+      const { results } = await db.prepare(`SELECT ${COLS} FROM moderators ORDER BY name`).all<Row>();
+      return results.map((r) => mod(r)!);
+    },
+    async get(id) {
+      return mod(await db.prepare(`SELECT ${COLS} FROM moderators WHERE id = ?1`).bind(id).first<Row>());
+    },
+    async byKeyHash(hash) {
+      return mod(await db.prepare(`SELECT ${COLS} FROM moderators WHERE key_hash = ?1`).bind(hash).first<Row>());
+    },
+    async keyHashOf(id) {
+      return (await db.prepare("SELECT key_hash FROM moderators WHERE id = ?1").bind(id).first<{ key_hash: string }>())?.key_hash ?? null;
+    },
+    async create(m, keyHash) {
+      await db
+        .prepare("INSERT INTO moderators (id, name, label, roles, status, key_hash, key_prefix, created_at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)")
+        .bind(m.id, m.name, m.label, JSON.stringify(m.roles), m.status, keyHash, m.key_prefix, m.created_at, m.expires_at)
+        .run();
+      return { ...m, last_seen_at: null, reviews: 0 };
+    },
+    async update(id, patch, keyHash) {
+      const sets: string[] = [];
+      const values: unknown[] = [];
+      const put = (col: string, v: unknown) => {
+        values.push(v);
+        sets.push(`${col} = ?${values.length}`);
+      };
+      for (const [k, v] of Object.entries(patch)) put(k, k === "roles" ? JSON.stringify(v) : v);
+      if (keyHash) put("key_hash", keyHash);
+      if (sets.length) {
+        values.push(id);
+        await db.prepare(`UPDATE moderators SET ${sets.join(", ")} WHERE id = ?${values.length}`).bind(...values).run();
+      }
+      return this.get(id);
+    },
+    async getProfile(id) {
+      const r = await db.prepare("SELECT moderator_id, display_name, languages, sources, preferences, updated_at FROM moderator_profiles WHERE moderator_id = ?1").bind(id).first<{ moderator_id: string; display_name: string; languages: string; sources: string; preferences: string; updated_at: string }>();
+      return r ? { ...r, languages: JSON.parse(r.languages), sources: JSON.parse(r.sources), preferences: JSON.parse(r.preferences) } : null;
+    },
+    async putProfile(p) {
+      await db
+        .prepare(
+          "INSERT INTO moderator_profiles (moderator_id, display_name, languages, sources, preferences, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT (moderator_id) DO UPDATE SET display_name = ?2, languages = ?3, sources = ?4, preferences = ?5, updated_at = ?6",
+        )
+        .bind(p.moderator_id, p.display_name, JSON.stringify(p.languages), JSON.stringify(p.sources), JSON.stringify(p.preferences), p.updated_at)
+        .run();
+    },
+    async audit(e) {
+      await db
+        .prepare("INSERT INTO audit (id, at, actor_type, actor_id, actor_name, action, target_id, details) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)")
+        .bind(e.id, e.at, e.actor_type, e.actor_id, e.actor_name, e.action, e.target_id, e.details ? JSON.stringify(e.details) : null)
+        .run();
+    },
+    async auditLog({ limit = 100, actorId, before } = {}) {
+      const where: string[] = [];
+      const values: unknown[] = [];
+      if (actorId) where.push(`actor_id = ?${values.push(actorId)}`);
+      if (before) where.push(`at < ?${values.push(before)}`);
+      values.push(Math.min(Math.max(limit, 1), 500));
+      const { results } = await db
+        .prepare(`SELECT id, at, actor_type, actor_id, actor_name, action, target_id, details FROM audit ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY at DESC LIMIT ?${values.length}`)
+        .bind(...values)
+        .all<Omit<AuditEvent, "details"> & { details: string | null }>();
+      return results.map((r) => ({ ...r, details: r.details ? JSON.parse(r.details) : null }));
     },
   };
 }

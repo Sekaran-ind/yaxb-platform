@@ -7,10 +7,12 @@ import { STORAGE_OPTIONS } from "@sekaran-ind/yaxb-core/settings";
 import { Brain, ClipboardPaste, Eye, FileText, Globe, Loader2, MessagesSquare, Plus, RefreshCw, Trash2, Upload } from "@lucide/vue";
 import { computed, ref } from "vue";
 import type { NotebookApi } from "@/composables/notebook";
+import { useCapabilities } from "@/composables/settings";
 import { ACCEPTED_FILES, readDocument } from "@/lib/browser/documents";
 import { cn } from "@/lib/cn";
 
 const props = defineProps<{ nb: NotebookApi; activeThreadId: string }>();
+const { data: caps } = useCapabilities();
 const emit = defineEmits<{ openThread: [id: string]; newThread: [] }>();
 
 const chars = (n: number) => (n >= 1000 ? `${Math.round(n / 100) / 10}k` : String(n));
@@ -159,7 +161,10 @@ async function deleteThread(id: string) {
           Also add pages it links to on the same site:
           <select v-model.number="site.follow" class="input w-20 py-1"><option v-for="n in 6" :key="n - 1" :value="n - 1">{{ n - 1 }}</option></select>
         </label>
-        <p class="text-xs text-gray-500">The kiosk's server reads the page and keeps its text in this notebook. Pages on a local network can't be added.</p>
+        <p class="text-xs text-gray-500">
+          The kiosk's server reads the page and keeps its text in this notebook. Sites known for malware, phishing or adult content are blocked, and pages on a local network can't be added.
+          <template v-if="caps?.websites?.allow.length">This kiosk accepts pages from: {{ caps.websites.allow.join(", ") }}.</template>
+        </p>
         <div class="flex justify-end gap-2">
           <button type="button" class="btn-light" @click="site = null">Cancel</button>
           <button type="submit" class="btn-primary" :disabled="busy || !site.url.trim()"><Loader2 v-if="busy" class="size-4 animate-spin" aria-hidden="true" /> Add website</button>

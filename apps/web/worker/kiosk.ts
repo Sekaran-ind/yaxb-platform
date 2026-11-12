@@ -1,10 +1,19 @@
 import { createKiosk, type Kiosk } from "@sekaran-ind/yaxb-core/agent";
 import { createVectorizeRetriever } from "@sekaran-ind/yaxb-core/knowledge";
-import { createD1FeedbackStore, createD1Kv, createD1ModerationStore, createD1ThreadStore } from "@sekaran-ind/yaxb-core/stores/d1";
+import { createModeratorService, type ModeratorService } from "@sekaran-ind/yaxb-core/moderators";
+import { createD1FeedbackStore, createD1Kv, createD1ModerationStore, createD1ModeratorStore, createD1ThreadStore } from "@sekaran-ind/yaxb-core/stores/d1";
 import { KvStore } from "@sekaran-ind/yaxb-core/stores/kv";
 import { stringEnv, type Bindings } from "./env";
 
 const kiosks = new WeakMap<object, Kiosk>();
+const moderatorServices = new WeakMap<object, ModeratorService>();
+
+/** Moderators, their keys and profiles, and the audit log, in D1 (MOD-20..25). */
+export function moderators(env: Bindings): ModeratorService {
+  let m = moderatorServices.get(env);
+  if (!m) moderatorServices.set(env, (m = createModeratorService(createD1ModeratorStore(env.DB))));
+  return m;
+}
 
 /**
  * yaxb-core's kiosk, wired to this Worker: provider keys from secrets, threads, moderation and the
