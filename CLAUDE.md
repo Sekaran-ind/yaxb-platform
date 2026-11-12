@@ -9,6 +9,7 @@ This is an npm-workspaces monorepo with one core and several surfaces, the same 
 - `packages/yaxb-core` (`@sekaran-ind/yaxb-core`): TypeScript built to `dist/` with `tsc`. It holds the kiosk agent and everything the surfaces share. Behaviour changes go here, not in a surface.
 - `apps/web`: a Vue 3 single-page app (Vite, Tailwind 4) served as Workers static assets, plus a Hono Worker (`worker/`) for `/api` that runs yaxb-core's agent. Built and run by `@cloudflare/vite-plugin`.
 - `apps/cli`: the `yaxb` command, plain ES modules. Its logic is in `src/cli.js` (`run()` takes an injected `createKiosk`); `src/main.js` wires it up.
+- `apps/native` (`@sekaran-ind/yaxb-native`): the kiosk as an Android and iOS app (Capacitor 8). Its web content is `apps/web` built with `vite build --mode native` into `apps/web/dist/native`; see its README.
 - `apps/esp32-s3-audio`: design notes for a future voice surface. There is no code yet.
 
 ## Commands
@@ -70,6 +71,7 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
 - **Vue app** (`src/`): `router.ts` lazy-loads pages; `composables/` replace React hooks (`settings.ts` is one reactive object saved to localStorage; `chat.ts`, `notebook.ts`, `speech.ts`, `width.ts`). `lib/browser/` (store, offline models, documents) is framework-free.
 - Imports use `@/` (meaning `apps/web/src/`). Never put secrets in the client, and never log message content (the moderation queue may hold health details).
 - Tailwind v4 has no config file. Tokens and reusable classes live in `src/styles.css`, and reusable classes must use `@utility`.
+- Native mode (`lib/platform.ts` `NATIVE`, PLT-10..14): routes are only `/kiosk` and `/settings` (hash history), `App.vue` drops the site navbar and footer, `installNativeFetch()` sends `/api` calls to `VITE_API_BASE` with `X-Yaxb-Session`, and `composables/speech.ts` uses `lib/native-speech.ts` (Capacitor plugins) on a device. The Worker allows `KIOSK_APP_ORIGINS` with CORS, takes the header session only from them (`session.ts` `fromApp`), and counts them as same-origin (no cookies, so no CSRF).
 - Themes (`lib/themes.ts`, `settings.theme`, SET-10..11): `[data-theme]` blocks in `styles.css` override the tokens, and dark themes invert Tailwind's gray scale (plus red-700/800 and green-800). Use `bg-surface`/`bg-canvas`/`bg-mist`, `text-ink`/`text-body`/`text-gray-*`, and `bg-brand-dark text-on-brand` for filled buttons and bubbles; never `bg-white` or white text on `bg-brand`. `bg-console` stays dark in every theme. Answers render through `AnswerText.vue` (`lib/answer-format.ts`: Markdown read into data, never `v-html`).
 - The kiosk layout lives in `components/kiosk/KioskShell.vue`, which owns the chat, speech, notebook and journey handlers. `AdaptiveNav.vue` renders each screen through a named slot.
 - Transformers.js runs in module workers (`src/workers/`).

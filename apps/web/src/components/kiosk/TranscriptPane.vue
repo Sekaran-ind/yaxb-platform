@@ -69,12 +69,12 @@ function submit() {
 <template>
   <div class="flex min-h-[360px] flex-col">
     <div class="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
-      <RouterLink to="/settings" class="inline-flex items-center gap-1 rounded-full bg-mist px-3 py-1 hover:text-ink">
+      <RouterLink to="/settings" class="chip hover:text-ink">
         <Settings2 class="size-3.5" aria-hidden="true" />
         <template v-if="answers === 'local'">Knowledge base only · on this device</template>
         <template v-else>{{ catalogError ? "Agent offline" : modelLabel ? `${provider?.label} · ${modelLabel}` : "Loading model…" }}{{ answers === "auto" ? " · curated answers on this device" : "" }}</template>
       </RouterLink>
-      <span v-if="notebookTitle" class="inline-flex items-center gap-1 truncate rounded-full bg-mist px-3 py-1" title="Answers can use this notebook's sources and memory">
+      <span v-if="notebookTitle" class="chip truncate" title="Answers can use this notebook's sources and memory">
         <NotebookPen class="size-3.5" aria-hidden="true" /> {{ notebookTitle }} · {{ sourceCount }} source{{ sourceCount === 1 ? "" : "s" }}
       </span>
       <button v-if="turns.length" type="button" class="inline-flex items-center gap-1 hover:text-ink" @click="emit('reset')"><RotateCcw class="size-3.5" aria-hidden="true" /> New conversation</button>
@@ -84,25 +84,30 @@ function submit() {
       No AI provider is configured. Add a provider key as a Worker secret (locally: <code>apps/web/.dev.vars</code>).
     </p>
 
-    <form class="flex gap-2" @submit.prevent="submit">
+    <form class="flex items-center gap-2 rounded-full border border-gray-200 bg-surface py-1.5 pr-1.5 pl-5 shadow-[var(--shadow-soft)] transition focus-within:border-gray-400 focus-within:ring-4 focus-within:ring-brand/15" @submit.prevent="submit">
       <label for="kiosk-question" class="sr-only">Your question</label>
-      <input id="kiosk-question" v-model="draft" class="input" placeholder="How may I help you ?" :maxlength="MAX_MESSAGE_CHARS" autocomplete="off" />
-      <button type="submit" class="btn-primary" :disabled="!canAsk || !draft.trim()">
+      <input id="kiosk-question" v-model="draft" class="min-w-0 flex-1 bg-transparent py-2 text-ink outline-none placeholder:text-gray-400" placeholder="Ask anything…" :maxlength="MAX_MESSAGE_CHARS" autocomplete="off" />
+      <button type="submit" class="btn-primary size-10 shrink-0 p-0 sm:w-auto sm:px-4" :disabled="!canAsk || !draft.trim()" aria-label="Ask">
         <Loader2 v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
         <Send v-else class="size-4" aria-hidden="true" />
-        Ask
+        <span class="hidden sm:inline">Ask</span>
       </button>
     </form>
 
     <div class="mt-4 flex-1 space-y-4" aria-live="polite">
-      <p v-if="!turns.length" class="pt-16 text-center text-gray-400">Let us explore. Ask a question or tap the microphone.</p>
+      <div v-if="!turns.length" class="pt-16 text-center">
+        <p class="text-lg font-medium tracking-tight text-ink">Ask a question, or tap the microphone.</p>
+        <p class="mt-1 text-sm text-gray-500">Answers come from trusted sources, with references.</p>
+      </div>
       <template v-for="t in turns" :key="t.id">
         <div v-if="t.role === 'user'" class="flex justify-end">
-          <p class="max-w-[85%] rounded-2xl rounded-br-sm bg-brand-dark px-4 py-2 whitespace-pre-wrap text-on-brand">{{ t.text }}</p>
+          <p class="max-w-[85%] rounded-3xl rounded-br-lg bg-brand-dark px-4 py-2.5 whitespace-pre-wrap text-on-brand">{{ t.text }}</p>
         </div>
         <div v-else class="flex gap-3">
-          <HardDrive v-if="t.local" class="mt-1 size-6 shrink-0 text-brand" aria-label="Answered on this device from the knowledge base" />
-          <Bot v-else class="mt-1 size-6 shrink-0 text-brand" aria-hidden="true" />
+          <span class="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-mist text-ink ring-1 ring-gray-200">
+            <HardDrive v-if="t.local" class="size-3.5" aria-label="Answered on this device from the knowledge base" />
+            <Bot v-else class="size-3.5" aria-hidden="true" />
+          </span>
           <div class="min-w-0 flex-1 space-y-2">
             <ul v-if="t.todos.length" class="space-y-1 rounded-lg bg-mist px-3 py-2 text-sm" aria-label="Agent plan">
               <li v-for="(todo, i) in t.todos" :key="i" class="flex items-center gap-2">

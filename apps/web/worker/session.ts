@@ -9,7 +9,7 @@ import { statusOf } from "@sekaran-ind/yaxb-core/moderators";
 import type { Context } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import type { AppEnv } from "./index";
-import { settings } from "./env";
+import { appOrigins, settings } from "./env";
 
 export const SESSION_COOKIE = "yaxb_sid";
 export const MODERATOR_COOKIE = "yaxb_mod";
@@ -35,12 +35,24 @@ export function safeEqual(a: string, b: string): boolean {
 
 const secure = (c: Context) => new URL(c.req.url).protocol === "https:";
 
+/** The request comes from the native app's pages (an allowed app origin, PLT-14). */
+export function fromApp(c: Context<AppEnv>): boolean {
+  const origin = c.req.header("origin");
+  return Boolean(origin && appOrigins(c.env).includes(origin));
+}
+
 /**
  * The visitor's session id, from an httpOnly cookie (issued here on first use). The agent only ever
  * sees an HMAC of it, which namespaces conversation threads so one browser can never read or
  * continue another browser's thread.
  */
 export function sessionId(c: Context<AppEnv>): string {
+  // The native app (PLT-14) keeps its session id on the device and sends it in a header: its pages
+  // are on another origin, where cookies don't work. Only from the app's own origins.
+  if (fromApp(c)) {
+    const header = c.req.header("x-yaxb-session") ?? "";
+    return /^[0-9a-f-]{36}$/.test(header) ? header : crypto.randomUUID();
+  }
   let sid = getCookie(c, SESSION_COOKIE);
   if (!sid || !/^[0-9a-f-]{36}$/.test(sid)) {
     sid = crypto.randomUUID();

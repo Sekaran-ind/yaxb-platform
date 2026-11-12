@@ -7,19 +7,18 @@ const contactOpen = ref(false);
 </script>
 
 <template>
-  <footer class="border-t border-gray-100 bg-mist">
-    <div class="mx-auto grid max-w-6xl gap-4 px-4 py-8 sm:px-6 md:grid-cols-2">
-      <RouterLink to="/" class="flex items-center gap-3">
-        <img src="/icons8-artificial-64.png" alt="" width="36" height="36" />
-        <span class="text-xl font-semibold text-ink">YAXB.AI</span>
-      </RouterLink>
-      <div class="flex items-center gap-6 md:justify-end">
-        <a href="#top" class="hover:text-brand-dark">Top</a>
-        <RouterLink to="/faq" class="hover:text-brand-dark">FAQ</RouterLink>
-        <RouterLink to="/terms-conditions" class="hover:text-brand-dark">Terms &amp; Privacy</RouterLink>
-        <button type="button" class="hover:text-brand-dark" @click="contactOpen = true">Contact</button>
+  <footer class="border-t border-gray-200/60">
+    <div class="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-8 text-sm sm:px-6 md:flex-row md:items-center md:justify-between">
+      <div class="flex items-center gap-2.5">
+        <span class="grid size-6 place-items-center rounded-md bg-brand-dark text-[10px] font-bold text-on-brand" aria-hidden="true">Y</span>
+        <span class="text-gray-500">Yaxb Technology Solutions Private Limited · GSTIN 33AABCY8630L1Z1</span>
       </div>
-      <p class="text-sm text-gray-500 md:col-span-2">Yaxb Technology Solutions Private Limited - GSTIN : 33AABCY8630L1Z1</p>
+      <nav class="flex items-center gap-5 text-gray-500" aria-label="Footer">
+        <a href="#top" class="hover:text-ink">Top</a>
+        <RouterLink to="/faq" class="hover:text-ink">FAQ</RouterLink>
+        <RouterLink to="/terms-conditions" class="hover:text-ink">Terms &amp; Privacy</RouterLink>
+        <button type="button" class="hover:text-ink" @click="contactOpen = true">Contact</button>
+      </nav>
     </div>
     <BaseModal :open="contactOpen" title="Hello" @close="contactOpen = false"><ContactPanel /></BaseModal>
   </footer>

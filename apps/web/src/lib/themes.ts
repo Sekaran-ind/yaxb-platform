@@ -2,9 +2,9 @@
 // the device is in dark mode.
 
 export const THEMES = [
-  { id: "classic", label: "Classic", description: "YAXB teal on white", swatch: ["#ffffff", "#00d1b2", "#00796b"], dark: false },
-  { id: "calm", label: "Calm", description: "Soft blue, for quiet spaces", swatch: ["#f6f8fc", "#6b8cff", "#3451b2"], dark: false },
-  { id: "warm", label: "Warm", description: "Saffron and clay", swatch: ["#fdf7ee", "#f2a23a", "#9a4a06"], dark: false },
+  { id: "classic", label: "Classic", description: "Ink on warm white, teal accent", swatch: ["#fafaf9", "#14b8a6", "#111113"], dark: false },
+  { id: "calm", label: "Calm", description: "Soft blue, for quiet spaces", swatch: ["#f7f8fc", "#6b8cff", "#24357a"], dark: false },
+  { id: "warm", label: "Warm", description: "Saffron and clay", swatch: ["#fdf7ee", "#f2a23a", "#3a2616"], dark: false },
   { id: "night", label: "Night", description: "Dark, for low light", swatch: ["#0e1317", "#2dd4bf", "#5eead4"], dark: true },
   { id: "contrast", label: "High contrast", description: "Black, white and yellow; largest contrast", swatch: ["#000000", "#ffd400", "#ffffff"], dark: true },
 ] as const;

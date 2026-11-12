@@ -39,6 +39,7 @@ import ScorecardPane from "./ScorecardPane.vue";
 import ServicesScreen from "./ServicesScreen.vue";
 import TranscriptPane from "./TranscriptPane.vue";
 import ThemePicker from "@/components/settings/ThemePicker.vue";
+import { NATIVE } from "@/lib/platform";
 import TranslatePane from "./TranslatePane.vue";
 
 
@@ -399,17 +400,18 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
 <template>
   <!-- Measure the full available width (not the mini card), so Auto can grow back out of mini. -->
   <div ref="root" class="w-full">
-    <div :class="cn('mx-auto px-2 py-4 sm:px-4', layout === 'mini' ? 'max-w-md' : 'max-w-7xl')">
-      <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+    <div :class="cn('mx-auto px-3 py-5 sm:px-5 sm:py-6', layout === 'mini' ? 'max-w-md' : 'max-w-7xl')">
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div class="min-w-0">
-          <h1 :class="cn('font-bold tracking-tight text-ink', layout === 'mini' ? 'text-xl' : 'text-2xl')">YAXB AI Kiosk!</h1>
-          <p v-if="nb.notebook.value" class="truncate text-xs text-gray-500">
+          <p class="eyebrow">AI Kiosk</p>
+          <h1 :class="cn('font-semibold tracking-tight text-ink', layout === 'mini' ? 'text-xl' : 'text-2xl')">How can we help today?</h1>
+          <p v-if="nb.notebook.value" class="mt-0.5 truncate text-xs text-gray-500">
             Notebook: {{ nb.notebook.value.title }} · {{ sourceCount }} source{{ sourceCount === 1 ? "" : "s" }}
             <span v-if="offline" class="ml-2 text-info">· Loading on-device model{{ offline.progress ? ` ${Math.round(offline.progress)}%` : "…" }}</span>
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <div role="radiogroup" aria-label="Kiosk layout" class="hidden rounded-full bg-mist p-1 text-xs sm:flex">
+          <div role="radiogroup" aria-label="Kiosk layout" class="hidden rounded-full bg-mist p-0.5 text-xs sm:flex">
             <button
               v-for="l in layoutChoices"
               :key="l"
@@ -417,7 +419,7 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
               role="radio"
               :aria-checked="settings.layout === l"
               :title="l === 'auto' ? `Automatic (now ${LAYOUT_LABELS[layout]})` : undefined"
-              :class="cn('rounded-full px-2.5 py-1 font-medium', settings.layout === l ? 'bg-surface text-ink shadow-sm' : 'text-gray-600 hover:text-ink')"
+              :class="cn('rounded-full px-2.5 py-1 font-medium transition', settings.layout === l ? 'bg-surface text-ink shadow-sm' : 'text-gray-500 hover:text-ink')"
               @click="updateSettings({ layout: l })"
             >
               {{ LAYOUT_LABELS[l] }}
@@ -427,7 +429,7 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
             <Languages class="size-4" aria-hidden="true" />
             <span class="sr-only">Language</span>
             <select
-              class="rounded-full border-0 bg-surface py-1 pr-7 pl-2 text-xs font-medium text-ink max-w-36 shadow-sm sm:max-w-none"
+              class="rounded-full border-0 bg-surface py-1 pr-7 pl-2 text-xs font-medium text-ink max-w-36 shadow-sm sm:max-w-44"
               :value="language"
               aria-label="Language"
               @change="setLanguage(($event.target as HTMLSelectElement).value as LanguageCode)"
@@ -439,8 +441,8 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
           <button type="button" class="inline-flex items-center gap-1.5 rounded-full bg-mist px-3 py-1.5 text-xs font-medium text-ink hover:ring-1 hover:ring-brand" @click="setScreen('account')">
             <UserRound class="size-4" aria-hidden="true" />{{ account.profile.value ? account.profile.value.nickname : "Sign in" }}
           </button>
-          <RouterLink to="/settings" class="btn-light px-3 py-2" aria-label="Settings"><Settings2 class="size-4" aria-hidden="true" /></RouterLink>
-          <RouterLink to="/" class="btn-light px-3 py-2" aria-label="Close the kiosk" title="Close the kiosk"><X class="size-4" aria-hidden="true" /><span class="hidden lg:inline">Close</span></RouterLink>
+          <RouterLink to="/settings" class="btn-light size-9 p-0" aria-label="Settings" title="Settings"><Settings2 class="size-4" aria-hidden="true" /></RouterLink>
+          <RouterLink v-if="!NATIVE" to="/" class="btn-light size-9 p-0" aria-label="Close the kiosk" title="Close the kiosk"><X class="size-4" aria-hidden="true" /></RouterLink>
         </div>
       </div>
 

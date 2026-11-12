@@ -1,9 +1,19 @@
-import { createRouter, createWebHistory } from "vue-router";
+import { createRouter, createWebHashHistory, createWebHistory, type RouteRecordRaw } from "vue-router";
+import { NATIVE } from "./lib/platform";
 
 // Pages load on demand, so the home page doesn't download the kiosk (or its models' code).
+// The native app (PLT-10) opens straight into the kiosk: its only pages are the kiosk and Settings.
+const NATIVE_ROUTES: RouteRecordRaw[] = [
+  { path: "/", redirect: "/kiosk" },
+  { path: "/kiosk", component: () => import("./pages/KioskPage.vue"), meta: { title: "AI Kiosk" } },
+  { path: "/settings", component: () => import("./pages/SettingsPage.vue"), meta: { title: "Settings" } },
+  { path: "/:rest(.*)*", redirect: "/kiosk" },
+];
+
 export const router = createRouter({
-  history: createWebHistory(),
-  routes: [
+  // The app's pages are files on the device: hash URLs need no server.
+  history: NATIVE ? createWebHashHistory() : createWebHistory(),
+  routes: NATIVE ? NATIVE_ROUTES : [
     { path: "/", component: () => import("./pages/HomePage.vue"), meta: { title: "Meet YAXB" } },
     { path: "/kiosk", component: () => import("./pages/KioskPage.vue"), meta: { title: "AI Kiosk" } },
     { path: "/kiosk/curate", component: () => import("./pages/CuratePage.vue"), meta: { title: "Curate" } },
@@ -29,5 +39,5 @@ export const router = createRouter({
 
 router.afterEach((to) => {
   const title = to.meta.title as string | undefined;
-  document.title = !title || title === "Meet YAXB" ? "Meet YAXB" : `${title} | YAXB`;
+  document.title = NATIVE ? "YAXB Kiosk" : !title || title === "Meet YAXB" ? "Meet YAXB" : `${title} | YAXB`;
 });
