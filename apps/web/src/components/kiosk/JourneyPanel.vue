@@ -4,7 +4,8 @@
 // A question can also be answered in the visitor's own words: slot filling reads them into the
 // form's fields as suggestions to check (lib/browser/slots), never as answers given for them.
 import { createRunner, type Journey, type RunState, type ServiceHandler, type SlotConfirm, type SlotVia } from "@sekaran-ind/yaxb-core/journeys";
-import { CheckCircle2, Circle, Copy, Loader2, Mic, MicOff, RotateCcw, Sparkles, Square, Volume2, Wand2, XCircle } from "@lucide/vue";
+import { summarizeJourney, summarizeRun } from "@sekaran-ind/yaxb-core/journeys";
+import { CheckCircle2, Circle, Copy, Loader2, Mic, MicOff, NotebookPen, RotateCcw, Sparkles, Square, Volume2, Wand2, XCircle } from "@lucide/vue";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { effectiveSelection, settings, useProviders } from "@/composables/settings";
 import { useSpeechInput } from "@/composables/speech";
@@ -25,6 +26,22 @@ const copied = ref(false);
 
 const promptStep = computed(() => state.value?.prompt?.step ?? null);
 const currentLabel = computed(() => (state.value?.current ? (props.journey.steps[state.value.current]?.label ?? state.value.current) : ""));
+
+// ---- summaries (JRN-20, JRN-22) ---------------------------------------------------------------
+const about = computed(() => summarizeJourney(props.journey));
+const run = computed(() => (state.value?.status === "done" ? summarizeRun(props.journey, state.value) : null));
+const saved = ref<string | null>(null);
+async function saveRun() {
+  const add = props.services["notebook.add"];
+  if (!run.value || !add) return;
+  try {
+    const final = Object.values(props.journey.steps).find((s) => s.final) ?? props.journey.steps[props.journey.start]!;
+    await add({ title: `${props.journey.title} (${new Date().toLocaleDateString()})`, text: run.value.markdown }, { journey: props.journey, step: final, scope: { answers: state.value?.answers ?? {} } });
+    saved.value = "Saved to your notebook.";
+  } catch (e) {
+    saved.value = (e as Error).message;
+  }
+}
 
 // ---- slot filling -----------------------------------------------------------------------------
 const said = ref("");
@@ -154,6 +171,7 @@ onBeforeUnmount(() => {
       <div>
         <h3 class="text-lg font-semibold text-ink">{{ journey.title }}</h3>
         <p v-if="journey.summary" class="text-sm text-gray-600">{{ journey.summary }}</p>
+        <p class="mt-1 text-xs text-gray-500">{{ about.privacy }}</p>
       </div>
       <button type="button" class="btn-light" @click="emit('close')">Close</button>
     </div>
@@ -216,7 +234,18 @@ onBeforeUnmount(() => {
         <button type="button" class="btn-light" @click="emit('speak', state.result.text)"><Volume2 class="size-4" aria-hidden="true" /> Read aloud</button>
         <button type="button" class="btn-light" @click="copy"><Copy class="size-4" aria-hidden="true" /> {{ copied ? "Copied" : "Copy" }}</button>
         <button type="button" class="btn-light" @click="restart"><RotateCcw class="size-4" aria-hidden="true" /> Start again</button>
+        <button v-if="run && services['notebook.add']" type="button" class="btn-light" @click="saveRun"><NotebookPen class="size-4" aria-hidden="true" /> Save to notebook</button>
       </div>
+      <p v-if="saved" role="status" class="text-sm text-ink">{{ saved }}</p>
+      <details v-if="run && (run.answers.length || run.steps.length)" class="rounded-lg bg-mist px-3 py-2 text-sm">
+        <summary class="cursor-pointer font-medium text-ink">What this service did</summary>
+        <ol class="mt-2 space-y-1">
+          <li v-for="(st, i) in run.steps" :key="i" class="flex items-center gap-2"><CheckCircle2 v-if="st.ok" class="size-4 text-success" aria-hidden="true" /><XCircle v-else class="size-4 text-danger" aria-hidden="true" />{{ st.label }}</li>
+        </ol>
+        <dl v-if="run.answers.length" class="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-[auto_1fr]">
+          <template v-for="(a, i) in run.answers" :key="i"><dt class="text-gray-500">{{ a.field }}</dt><dd class="text-ink">{{ a.value }}</dd></template>
+        </dl>
+      </details>
     </div>
 
     <div v-if="state?.status === 'failed'" role="alert" class="space-y-2 rounded-lg bg-danger/10 px-4 py-3 text-sm text-red-800">

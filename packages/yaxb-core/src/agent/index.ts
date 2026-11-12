@@ -28,6 +28,7 @@ const MEMORY_KEY = "/AGENTS.md";
 import { createChatModel, listProviders, ProviderError, resolveSelection, type Env } from "../providers/index.js";
 import { askSchema, extractSchema, LANGUAGES, type AskInput, type ExtractInput, type Selection } from "../schemas/index.js";
 import { checkExtracted, fieldsJsonSchema, type SlotFill } from "../journeys/slots.js";
+import { journeysText } from "../journeys/summary.js";
 import { offeringsText, servicesFor } from "../services/index.js";
 import { capabilities, effectiveSettings, isOn, languageName, SUBAGENT_OPTIONS, type AgentSettings } from "../settings/index.js";
 import { createPassedRetriever, EMBEDDING_MODELS, embeddingModelFor, resolveRetrieved, type Embed } from "../knowledge/semantic.js";
@@ -181,7 +182,10 @@ export function planTurn(
             notebook: hasNotebook,
             memory,
             skills: skills.length > 0,
-            offerings: offeringsText(servicesFor(kioskContent.services, { journeys: kioskContent.journeys.map((j) => j.id) })),
+            // What visitors can do, and each guided service from its own definition (JRN-21), so "what can you do?" is current.
+            offerings: `${offeringsText(servicesFor(kioskContent.services, { journeys: kioskContent.journeys.map((j) => j.id) }))}
+Guided services, from their definitions:
+${journeysText(kioskContent.journeys)}`,
           })
         : "") + turnPromptAddendum({ language: languageName(settings.language), localKnowledge: localKnowledge && isOn(settings.tools, "search_knowledge_base"), web }),
   };

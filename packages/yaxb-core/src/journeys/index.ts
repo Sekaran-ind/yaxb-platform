@@ -29,6 +29,7 @@ import { conditionProblem, holds, placeholders, render, type Scope } from "./exp
 
 export * from "./expressions.js";
 export * from "./slots.js";
+export * from "./summary.js";
 
 export const FIELD_TYPES = ["text", "textarea", "select", "boolean", "number", "date", "source", "language"] as const;
 export const FIELD_ENTITIES = ["person", "location", "organization", "email", "phone"] as const;
