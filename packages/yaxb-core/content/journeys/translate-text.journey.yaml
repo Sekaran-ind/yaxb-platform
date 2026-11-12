@@ -1,0 +1,30 @@
+kind: journey
+id: translate-text
+version: 1
+title: Translate text
+summary: Translate a message or an answer into another language, on this device.
+icon: languages
+category: tools
+start: what
+steps:
+  what:
+    label: Text and language
+    ask: What should I translate, and into which language?
+    fields:
+      - { id: text, type: textarea, label: Text, required: true }
+      - { id: language, type: language, label: Language, default: hin_Deva, required: true }
+      - { id: speak, type: boolean, label: Read it aloud, default: false }
+    service: offline.translate
+    with: { text: "{{answers.what.text}}", language: "{{answers.what.language}}" }
+    decide:
+      - { if: answers.what.speak, to: speak }
+      - { to: done }
+  speak:
+    label: Read aloud
+    service: speech.speak
+    with: { text: "{{steps.what.text}}", language: "{{answers.what.language}}" }
+    onError: continue
+    next: done
+  done:
+    final: true
+    result: { title: Translation, text: "{{steps.what.text}}" }

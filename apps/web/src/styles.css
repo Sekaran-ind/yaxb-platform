@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+/* Brand palette carried over from the portal's Bulma variables. */
+@theme {
+  --color-brand: #00d1b2;
+  --color-brand-dark: #00a88f;
+  --color-info: #209cee;
+  --color-success: #23d160;
+  --color-warning: #ffdd57;
+  --color-danger: #ff3860;
+  --color-ink: #363636;
+  --color-body: #4a4a4a;
+  --color-mist: #f5f5f5;
+  /* Kiosk "player" console */
+  --color-console: #313131;
+  --font-sans: BlinkMacSystemFont, -apple-system, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans",
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-white font-sans text-body antialiased;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand;
+  }
+}
+
+/* Reusable component classes (Tailwind v4 @utility so they can be @apply'd). */
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-md px-5 py-2.5 text-sm font-semibold transition
+    disabled:cursor-not-allowed disabled:opacity-60;
+}
+@utility btn-primary {
+  @apply btn bg-brand text-white hover:bg-brand-dark;
+}
+@utility btn-light {
+  @apply btn border border-gray-200 bg-white text-ink hover:bg-mist;
+}
+@utility input {
+  @apply w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-ink shadow-sm placeholder:text-gray-400
+    focus:border-brand focus:ring-2 focus:ring-brand/30 focus:outline-none;
+}
+@utility card {
+  @apply rounded-xl border border-gray-100 bg-white shadow-sm;
+}
+
+/* Neumorphic console from the original kiosk player (.c-player). */
+@utility console {
+  @apply rounded-2xl bg-console p-5 text-white;
+  box-shadow:
+    inset -6px -6px 12px rgba(0, 0, 0, 0.8),
+    inset 6px 6px 12px rgba(255, 255, 255, 0.4);
+}
+@utility console-orb {
+  box-shadow:
+    -6px -6px 12px rgba(0, 0, 0, 0.8),
+    -6px -6px 12px rgba(255, 255, 255, 0.4);
+}
+@utility console-btn {
+  @apply flex items-center justify-center rounded-full bg-console text-white transition hover:text-brand
+    disabled:opacity-50;
+  box-shadow:
+    -4px -4px 8px rgba(0, 0, 0, 0.8),
+    -4px -4px 8px rgba(255, 255, 255, 0.25);
+}

@@ -1,0 +1,61 @@
+kind: journey
+id: summarise-source
+version: 1
+title: Summarise a source
+summary: Get the gist of a document in your notebook, on this device or with the assistant.
+icon: file-text
+category: notebook
+start: pick
+steps:
+  pick:
+    label: Choose a source
+    ask: Which source should I summarise, and how?
+    fields:
+      - { id: source, type: source, label: Source, required: true }
+      - id: method
+        type: select
+        label: Summarise with
+        required: true
+        default: device
+        options:
+          - { value: device, label: "This device (offline model, private)" }
+          - { value: assistant, label: "The assistant (better, uses the AI provider)" }
+    next:
+      - { if: "answers.pick.method == 'device'", to: on-device }
+      - { to: with-assistant }
+  on-device:
+    label: Summarise on this device
+    stage: Summarise
+    service: offline.summarize
+    with: { text: "{{answers.pick.source.text}}" }
+    next: keep
+  with-assistant:
+    label: Summarise with the assistant
+    stage: Summarise
+    service: agent.ask
+    with:
+      message: "Use the summarise-document skill to summarise the notebook source notebook:{{answers.pick.source.id}} ({{answers.pick.source.title}}). Read it from /notebook/sources/{{answers.pick.source.id}}.md."
+    next: keep
+  keep:
+    label: Keep it?
+    stage: Save
+    ask: "Here's the summary. Save it to your notebook as a new source?"
+    fields:
+      - { id: save, type: boolean, label: Save to the notebook, default: true }
+    submitLabel: Continue
+    decide:
+      - { if: answers.keep.save, to: save }
+      - { to: done }
+  save:
+    label: Save to the notebook
+    stage: Save
+    service: notebook.add
+    with:
+      title: "Summary: {{answers.pick.source.title}}"
+      text: "{{steps.on-device.text}}{{steps.with-assistant.text}}"
+    next: done
+  done:
+    final: true
+    result:
+      title: "Summary of {{answers.pick.source.title}}"
+      text: "{{steps.on-device.text}}{{steps.with-assistant.text}}"

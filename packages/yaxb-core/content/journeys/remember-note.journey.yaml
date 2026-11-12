@@ -1,0 +1,20 @@
+kind: journey
+id: remember-note
+version: 1
+title: Add to notebook memory
+summary: Tell the assistant something to keep in mind for this notebook, such as your preferred language or the notebook's purpose.
+icon: brain
+category: notebook
+start: note
+steps:
+  note:
+    label: What to remember
+    ask: "What should the assistant remember in this notebook? Don't include ID numbers or personal medical details."
+    fields:
+      - { id: text, type: textarea, label: Note, required: true, placeholder: "e.g. Answer in short sentences. This notebook is about my mother's hip operation." }
+    service: notebook.remember
+    with: { text: "{{answers.note.text}}" }
+    next: done
+  done:
+    final: true
+    result: { title: Remembered, text: "Saved to this notebook's memory: {{answers.note.text}}" }

@@ -1,0 +1,31 @@
+[Unit]
+Description=yaxb-box (the YAXB kiosk's local storage: SQLite + Litestream)
+After=network-online.target
+Wants=network-online.target
+# Litestream must be watching before the first write, so every change reaches the replica.
+Wants=litestream.service
+After=litestream.service
+
+[Service]
+Type=simple
+User=yaxbbox
+Group=yaxbbox
+EnvironmentFile=/etc/yaxb-box/yaxb-box.env
+# A new SD card restores the data from the replica on first start ("+": the replica is root-owned).
+ExecStartPre=+/opt/yaxb-box/deploy/restore-if-empty.sh
+ExecStart=/opt/node/bin/node --disable-warning=ExperimentalWarning --max-old-space-size=256 /opt/yaxb-box/src/main.js
+Restart=always
+RestartSec=3
+# Let the server close the database cleanly (main.js handles SIGTERM).
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/yaxb-box
+ReadOnlyPaths=/etc/yaxb-box /opt/yaxb-box /opt/node
+
+[Install]
+WantedBy=multi-user.target

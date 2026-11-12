@@ -1,0 +1,153 @@
+{
+  "_comment": "Allowlist of LLM providers and models users may pick on the Settings page. A provider is offered only when its credential (or base URL) is set where the surface runs: Worker secrets for the web, environment variables for the CLI. `temperature: false` marks models that reject a custom temperature. Edit this file to add or retire models. Hugging Face models are `<repo>:<inference provider>`: pin a provider that supports tool calling (see https://router.huggingface.co/v1/models, `supports_tools`), because the agent needs tools. `harness: \"lean\"` gives a model only the kiosk tools (no planning, files or subagents): use it for small local models.",
+  "default": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-5-5"
+  },
+  "providers": [
+    {
+      "id": "anthropic",
+      "label": "Anthropic Claude",
+      "models": [
+        {
+          "id": "claude-sonnet-5-5",
+          "label": "Claude Sonnet 5.5 (balanced)",
+          "temperature": false
+        },
+        {
+          "id": "claude-opus-5-5",
+          "label": "Claude Opus 5.5 (most capable)",
+          "temperature": false
+        },
+        {
+          "id": "claude-haiku-5-5",
+          "label": "Claude Haiku 5.5 (fastest)"
+        }
+      ],
+      "credential": "ANTHROPIC_API_KEY"
+    },
+    {
+      "id": "openai",
+      "label": "OpenAI",
+      "models": [
+        {
+          "id": "gpt-5.5",
+          "label": "GPT-5.5",
+          "temperature": false
+        },
+        {
+          "id": "gpt-5.5-mini",
+          "label": "GPT-5.5 mini",
+          "temperature": false
+        }
+      ],
+      "credential": "OPENAI_API_KEY"
+    },
+    {
+      "id": "google_genai",
+      "label": "Google Gemini",
+      "models": [
+        {
+          "id": "gemini-2.5-pro",
+          "label": "Gemini 2.5 Pro"
+        },
+        {
+          "id": "gemini-2.5-flash",
+          "label": "Gemini 2.5 Flash"
+        }
+      ],
+      "credential": "GOOGLE_API_KEY"
+    },
+    {
+      "id": "workers_ai",
+      "label": "Cloudflare Workers AI",
+      "credential": "CLOUDFLARE_API_TOKEN",
+      "requires": [
+        "CLOUDFLARE_ACCOUNT_ID"
+      ],
+      "models": [
+        {
+          "id": "@cf/openai/gpt-oss-120b",
+          "label": "gpt-oss-120b (Workers AI)"
+        },
+        {
+          "id": "@cf/openai/gpt-oss-20b",
+          "label": "gpt-oss-20b (Workers AI)"
+        },
+        {
+          "id": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+          "label": "Llama 3.3 70B fast (Workers AI)"
+        },
+        {
+          "id": "@cf/mistralai/mistral-small-3.1-24b-instruct",
+          "label": "Mistral Small 3.1 24B (Workers AI)"
+        }
+      ]
+    },
+    {
+      "id": "huggingface",
+      "label": "Hugging Face Inference Providers",
+      "credential": "HF_TOKEN",
+      "models": [
+        {
+          "id": "openai/gpt-oss-120b:groq",
+          "label": "gpt-oss-120b (via Groq)"
+        },
+        {
+          "id": "openai/gpt-oss-120b:cerebras",
+          "label": "gpt-oss-120b (via Cerebras)"
+        },
+        {
+          "id": "openai/gpt-oss-20b:groq",
+          "label": "gpt-oss-20b (via Groq)"
+        },
+        {
+          "id": "meta-llama/Llama-3.3-70B-Instruct:novita",
+          "label": "Llama 3.3 70B (via Novita)"
+        },
+        {
+          "id": "Qwen/Qwen3-235B-A22B-Instruct-2507:deepinfra",
+          "label": "Qwen3 235B Instruct (via DeepInfra)"
+        }
+      ]
+    },
+    {
+      "id": "mistralai",
+      "label": "Mistral AI",
+      "credential": "MISTRAL_API_KEY",
+      "models": [
+        {
+          "id": "mistral-large-latest",
+          "label": "Mistral Large"
+        },
+        {
+          "id": "mistral-small-latest",
+          "label": "Mistral Small"
+        }
+      ]
+    },
+    {
+      "id": "ollama",
+      "label": "Local (Ollama)",
+      "models": [
+        {
+          "id": "llama3.1:8b",
+          "label": "Llama 3.1 8B (Ollama)",
+          "harness": "lean"
+        },
+        {
+          "id": "mistral",
+          "label": "Mistral 7B (Ollama)",
+          "harness": "lean"
+        },
+        {
+          "id": "gpt-oss:20b",
+          "label": "gpt-oss-20b (Ollama)",
+          "harness": "lean"
+        }
+      ],
+      "credential": "OLLAMA_BASE_URL",
+      "local": true
+    }
+  ]
+}

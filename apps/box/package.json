@@ -1,0 +1,14 @@
+{
+  "name": "@sekaran-ind/yaxb-box",
+  "version": "0.1.0",
+  "private": true,
+  "description": "yaxb-box: the kiosk's storage on the local network (SQLite + Litestream on a Raspberry Pi). No dependencies.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "bin": { "yaxb-box": "./src/main.js" },
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": { "node": ">=22.13" }
+}

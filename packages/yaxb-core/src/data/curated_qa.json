@@ -1,0 +1,345 @@
+[
+  {
+    "id": "qa-001",
+    "question": "The employees in my area do not always follow the procedure documents when completing certain tasks. In fact, one employee has even developed a shortcut that he encourages others to use. I do not want my coworkers to know that I raised this issue, but I am concerned about quality. What should I do?",
+    "answer": "Raise the issue right away with your supervisor or manager, or use the E&C Helpline or website (where you can remain anonymous where permitted by law). Failure to report the problem could result in nonconforming product or services, regulatory problems, or other serious issues. Your report will be kept as confidential as possible under the circumstances.",
+    "category": "Following procedures",
+    "red_flag": true
+  },
+  {
+    "id": "qa-002",
+    "question": "What should I do if I receive a complaint about a Cook product from one of my customers?",
+    "answer": "If you become aware of a problem that happened while using a Cook Medical or Life Sciences product, you must report the issue right away to the assigned individuals or groups within Cook. Your region’s Customer Support & Delivery department can tell you how to report the complaint. Cook must report such events with any of our products within 24 hours of learning about them, even if we are not sure there is a cause-and-effect relationship between the product and the “event” or even if the product with the problem is not ours.",
+    "category": "Product complaints",
+    "red_flag": false
+  },
+  {
+    "id": "qa-003",
+    "question": "I am concerned that one of our new employees appears not to be completing the required number of quality inspections. What should I do?",
+    "answer": "Raise the issue right away with your supervisor or manager, or use the E&C Helpline or website (where you can remain anonymous where permitted by law). Failure to report the problem could result in nonconforming product or services, regulatory problems, or other serious issues. Your report will be kept as confidential as possible under the circumstances.",
+    "category": "Internal quality control inspections",
+    "red_flag": true
+  },
+  {
+    "id": "qa-004",
+    "question": "What should I do if I am concernedabout the quality of some of thefood or service items I received fora big catering job at the resort?",
+    "answer": "You should always report any qualityconcerns to your supervisor ormanager. Or you may use the E&CHelpline or website (where you canremain anonymous where permittedby law).",
+    "category": "Quality of materials or service items",
+    "red_flag": false
+  },
+  {
+    "id": "qa-005",
+    "question": "I am a manufacturing supervisor.In preparing for a manufacturingoperation, we are required to verifythat the equipment we’ll be usingis clean and ready for use. When Iwent into the manufacturing area,the operator informed me that theequipment was clean and ready.Without inspecting the equipmentmyself, I signed the “Verified by”statement in the manufacturingrecord. Was that okay?",
+    "answer": "No, you did not actually perform anindependent inspection to verify thatthe equipment was clean and ready foruse. You should not have signed thedocumentation until you completedyour own inspection.",
+    "category": "Verifications",
+    "red_flag": false
+  },
+  {
+    "id": "qa-006",
+    "question": "One of my direct reports recentlyreturned from a business trip.In reviewing his expense report,I noticed that his hotel receiptcontains personal as well as businessrelatedexpenses, but the amountentered on his expense reportreflects the total amount of thereceipt. Should I be concerned?",
+    "answer": "Yes. Travel expenses incurred whileperforming necessary businessactivities are business expenses andreimbursable. However, personalexpenses incurred while traveling arenot business expenses and are notreimbursable. You should address thediscrepancy with the employee andtell him to correct the expense report.",
+    "category": "Expenses",
+    "red_flag": false
+  },
+  {
+    "id": "qa-007",
+    "question": "I suspect that one of my coworkersat the resort is not assigning ahotel guest’s rewards points to theguest’s account, but instead to hisown brother’s account. I can’t provethat he did this, and even if he did,he may have only done it once orin error. Should I come forward andreport my suspicions?",
+    "answer": "Yes. Each of us is trusted to conductbusiness honestly and accurately andmaintain the integrity of our books andrecords—including those that relateto our reward programs. You shouldcome forward, report what you saw,and allow others at Cook to determineif something improper occurred. If youhave a concern, it’s better to address itearly before it happens again.",
+    "category": "Resort rewards points",
+    "red_flag": false
+  },
+  {
+    "id": "qa-008",
+    "question": "I am attending a conference forwork. The conference is being heldat a Marriott property but myrewards program is with Hilton.Can I reserve a hotel room at theHilton down the road so I can getthe reward points?",
+    "answer": "It depends. If the Hilton is the sameprice or less than the conferencehotel, then yes, it would be okay toreserve a room at the Hilton and walkto the conference. If the Hilton is moreexpensive than the conference hotel,then you must reserve your room atthe conference hotel.",
+    "category": "Hotel reservations for a conference",
+    "red_flag": false
+  },
+  {
+    "id": "qa-009",
+    "question": "My department has not reviewedthe contents of our file cabinetsin several years. We scheduled arecords review day and want tobe sure we dispose of documentsproperly. Where can I go for help?",
+    "answer": "Refer to the Record ManagementProgram policy on disposal of records,and ask your department recordscoordinator or the Ethics & Compliancedepartment at Cook for the currentrecord retention schedule. Be sure toidentify any records that may be onLegal Hold and make sure they areretained according to the requirementsof the Legal Hold. The Cook GroupLegal department can provideinformation on Legal Holds.",
+    "category": "Document disposal",
+    "red_flag": false
+  },
+  {
+    "id": "qa-010",
+    "question": "My project requires data transfersfrom one country to another. Whatshould I do?",
+    "answer": "Many countries have their own dataprivacy regulations, and specific localrequirements might need to be metbefore or during the data transfer.Follow your department policies andprocedures for secure data transfer.Please contact the Cook Global Privacyoffice for help with your project beforeyou start.",
+    "category": "Transferring data between countries",
+    "red_flag": false
+  },
+  {
+    "id": "qa-011",
+    "question": "What do I do if I send confidential information to the wrong person?",
+    "answer": "Confidential information is consideredsensitive and must be protected. If suchinformation has been compromised inany way, you should immediately reportthe incident to your supervisor andlocal IT manager.",
+    "category": "Accidental sharing of confidential information",
+    "red_flag": false
+  },
+  {
+    "id": "qa-012",
+    "question": "May I send Cook confidential information to my personal emailaccount so that I can work fromhome on my computer?",
+    "answer": "No, but you may bring your Cookassignedand encrypted laptop homeand use the company’s virtual privatenetwork (VPN) to access the data. Inaddition, you should be sure that anymobile devices or storage devices,such as USB flash drives, that you useto access Cook information, areencrypted, secured with a strongpassword, and never left unattended.",
+    "category": "Use of personal email or computer",
+    "red_flag": false
+  },
+  {
+    "id": "qa-013",
+    "question": "I found a competitor’s price list attheir unattended booth alongsidetheir other brochures. Can I use this information?",
+    "answer": "No. Cook’s policy is to respect theconfidential information of others.If the price list is not publicly available,we cannot use the information.",
+    "category": "Competitor Information",
+    "red_flag": false
+  },
+  {
+    "id": "qa-014",
+    "question": "May I send Cook confidentialinformation to my personal emailaccount so that I can work fromhome on my computer?",
+    "answer": "No, but you may bring your Cookassignedand encrypted laptop homeand use the company’s virtual privatenetwork (VPN) to access the data. Inaddition, you should be sure that anymobile devices or storage devices,such as USB flash drives, that you useto access Cook information, areencrypted, secured with a strongpassword, and never left unattended.",
+    "category": "Use of personal email or computer",
+    "red_flag": false
+  },
+  {
+    "id": "qa-015",
+    "question": "We are considering conducting a Phase III clinical trial in a countrywhere we will not be selling ourproduct. Is this okay?",
+    "answer": "No, international standards governing clinical trials discourage conducting research in markets where the product will not be made available.",
+    "category": "Conducting clinical research internationally",
+    "red_flag": false
+  },
+  {
+    "id": "qa-016",
+    "question": "The Market Research team is considering conducting market research to better understand our customers’ needs. May we provide a nominal payment to the participants for their time?",
+    "answer": "You should check with your local Ethics & Compliance representative. In general, yes, a nominal fee in return for a needed service would be acceptable, but some countries or regions have regulations governing this type of activity. An agreement outlining the arrangement is needed. Remember that in the medical device and life sciences industries, there may be transparency requirements related to disclosure of this type of transfer of value.",
+    "category": "Conducting market research",
+    "red_flag": false
+  },
+  {
+    "id": "qa-017",
+    "question": "I am a sales rep for Cook Medical and there is a clinical study going on in one of my customer hospitals. Because I support this hospital and know these products well, I am well situated to determine which patients should be included in the study. Is this okay?",
+    "answer": "The study’s principal investigator and Clinical Research make patient participation determinations. In order to maintain the integrity of the research, a Cook Medical sales rep should only get involved if a physician has a product question or asks for some guidance as a case is reviewed, but the ultimate decision is made by the physician.",
+    "category": "Clinical studies and customers",
+    "red_flag": false
+  },
+  {
+    "id": "qa-018",
+    "question": "I am hiring a landscaper for a Cook property. In response to an open request, I received a proposal from a landscaping business in which my cousin has a significant but passive interest. The landscaper has a good reputation, has offered a fair price, and satisfies all requirements. What should I do?",
+    "answer": "You should not select a landscaper until you have discussed the potential conflict of interest with your manager. Your manager may decide to transfer the decision to someone else or take other measures to reduce the potential that the conflict could even be perceived as affecting the decision.",
+    "category": "Hiring vendors",
+    "red_flag": false
+  },
+  {
+    "id": "qa-019",
+    "question": "I have been offered a part-time job on the weekends consulting for a friend’s business. My friend’s company does not compete with the Cook company I work for or any other Cook company. May I accept the job?",
+    "answer": "Even though your friend’s business does not compete with Cook, you should talk to your manager about the job before accepting to make sure there is no conflict of interest. He or she will determine whether your friend’s business provides any products or services to Cook or any of Cook’s competitors, customers, suppliers, or vendors and whether the job interferes with your responsibilities to Cook.",
+    "category": "Working outside Cook",
+    "red_flag": false
+  },
+  {
+    "id": "qa-020",
+    "question": "I received a gift from a supplier and am not sure if I can accept it. What should I do?",
+    "answer": "You will need to determine the nature of the gift and the value of the gift. If the value is not modest, you should return the gift to the supplier, explaining that Cook policy does not permit employees to receive expensive gifts. On the other hand, if the gift is modest and reasonable and meets the other criteria described in our policies, you may be able to accept the gift. If the nature of the gift permits, the best approach would be to share the gift with the employees in your department. In either case, transparency is important, so you should notify your manager or Human Resources about the gift so the gift can be handled according to your company or location policy.",
+    "category": "Gifts from suppliers",
+    "red_flag": false
+  },
+  {
+    "id": "qa-021",
+    "question": "A company that I use to arrange events for LoopTech offered me a discount on catering services for my family party. May I accept the discount?",
+    "answer": "Personal discounts that are offered to you because of your position with LoopTech are considered an unacceptable gift when offered to you individually and must be refused. However, if this discount is available to all LoopTech employees, the discount may be acceptable. Talk to your manager or Ethics & Compliance representative if you need help on a specific case. Note: If your job includes choosing contractors, deciding where to do business, creating plans or specifications that result in the placement of business, or participating in contract negotiations, you must be very careful to avoid actions that create the appearance of favoritism or unfair influence, or that may negatively affect LoopTech’s reputation for impartiality and fair dealing. The best choice in such situations is to decline any courtesies offered by a supplier when LoopTech is involved.",
+    "category": "Discounts from vendors",
+    "red_flag": false
+  },
+  {
+    "id": "qa-022",
+    "question": "I need to book a flight for one of my customers to attend a Cook Medical product training workshop, but am not sure if this needs to be reported, as I am not making any cash payment to them. What should I do?",
+    "answer": "Any travel arrangements for healthcare professionals must be made through Cook Travel or a Cook-designated travel agency. Travel paid for by Cook is a transfer of value that must be tracked and reported depending on the country or region’s transparency and disclosure laws and requirements.",
+    "category": "Transportation for customer",
+    "red_flag": false
+  },
+  {
+    "id": "qa-023",
+    "question": "One of Cook’s third-party sales agents has requested that we pay its commissions to a different company located in a different country. Is this allowed?",
+    "answer": "No. Payments to companies other than the one that provided the goods or services to us is not allowed, just as payments made in a country other than where the provider is located are not allowed. A request like this may be a warning sign of potential improper conduct. For example, the third party might be trying to create an improper account or reserve of funds for bribes, divert money for improper payments, conceal transactions, or avoid taxes.",
+    "category": "Payments to third parties",
+    "red_flag": false
+  },
+  {
+    "id": "qa-024",
+    "question": "I have received an order from one of my distributors in Africa for products that are destined for a country that I believe is under U.S. sanctions. What should I do?",
+    "answer": "Consult your Legal or Ethics & Compliance representative to verify whether the destination country is in fact included on the sanctions list, and if so, inform your distributor that we cannot fulfill this order. The Sanctions List is located on the E&C intranet site.",
+    "category": "U.S. Sanctions",
+    "red_flag": false
+  },
+  {
+    "id": "qa-025",
+    "question": "A healthcare professional in an Asian country read about Cook Medical products on our website and wants to order a certain product in a country where the product is not approved. What should I do?",
+    "answer": "Cook cannot send a product to a country where the product is not registered or approved. The local sales team should work with the healthcare professional to determine if there is an alternative to the requested product.",
+    "category": "Product request",
+    "red_flag": false
+  },
+  {
+    "id": "qa-026",
+    "question": "We have a potential new tenant who needs to move into a space in our new building by a certain date. Even though it may be close, can I assure them that the building renovations will be complete by then in order to get the sale?",
+    "answer": "No. We must be careful not to overpromise. You can let the individual know that we will work hard to make their desired deadline, but that we are unable to guarantee a specific date.",
+    "category": "Property service request",
+    "red_flag": false
+  },
+  {
+    "id": "qa-027",
+    "question": "A friend who works for a competitor wants to exchange price information for informational purposes only. Is this okay?",
+    "answer": "No, this is not okay. Exchanging price information could be considered evidence of price fixing.",
+    "category": "Sharing information with competitors",
+    "red_flag": false
+  },
+  {
+    "id": "qa-028",
+    "question": "What do I do if I’m at a trade association meeting and a competitor starts talking about how we should agree as a group on what to charge for our products or services or how we could divide potential customers among us so we can all benefit?",
+    "answer": "Remove yourself from the conversation and report the situation to the Legal or Ethics & Compliance department as soon as possible.",
+    "category": "Sharing information with competitors",
+    "red_flag": false
+  },
+  {
+    "id": "qa-029",
+    "question": "I was told that in a particular country, a common practice is to pay a small “gratuity” to a customer prior to their purchase of a Cook product. Should I pay the gratuity so that I don’t lose the business?",
+    "answer": "No, you should not pay a “gratuity.” Bribes have many names in many languages but that does not make them legal. We do not engage in business that is available only through improper or illegal payments. If you are unsure whether a requested payment is legal or you become aware of gifts, bribes, gratuities, kickbacks, secret payments, or incentives given to anyone, including customers or agents, employees, or family members of customers, you should contact your Ethics & Compliance representative immediately.",
+    "category": "Local common practices",
+    "red_flag": false
+  },
+  {
+    "id": "qa-030",
+    "question": "How do I tell the difference between a prohibited payment and a lawful payment to get a service performed more quickly, like when I want to apply for a travel visa or seek customs clearance on a “fast-track” basis?",
+    "answer": "Two important factors that distinguish lawful payments from bribes are transparency and whether the payment is always available to everyone. Fees for legitimate “fast-track” options are normally published, have a set rate, represent the value for real additional services provided, and are accompanied by clear, standard documentation, such as an application form and a receipt from the organization.",
+    "category": "How to tell lawful payments from bribes",
+    "red_flag": false
+  },
+  {
+    "id": "qa-031",
+    "question": "I think someone working on Cook’s behalf is providing bribes to a customer to gain sales. Do I need to worry about this activity since the agent is providing the bribes and not Cook? Also, I don’t think the supplier is a foreign official, so do I need to worry about the U.S. Foreign Corrupt Practices Act (FCPA)?",
+    "answer": "Discuss this matter immediately with Legal or your Ethics & Compliance representative. If the agent is acting on Cook’s behalf and Cook knows, should know, or thinks we know the agent is engaging in this type of behavior, Cook can be held responsible for the agent’s actions. Also, while the FCPA focuses on whether the payment is made to a foreign official, Cook’s policy and other anti-bribery laws are much broader than the FCPA and prohibit any payment or offer of payment made to anyone for the purpose of gaining an improper business advantage, directly or indirectly.",
+    "category": "Agents of Cook",
+    "red_flag": false
+  },
+  {
+    "id": "qa-032",
+    "question": "I recently learned that a prospective business partner has a reputation for engaging in questionable labor practices, but I am not involved in the selection process. What should I do?",
+    "answer": "Whenever you learn about an activity that violates our policies or our commitment to fair labor practices, you have a responsibility to raise your concerns. Speak to your manager or your Ethics & Compliance representative.",
+    "category": "Unfair labor practices",
+    "red_flag": false
+  },
+  {
+    "id": "qa-033",
+    "question": "May I use Cook letterhead to write a letter to the editor of my local paper? I believe the issue is important to our company.",
+    "answer": "You may not use Cook letterhead or your Cook job title to write about any issue unless you have been authorized by Cook to do so. If you believe an issue requires an official response from Cook, speak to your manager or the Corporate Communications department.",
+    "category": "Letters to the editor",
+    "red_flag": false
+  },
+  {
+    "id": "qa-034",
+    "question": "I am active on a social media site. If I have a chance to post information that would be good for business, may I post the information?",
+    "answer": "Do not speak publicly on behalf of Cook unless your manager has given you approval to do so after consulting the Corporate Communications department. If you post information that relates to your job responsibilities, you must disclose your affiliation with Cook and clearly state that your comments reflect your personal opinions and not necessarily the opinions of Cook. For more information on what is appropriate and what is not, please refer to our social media guidelines.",
+    "category": "Sharing on social media",
+    "red_flag": false
+  },
+  {
+    "id": "qa-035",
+    "question": "My brother is running for political office. During lunch, may I make calls from my desk in support of his campaign or use our copiers to copy brochures for his campaign?",
+    "answer": "No, using company time, property or supplies, or giving access to company premises for any purpose other than Cook business is prohibited.",
+    "category": "Using company property or supplies",
+    "red_flag": false
+  },
+  {
+    "id": "qa-036",
+    "question": "A candidate has asked to tour a Cook manufacturing facility. There aren’t any major airports close to the facility, so it would be easier for the candidate to use a Cook plane. Is this okay?",
+    "answer": "No, use of corporate resources, including a Cook plane, by a candidate is prohibited by Cook policy and may also violate External Applicable Standards.",
+    "category": "Using the corporate plane",
+    "red_flag": false
+  },
+  {
+    "id": "qa-037",
+    "question": "May I contribute Cook funds to a political candidate?",
+    "answer": "In the United States, though it varies on a state basis regarding candidates for state elected offices, such contributions are forbidden to federal candidates. Any issue regarding such contributions should be reviewed with your local Ethics & Compliance representative for direction.",
+    "category": "Making political donations",
+    "red_flag": false
+  },
+  {
+    "id": "qa-038",
+    "question": "One of my coworkers, who is a college friend of our manager, has been promoted twice in the last two years, when I believe others in our department were more qualified for the positions. I think that our manager favors this person because of their past friendship. Should I report this through the E&C Helpline?",
+    "answer": "Generally, we suggest that you contact Human Resources to discuss such concerns or call the E&C Helpline to report your concerns anonymously, where permitted by law.",
+    "category": "Playing favorites",
+    "red_flag": false
+  },
+  {
+    "id": "qa-039",
+    "question": "One of my coworkers has been telling some inappropriate jokes during lunch breaks, which makes me feel uncomfortable. What can I do?",
+    "answer": "There are two ways you can approach the situation: 1. You can use an informal approach, which involves speaking directly to your coworker and telling him or her that these jokes make you feel uncomfortable, and ask them to stop, or 2. You can use the formal approach if you do not feel comfortable speaking to your coworker about this, and ask your supervisor, manager, or Human Resources to speak to them. Refer to the policies that apply to your country or region for formal reporting procedures.",
+    "category": "Inappropriate jokes",
+    "red_flag": false
+  },
+  {
+    "id": "qa-040",
+    "question": "A coworker seems to be anxious and unusually sensitive. Yesterday she spoke very harshly to another coworker. What should I do?",
+    "answer": "Don’t ignore this situation. If you are concerned that his or her behavior may pose a risk to you or others, speak with your supervisor, manager, or Human Resources about the situation.",
+    "category": "Change in employee behavior",
+    "red_flag": false
+  },
+  {
+    "id": "qa-041",
+    "question": "If I am attending a companysponsored event, may I have a glass of wine with dinner?",
+    "answer": "Moderate amounts of alcohol, such as a glass of wine with dinner, are acceptable. However, if the alcohol may impair your ability to interact appropriately with your coworkers or customers, you should choose a nonalcoholic beverage.",
+    "category": "Drinking alcohol",
+    "red_flag": false
+  },
+  {
+    "id": "qa-042",
+    "question": "Yesterday, I reached under my desk and cut my hand on a sharp edge. My hand only bled a little and I was able to wash and bandage the cut myself. Do I really need to report this?",
+    "answer": "Yes, you should report all workplace accidents, injuries, and illnesses to your supervisor immediately, no matter how minor they may be, for two reasons. The first reason is to ensure that the injury or illness is treated quickly and correctly. Second, reporting the injury helps us identify possibly dangerous conditions that need to be evaluated and corrected. Also, there may be regulatory reporting requirements that we must meet in your jurisdiction.",
+    "category": "Reporting injury",
+    "red_flag": false
+  },
+  {
+    "id": "qa-043",
+    "question": "I was working and noticed a liquid leaking from an overhead pipe. Do I have a responsibility to report this?",
+    "answer": "Yes, you have a responsibility to quickly report situations that you believe could reasonably cause harm to others, the environment, or the property.",
+    "category": "Reporting issues with the building",
+    "red_flag": false
+  },
+  {
+    "id": "qa-044",
+    "question": "I noticed a liquid spill in the hallway. What should I do?",
+    "answer": "All employees are responsible for safety. At minimum, you are expected to contact the Facilities team so they can place a pop-up safety cone or a wet floor sign (located throughout the facility). You may need to ask a coworker to stand near the spill location to direct others away from the spill while you get a member of the Facilities team.",
+    "category": "Preventing slips and falls",
+    "red_flag": false
+  },
+  {
+    "id": "qa-045",
+    "question": "I am having some discomfort in my wrist while working. I think I may have an idea of how to change my workstation setup to help alleviate my discomfort. Should I say anything?",
+    "answer": "Yes, we encourage early reporting of discomfort as this may be an indicator of potential issues. Also, reporting via our incident reporting procedure will notify support groups and your manager or supervisor to see if improvements to your workstation can be made. Your input is valuable in coming up with solutions to ergonomic stressors and your safety and health are vital to our success. Note: Please do not modify your workstation without going through the proper channels.",
+    "category": "Modifying a work station",
+    "red_flag": false
+  },
+  {
+    "id": "qa-046",
+    "question": "I see a coworker slumped over unconscious in the break area. Nobody else is around. What should I do?",
+    "answer": "This meets the definition of a medical emergency and you should respond accordingly. Follow the procedures for your location to alert the appropriate staff of the medical emergency. It is your responsibility to understand and follow the medical emergency procedures at your facility during and after working hours.",
+    "category": "A medical emergency",
+    "red_flag": false
+  },
+  {
+    "id": "qa-047",
+    "question": "I took a friend to dinner while visiting another city on business. Am I permitted to pay for his meal on my expense account as long as the total is not more than the allowed cost of a reasonable meal?",
+    "answer": "No, your expense report should only reflect the cost of your trip on behalf of Cook and should only include the cost of your meal.",
+    "category": "Meal expense with friend",
+    "red_flag": false
+  },
+  {
+    "id": "qa-048",
+    "question": "Can I use my work computer to do online shopping during the holiday season?",
+    "answer": "Consult your specific Cook company policy or ask your manager. Some Cook companies limit internet use due to the sensitivity of the information the company handles and maintains. Unless otherwise indicated, in general, Cook policy allows employees to use company computers for this type of personal use as long as the use is only occasional and does not conflict with work responsibilities or other computer use policies.",
+    "category": "Online shopping",
+    "red_flag": false
+  },
+  {
+    "id": "qa-049",
+    "question": "Some friends and I are starting a small side business. We have received the necessary approvals from management that the business does not conflict with our responsibilities to Cook. Can I use my company cell phone number as the main telephone number for the business?",
+    "answer": "No, you may not use your Cook company phone for a personal business phone. While you may have a side business that does not conflict with your work for Cook and is not otherwise restricted, you may not use Cook time, property, or other resources for your side business.",
+    "category": "Side business",
+    "red_flag": false
+  }
+]

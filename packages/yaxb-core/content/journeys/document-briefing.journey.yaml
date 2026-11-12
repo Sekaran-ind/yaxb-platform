@@ -1,0 +1,47 @@
+kind: journey
+id: document-briefing
+version: 1
+title: Prepare a briefing
+summary: Turn a document into a plain-language briefing with questions to ask, in your language. Chains an offline summary, the assistant, and offline translation.
+icon: clipboard-list
+category: notebook
+start: pick
+steps:
+  pick:
+    label: Choose a source and language
+    ask: Which document, and which language should the briefing be in?
+    fields:
+      - { id: source, type: source, label: Source, required: true }
+      - { id: language, type: language, label: Language, default: eng_Latn, required: true }
+    next: gist
+  gist:
+    label: Summarise on this device
+    stage: Read
+    service: offline.summarize
+    with: { text: "{{answers.pick.source.text}}" }
+    onError: continue
+    next: brief
+  brief:
+    label: Write the briefing
+    stage: Brief
+    service: agent.ask
+    with:
+      message: |
+        Write a plain-language briefing about the notebook source notebook:{{answers.pick.source.id}} ({{answers.pick.source.title}}).
+        Read /notebook/sources/{{answers.pick.source.id}}.md. An automatic summary made on the visitor's device, which may be rough: {{steps.gist.text}}
+        Give: what the document is about in two sentences, the three most important points, and three questions the visitor could ask their care team. Use the plain-language skill. Cite the source.
+    next:
+      - { if: "answers.pick.language != 'eng_Latn'", to: translate }
+      - { to: done-english }
+  translate:
+    label: Translate on this device
+    stage: Translate
+    service: offline.translate
+    with: { text: "{{steps.brief.text}}", language: "{{answers.pick.language}}" }
+    next: done-translated
+  done-english:
+    final: true
+    result: { title: "Briefing: {{answers.pick.source.title}}", text: "{{steps.brief.text}}" }
+  done-translated:
+    final: true
+    result: { title: "Briefing: {{answers.pick.source.title}}", text: "{{steps.translate.text}}\n\n(English)\n{{steps.brief.text}}" }

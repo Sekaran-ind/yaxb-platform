@@ -1,0 +1,33 @@
+# Local secrets for `next dev` and `wrangler dev`. Copy to .dev.vars (git-ignored).
+# `node yaxb.mjs start` creates .dev.vars with generated secrets on first run.
+# In production set each one with: npx wrangler secret put <NAME>
+
+# Required. Derives per-browser conversation namespaces from the session cookie.
+SESSION_SECRET=
+
+# LLM providers: set at least one. Users pick among the configured ones on /settings.
+ANTHROPIC_API_KEY=
+OPENAI_API_KEY=
+GOOGLE_API_KEY=
+# Hugging Face Inference Providers (gpt-oss, Llama, Qwen...): a fine-grained token with
+# "Make calls to Inference Providers". https://huggingface.co/settings/tokens
+HF_TOKEN=
+# Cloudflare Workers AI: an API token with Workers AI permission, and your account id
+# (dash.cloudflare.com -> Workers AI -> Use REST API).
+CLOUDFLARE_API_TOKEN=
+CLOUDFLARE_ACCOUNT_ID=
+MISTRAL_API_KEY=
+# Ollama is local only: a Worker can't reach your machine. Use it from the CLI.
+
+# MCP servers the assistant may use (visitors switch them on in Settings). JSON list:
+# [{"id":"docs","label":"Docs","url":"https://mcp.example.com/mcp","headers":{"Authorization":"Bearer …"},"tools":["search"]}]
+MCP_SERVERS=
+
+# Moderators sign in on /kiosk/curate with this. Leave empty to keep the queue closed.
+MODERATOR_TOKEN=
+
+# Contact form -> Airtable, newsletter -> Mailchimp (optional)
+AIRTABLE_API_TOKEN=
+AIRTABLE_BASE_ID=
+MAILCHIMP_API_KEY=
+MAILCHIMP_AUDIENCE_ID=

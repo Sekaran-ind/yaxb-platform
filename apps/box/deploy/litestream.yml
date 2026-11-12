@@ -1,0 +1,12 @@
+# /etc/litestream.yml -- one database, one replica (Litestream 0.5+ allows a single replica per
+# database). ${...} values come from /etc/yaxb-box/yaxb-box.env (the litestream.service drop-in).
+# Point-in-time restore over the last three days; snapshots every 6 hours.
+snapshot:
+  interval: 6h
+  retention: 72h
+
+dbs:
+  - path: ${YAXB_BOX_DB}
+    replica:
+      type: file
+      path: ${YAXB_BACKUP_DIR}/yaxb-box

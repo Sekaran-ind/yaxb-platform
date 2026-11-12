@@ -1,0 +1,140 @@
+{
+  "name": "@sekaran-ind/yaxb-core",
+  "version": "0.1.0",
+  "description": "YAXB's shared core: the kiosk's Deep Agents harness, providers, knowledge, threads and event protocol. Headless and DOM-free; runs in Cloudflare Workers, Node and the browser. Provider SDKs: @langchain/anthropic and @langchain/openai only.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./agent": {
+      "types": "./dist/agent/index.d.ts",
+      "default": "./dist/agent/index.js"
+    },
+    "./providers": {
+      "types": "./dist/providers/index.d.ts",
+      "default": "./dist/providers/index.js"
+    },
+    "./knowledge": {
+      "types": "./dist/knowledge/index.d.ts",
+      "default": "./dist/knowledge/index.js"
+    },
+    "./knowledge/semantic": {
+      "types": "./dist/knowledge/semantic.d.ts",
+      "default": "./dist/knowledge/semantic.js"
+    },
+    "./knowledge/embeddings": {
+      "types": "./dist/knowledge/embeddings.d.ts",
+      "default": "./dist/knowledge/embeddings.js"
+    },
+    "./knowledge/server": {
+      "types": "./dist/knowledge/server.d.ts",
+      "default": "./dist/knowledge/server.js"
+    },
+    "./web": {
+      "types": "./dist/web/index.d.ts",
+      "default": "./dist/web/index.js"
+    },
+    "./events": {
+      "types": "./dist/events/index.d.ts",
+      "default": "./dist/events/index.js"
+    },
+    "./schemas": {
+      "types": "./dist/schemas/index.d.ts",
+      "default": "./dist/schemas/index.js"
+    },
+    "./stores": {
+      "types": "./dist/stores/index.d.ts",
+      "default": "./dist/stores/index.js"
+    },
+    "./stores/d1": {
+      "types": "./dist/stores/d1.d.ts",
+      "default": "./dist/stores/d1.js"
+    },
+    "./stores/node": {
+      "types": "./dist/stores/node.d.ts",
+      "default": "./dist/stores/node.js"
+    },
+    "./package.json": "./package.json",
+    "./journeys": {
+      "types": "./dist/journeys/index.d.ts",
+      "default": "./dist/journeys/index.js"
+    },
+    "./services": {
+      "types": "./dist/services/index.d.ts",
+      "default": "./dist/services/index.js"
+    },
+    "./screens": {
+      "types": "./dist/screens/index.d.ts",
+      "default": "./dist/screens/index.js"
+    },
+    "./notebook": {
+      "types": "./dist/notebook/index.d.ts",
+      "default": "./dist/notebook/index.js"
+    },
+    "./settings": {
+      "types": "./dist/settings/index.d.ts",
+      "default": "./dist/settings/index.js"
+    },
+    "./content": {
+      "types": "./dist/content/index.d.ts",
+      "default": "./dist/content/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp/index.d.ts",
+      "default": "./dist/mcp/index.js"
+    },
+    "./stores/kv": {
+      "types": "./dist/stores/kv.d.ts",
+      "default": "./dist/stores/kv.js"
+    },
+    "./stores/box": {
+      "types": "./dist/stores/box.d.ts",
+      "default": "./dist/stores/box.js"
+    }
+  },
+  "files": [
+    "dist",
+    "migrations",
+    "content",
+    "!dist/**/*.test.*"
+  ],
+  "scripts": {
+    "build": "node tools/build-content.mjs && tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "typecheck": "tsc --noEmit",
+    "test": "node tools/build-content.mjs && vitest run",
+    "content": "node tools/build-content.mjs",
+    "embeddings": "node tools/build-embeddings.mjs"
+  },
+  "dependencies": {
+    "@langchain/anthropic": "1.6.2",
+    "@langchain/core": "1.3.6",
+    "@langchain/langgraph": "1.7.3",
+    "@langchain/langgraph-checkpoint": "1.2.2",
+    "@langchain/langgraph-sdk": "1.15.0",
+    "@langchain/openai": "1.8.2",
+    "deepagents": "1.16.3",
+    "js-yaml": "5.5.0",
+    "langchain": "1.6.3",
+    "langsmith": "0.9.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@huggingface/transformers": "^3.8.1",
+    "@types/js-yaml": "4.0.9",
+    "@types/node": "22.19.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sekaran-ind/yaxb-platform.git",
+    "directory": "packages/yaxb-core"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

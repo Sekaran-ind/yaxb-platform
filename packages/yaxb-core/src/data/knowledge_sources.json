@@ -1,0 +1,50 @@
+[
+  {
+    "id": "ehr",
+    "title": "Electronic Healthcare Reports (EHR)",
+    "description": "Patient medical history that includes their diagnoses, medications, and treatment plans.",
+    "baseline_date": "Apr '24",
+    "moderator": "Elizabeth John",
+    "curator": "Manivannan S, Kesavan T"
+  },
+  {
+    "id": "diagnostics",
+    "title": "Diagnostic Reports",
+    "description": "Results of diagnostic tests and investigations, including text reports, images, and codes, used to help identify and understand a person's health condition.",
+    "baseline_date": "Apr '24",
+    "moderator": "Elizabeth Kelly",
+    "curator": "Manivannan S, Kesavan T"
+  },
+  {
+    "id": "health-wallet",
+    "title": "Health Wallet",
+    "description": "All of your concierge medical services consolidated into one complete health care experience.",
+    "baseline_date": "Apr '24",
+    "moderator": "Elizabeth Kelly",
+    "curator": "Manivannan S, Kesavan T"
+  },
+  {
+    "id": "pharmacy",
+    "title": "Pharmacy Medications",
+    "description": "Medical prescription of drugs that are taken by the patient.",
+    "baseline_date": null,
+    "moderator": "Elizabeth Kelly",
+    "curator": "Manivannan S, Kesavan T"
+  },
+  {
+    "id": "nutrition",
+    "title": "Nutrition Report",
+    "description": "Total dietary intake and particular aspects of the diet, with detailed information on foods, beverages and supplements consumed over a period of days.",
+    "baseline_date": null,
+    "moderator": "Elizabeth Kelly",
+    "curator": "Manivannan S, Kesavan T"
+  },
+  {
+    "id": "policies",
+    "title": "Code of Conduct & Policies",
+    "description": "Curated organisational policy Q&A (procedures, conflicts of interest, reporting concerns).",
+    "baseline_date": "Apr '24",
+    "moderator": "Elizabeth John",
+    "curator": "Manivannan S, Kesavan T"
+  }
+]

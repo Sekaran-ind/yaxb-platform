@@ -1,0 +1,12 @@
+kind: service
+id: notebook
+title: Notebook
+summary: Add your own documents; the assistant reads them, remembers what matters, and cites them.
+icon: notebook
+order: 20
+items:
+  - { key: open, label: Open the notebook, summary: Sources and memory, icon: notebook, screen: notebook }
+  - { key: summarise, label: Summarise a source, icon: file-text, journey: summarise-source }
+  - { key: briefing, label: Prepare a briefing, summary: "Offline summary, then the assistant, then offline translation", icon: clipboard-list, journey: document-briefing }
+  - { key: find, label: Find an answer offline, icon: search, journey: ask-a-source }
+  - { key: remember, label: Add to memory, icon: brain, journey: remember-note }

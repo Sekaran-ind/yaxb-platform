@@ -1,0 +1,17 @@
+{
+  "name": "@sekaran-ind/yaxb-cli",
+  "version": "0.1.0",
+  "description": "YAXB on the command line: talk to the kiosk agent in yaxb-core from a terminal.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "bin": { "yaxb": "./src/main.js" },
+  "files": ["src", "!src/**/*.test.js"],
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node --test \"src/**/*.test.js\""
+  },
+  "dependencies": {
+    "@sekaran-ind/yaxb-core": "0.1.0"
+  },
+  "engines": { "node": ">=22" }
+}

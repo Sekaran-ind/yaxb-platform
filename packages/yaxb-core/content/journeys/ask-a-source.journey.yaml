@@ -1,0 +1,23 @@
+kind: journey
+id: ask-a-source
+version: 1
+title: Find an answer in a source, offline
+summary: Ask a question about one document and get the exact passage, without sending anything off this device.
+icon: search
+category: notebook
+start: ask
+steps:
+  ask:
+    label: Your question
+    ask: Which source, and what do you want to find out?
+    fields:
+      - { id: source, type: source, label: Source, required: true }
+      - { id: question, type: text, label: Question, required: true, placeholder: "e.g. When should I stop eating before the test?" }
+    service: offline.answer
+    with: { question: "{{answers.ask.question}}", context: "{{answers.ask.source.text}}" }
+    next: done
+  done:
+    final: true
+    result:
+      title: "From {{answers.ask.source.title}}"
+      text: "{{steps.ask.text}}\n\nThis is the passage the on-device model picked. Check it in the document, and ask staff if you're unsure."
