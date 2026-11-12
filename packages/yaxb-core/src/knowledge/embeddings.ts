@@ -16,6 +16,8 @@ export function curatedEmbeddingsFor(model: EmbeddingModelId): Promise<Embedding
   let file = loaded.get(model);
   if (!file) {
     file = files[model]().then((m) => m.default as EmbeddingsFile);
+    // A failed load (offline, or a dev rebuild mid-fetch) is not kept: the next question tries again.
+    file.catch(() => loaded.delete(model));
     loaded.set(model, file);
   }
   return file;
