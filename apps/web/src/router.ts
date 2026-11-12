@@ -10,18 +10,22 @@ const NATIVE_ROUTES: RouteRecordRaw[] = [
   { path: "/:rest(.*)*", redirect: "/kiosk" },
 ];
 
+/** An old staff page's address, as the kiosk's Staff screen with that section. */
+const staff = (section: string) => (to: { query: Record<string, unknown> }) => ({ path: "/kiosk", query: { ...(to.query as Record<string, string>), screen: "staff", staff: section } });
+
 export const router = createRouter({
   // The app's pages are files on the device: hash URLs need no server.
   history: NATIVE ? createWebHashHistory() : createWebHistory(),
   routes: NATIVE ? NATIVE_ROUTES : [
     { path: "/", component: () => import("./pages/HomePage.vue"), meta: { title: "Meet YAXB" } },
     { path: "/kiosk", component: () => import("./pages/KioskPage.vue"), meta: { title: "AI Kiosk" } },
-    { path: "/kiosk/curate", component: () => import("./pages/CuratePage.vue"), meta: { title: "Curate" } },
-    { path: "/kiosk/review", component: () => import("./pages/ReviewPage.vue"), meta: { title: "Review answers" } },
-    { path: "/kiosk/quality", component: () => import("./pages/QualityPage.vue"), meta: { title: "Answer quality" } },
-    { path: "/kiosk/team", component: () => import("./pages/TeamPage.vue"), meta: { title: "Team" } },
-    { path: "/kiosk/moderator", component: () => import("./pages/ModeratorPage.vue"), meta: { title: "Moderator profile" } },
-    { path: "/kiosk/admin", component: () => import("./pages/AdminPage.vue"), meta: { title: "Administration" } },
+    // The staff pages live inside the kiosk (Staff screen); their old addresses open the section.
+    { path: "/kiosk/curate", redirect: staff("moderation") },
+    { path: "/kiosk/review", redirect: staff("review") },
+    { path: "/kiosk/quality", redirect: staff("quality") },
+    { path: "/kiosk/team", redirect: staff("team") },
+    { path: "/kiosk/moderator", redirect: staff("profile") },
+    { path: "/kiosk/admin", redirect: staff("admin") },
     // Preferences open inside the kiosk (KioskPreferences); old links and commands still land there.
     { path: "/settings", redirect: (to) => ({ path: "/kiosk", query: { prefs: typeof to.query.section === "string" ? to.query.section : "profile" } }) },
     { path: "/contact", component: () => import("./pages/ContactPage.vue"), meta: { title: "Contact" } },

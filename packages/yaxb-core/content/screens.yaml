@@ -13,5 +13,5 @@ screens:
   - { id: notebook, label: Notebook, icon: notebook, component: notebook }
   - { id: patient-info, label: Patient info, icon: user-round, component: patient-info, layouts: [full] }
   - { id: records, label: Sources, icon: library, component: records, layouts: [pod, full] }
-  - { id: scorecard, label: Scorecard, icon: gauge, component: scorecard, layouts: [full] }
+  - { id: staff, label: Staff, icon: gauge, component: staff, layouts: [pod, full] }
   - { id: translate, label: Translate, icon: languages, component: translate, hidden: true }

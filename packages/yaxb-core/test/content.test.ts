@@ -17,7 +17,7 @@ describe("built-in content", () => {
     const mini = screensFor(kioskContent.screens, "mini").map((s) => s.id);
     const full = screensFor(kioskContent.screens, "full").map((s) => s.id);
     expect(mini).toEqual(["transcript", "services", "notebook"]);
-    expect(full).toContain("scorecard");
+    expect(full).toContain("staff");
     expect(full).not.toContain("sandbox"); // removed: the services cover it
     expect(full).not.toContain("translate"); // hidden
     const tools = servicesFor(kioskContent.services, { layout: "mini" }).find((s) => s.id === "tools");

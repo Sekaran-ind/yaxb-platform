@@ -10,7 +10,7 @@ import type { ServiceHandler } from "@sekaran-ind/yaxb-core/journeys";
 import { composeLocalAnswer, composeWebAnswer, EMBEDDING_MODELS, looksLikeEmergency, type LocalAnswer } from "@sekaran-ind/yaxb-core/knowledge/semantic";
 import { resolveLayout, screensFor } from "@sekaran-ind/yaxb-core/screens";
 import { DEFAULT_LANGUAGE, type LanguageCode } from "@sekaran-ind/yaxb-core/settings";
-import { computed, onBeforeUnmount, onMounted, ref, toRef } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, toRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { logActivity, useAccount } from "@/composables/account";
 import { askOnce, useChat } from "@/composables/chat";
@@ -33,7 +33,8 @@ import KnowledgeSources from "./KnowledgeSources.vue";
 import NotebookScreen from "./NotebookScreen.vue";
 import PatientInfo from "./PatientInfo.vue";
 import PlayerPanel from "./PlayerPanel.vue";
-import ScorecardPane from "./ScorecardPane.vue";
+import KioskStaff from "./KioskStaff.vue";
+import { NATIVE } from "@/lib/platform";
 import ServicesScreen from "./ServicesScreen.vue";
 import TranscriptPane from "./TranscriptPane.vue";
 import KioskPreferences from "./KioskPreferences.vue";
@@ -388,7 +389,10 @@ const status = computed<KioskStatus>(() => {
 
 const sourceCount = computed(() => nb.notebook.value?.sources.length ?? 0);
 const navScreens = computed<NavScreen[]>(() =>
-  screensFor(kioskContent.screens, layout.value).map((s) => ({
+  // The native app is for visitors: staff work in the web kiosk (their sign-in is a cookie there).
+  screensFor(kioskContent.screens, layout.value)
+    .filter((s) => !(NATIVE && s.component === "staff"))
+    .map((s) => ({
     id: s.id,
     label: s.label,
     icon: s.icon,
@@ -396,6 +400,14 @@ const navScreens = computed<NavScreen[]>(() =>
   })),
 );
 const componentOf = (id: string) => kioskContent.screens.screens.find((s) => s.id === id)?.component;
+// A link may open a screen (/kiosk?screen=staff&staff=team): the old staff pages redirect here.
+watch(
+  () => route.query.screen,
+  (id) => {
+    if (typeof id === "string" && navScreens.value.some((s) => s.id === id)) screen.value = id;
+  },
+  { immediate: true },
+);
 const lastAnswer = computed(() => [...chat.turns.value].reverse().find((t) => t.role === "assistant" && t.text)?.text);
 
 function setScreen(id: string) {
@@ -520,7 +532,7 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
               />
               <PatientInfo v-else-if="componentOf(s.id) === 'patient-info'" />
               <KnowledgeSources v-else-if="componentOf(s.id) === 'records'" />
-              <ScorecardPane v-else-if="componentOf(s.id) === 'scorecard'" />
+              <KioskStaff v-else-if="componentOf(s.id) === 'staff'" />
               <TranslatePane v-else-if="componentOf(s.id) === 'translate'" :initial-text="lastAnswer" @speak="(t, lang) => voiceOut.speak(t, { lang })" />
             </template>
           </AdaptiveNav>
