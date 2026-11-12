@@ -30,6 +30,8 @@ The agent runs inside the Worker, so there's no separate agent service, service 
 
 ## What the kiosk does
 
+The full requirements, built and planned, are in [docs/specs](docs/specs/README.md).
+
 - **Ask** by voice or text. A LangChain deep agent answers from the curated knowledge base and the visitor's notebook, with citations, planning, two helper subagents, and escalation to moderators.
 - **Notebook**: add documents (text, Markdown, CSV, JSON, HTML, PDF), read in the browser. The agent reads them with its file tools, keeps a per-notebook **memory**, and uses built-in **skills** (`packages/yaxb-core/content/skills`).
 - **Services and journeys** (Cübo's model): guided flows authored in YAML that chain the assistant with **offline models** that run on the device: summarise, find an answer, translate. For example, "Prepare a briefing" summarises on the device, writes a plain-language briefing with the assistant, then translates on the device.
