@@ -94,7 +94,10 @@ async function save() {
   }
 }
 
-const open = (id: string | null) => router.push({ query: id ? { answer: id } : {} });
+const open = (id: string | null) => {
+  const { answer: _, ...rest } = route.query;
+  return router.push({ query: id ? { ...rest, answer: id } : rest });
+};
 
 watch(answerId, (id) => (id ? loadDetail(id) : ((detail.value = null), loadList())), { immediate: true });
 watch(state, loadList);

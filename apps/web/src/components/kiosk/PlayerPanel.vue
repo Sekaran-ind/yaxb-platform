@@ -1,9 +1,11 @@
 <script setup lang="ts">
 // The kiosk's console: the original Details (orb, waveform, status) and Controls (mic, pause, stop).
 //   full   the console column    strip  the pod player's bar    mini  orb, status and mic
+// Slots: "meta" (the notebook and model status) and "controls" (language, profile, kiosk menu).
 import { Loader2, Mic, MicOff, Pause, Play, Sparkles, Square } from "@lucide/vue";
 import { computed } from "vue";
 import { cn } from "@/lib/cn";
+import MarqueeLine from "./MarqueeLine.vue";
 import type { KioskStatus } from "@/lib/types";
 
 const props = withDefaults(
@@ -44,16 +46,18 @@ const STATUS_TEXT: Partial<Record<KioskStatus, string>> = { Ready: "Ready when y
       )
     "
   >
-    <div :class="variant === 'full' ? 'flex flex-col items-center' : 'flex min-w-0 items-center gap-3'">
-      <div :class="cn('console-orb flex shrink-0 items-center justify-center overflow-hidden rounded-full', variant === 'full' && 'mt-6')" :style="{ width: `${orbSize}px`, height: `${orbSize}px` }">
+    <div v-if="variant === 'full'" class="flex w-full justify-end"><slot name="controls" /></div>
+    <div :class="variant === 'full' ? 'flex flex-col items-center' : 'flex min-w-0 flex-1 items-center gap-3'">
+      <div :class="cn('console-orb flex shrink-0 items-center justify-center overflow-hidden rounded-full')" :style="{ width: `${orbSize}px`, height: `${orbSize}px` }">
         <Sparkles :class="cn('text-white/85', working && 'animate-pulse text-brand', variant === 'full' ? 'size-10' : variant === 'strip' ? 'size-6' : 'size-4')" aria-hidden="true" />
       </div>
       <div :class="variant === 'full' ? 'flex flex-col items-center' : 'min-w-0'">
-        <p :class="cn('font-semibold tracking-[0.22em] text-white/60 uppercase', variant === 'full' ? 'mt-8 text-xs' : 'truncate text-[10px]')">{{ title }}</p>
+        <p :class="cn('font-semibold tracking-[0.22em] text-white/60 uppercase', variant === 'full' ? 'mt-6 text-xs' : 'truncate text-[10px]')">{{ title }}</p>
         <p :class="cn('flex items-center gap-2 font-medium tracking-tight text-white', variant === 'full' ? 'mt-2 text-xl' : 'text-sm')" role="status" aria-live="polite">
           {{ STATUS_TEXT[status] ?? status }}<Loader2 v-if="busy" class="size-4 animate-spin text-brand" aria-hidden="true" />
         </p>
         <p v-if="listening && variant !== 'mini'" :class="cn('text-white/50 italic', variant === 'full' ? 'mt-2 min-h-6 max-w-xs text-center text-sm' : 'truncate text-xs')">{{ interim || "…" }}</p>
+        <MarqueeLine v-else-if="$slots.meta && variant !== 'full'" class="max-w-56 text-[11px] text-white/50"><slot name="meta" /></MarqueeLine>
       </div>
     </div>
 
@@ -61,6 +65,8 @@ const STATUS_TEXT: Partial<Record<KioskStatus, string>> = { Ready: "Ready when y
       <span v-for="(b, i) in BARS" :key="i" :class="cn('voice-bar', live && 'voice-bar-live', !live && 'opacity-40')" :style="{ height: `${Math.round(b.h * 100)}%`, animationDelay: b.delay }" />
     </div>
 
+    <MarqueeLine v-if="variant === 'full' && $slots.meta" class="-mb-2 w-full max-w-xs text-center text-xs text-white/55"><slot name="meta" /></MarqueeLine>
+    <slot v-if="variant !== 'full'" name="controls" />
     <div :class="cn('flex items-center', variant === 'full' ? 'gap-5' : 'gap-2')">
       <button v-if="variant !== 'mini'" type="button" :class="cn('console-btn', small ? 'size-9' : 'size-12')" :disabled="!speaking" :aria-label="status === 'Paused' ? 'Resume speech' : 'Pause speech'" @click="emit('pauseResume')">
         <Play v-if="status === 'Paused'" :class="small ? 'size-4' : 'size-5'" />

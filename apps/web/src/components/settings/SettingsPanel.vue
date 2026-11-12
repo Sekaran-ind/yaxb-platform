@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// The deep agent's settings: model, agent, tools, MCP servers, memory and skills, storage, layout and voice.
+// Preferences, shown inside the kiosk (the profile button in the player): the visitor's profile,
+// language, layout, theme and voice first, then the knowledge, model and agent settings.
 import { LAYOUTS, type LayoutChoice } from "@sekaran-ind/yaxb-core/screens";
 import { EMBEDDING_MODELS, embeddingModelFor } from "@sekaran-ind/yaxb-core/knowledge/semantic";
 import type { AgentSettings, LanguageCode } from "@sekaran-ind/yaxb-core/settings";
@@ -8,6 +9,7 @@ import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import AdaptiveNav from "@/components/kiosk/AdaptiveNav.vue";
 import ThemePicker from "./ThemePicker.vue";
+import AccountScreen from "@/components/account/AccountScreen.vue";
 import { NATIVE } from "@/lib/platform";
 import { effectiveSelection, settings, updateSettings, useCapabilities, useProviders } from "@/composables/settings";
 import { useSpeechOutput } from "@/composables/speech";
@@ -20,23 +22,24 @@ import ChoiceGrid from "./ChoiceGrid.vue";
 import ToggleRow from "./ToggleRow.vue";
 
 const SECTIONS = [
+  { id: "profile", label: "Profile", icon: "user-round" },
+  { id: "language", label: "Language", icon: "languages" },
+  { id: "kiosk", label: "Layout, theme & voice", icon: "message-square" },
+  { id: "knowledge", label: "Knowledge", icon: "search" },
   { id: "model", label: "Model", icon: "brain" },
   { id: "agent", label: "Agent", icon: "layout-grid" },
-  { id: "knowledge", label: "Knowledge", icon: "search" },
-  { id: "language", label: "Language", icon: "languages" },
   { id: "tools", label: "Tools", icon: "wrench" },
   { id: "mcp", label: "MCP servers", icon: "library" },
   { id: "memory", label: "Memory & skills", icon: "notebook" },
   { id: "storage", label: "Storage", icon: "file-text" },
-  { id: "kiosk", label: "Layout, theme & voice", icon: "message-square" },
 ];
 
-// A kiosk command may open a section directly: /settings?section=model (CMD-1).
+// The section comes from the kiosk's address (/kiosk?prefs=model), so a kiosk command can open one (CMD-1).
 const route = useRoute();
-const sectionFrom = (q: unknown) => (typeof q === "string" && SECTIONS.some((x) => x.id === q) ? q : "model");
-const section = ref(sectionFrom(route.query.section));
+const sectionFrom = (q: unknown) => (typeof q === "string" && SECTIONS.some((x) => x.id === q) ? q : "profile");
+const section = ref(sectionFrom(route.query.prefs));
 watch(
-  () => route.query.section,
+  () => route.query.prefs,
   (q) => (section.value = sectionFrom(q)),
 );
 const { el, width } = useWidth();
@@ -45,6 +48,12 @@ const { data: caps, error: capsError } = useCapabilities();
 const voice = useSpeechOutput();
 const cleared = ref<string | null>(null);
 const active = computed(() => effectiveSelection(settings, catalog.value));
+/** Kiosk only (no AI model): the knowledge answers come only from the device (KNW-45). */
+const kioskOnly = computed(() => settings.agent.knowledge?.answers === "local");
+function setKioskOnly(on: boolean) {
+  const answers = on ? "local" : settings.agent.knowledge?.answers === "local" ? "agent" : settings.agent.knowledge?.answers;
+  updateSettings({ agent: { ...settings.agent, knowledge: { ...settings.agent.knowledge, answers: answers ?? "agent" } } });
+}
 const activeModels = computed(() => catalog.value?.providers.find((p) => p.id === active.value?.provider)?.models ?? []);
 const agent = computed(() => settings.agent);
 const on = (map: Record<string, boolean>, id: string) => map[id] !== false;
@@ -69,6 +78,10 @@ async function clearBrowser() {
 <template>
   <div ref="el" class="mx-auto max-w-5xl space-y-6">
     <AdaptiveNav v-model:active="section" :screens="SECTIONS" mode="sidebar" storage-key="settings" :width="width">
+      <template #profile>
+        <AccountScreen />
+      </template>
+
       <template #model>
         <section class="card p-5">
           <h2 class="text-lg font-semibold text-ink">Model</h2>
@@ -78,21 +91,34 @@ async function clearBrowser() {
           <template v-else>
             <fieldset class="mt-4 grid gap-3 sm:grid-cols-2">
               <legend class="sr-only">Provider</legend>
+              <!-- Kiosk only: no AI model at all (Settings → Knowledge → answers "on this device"). -->
+              <label :class="cn('relative flex cursor-pointer flex-col rounded-lg border-2 p-3 sm:col-span-2', kioskOnly ? 'border-brand bg-brand/5' : 'border-gray-200 bg-surface hover:border-gray-300')">
+                <input type="radio" name="provider" value="kiosk-only" class="sr-only" :checked="kioskOnly" @change="setKioskOnly(true)" />
+                <span class="flex items-center justify-between text-sm font-medium text-ink">
+                  Kiosk only (no AI model)
+                  <Check v-if="kioskOnly" class="size-5 text-brand" aria-label="Selected" />
+                </span>
+                <span class="mt-1 text-xs text-gray-500">
+                  Answers come word for word from the knowledge base and your notebook, found by the on-device sentence-transformer.<template v-if="caps?.web">
+                    When they don't cover a question, the top web results are shown as found, with their addresses (web search: {{ settings.agent.knowledge?.web === "off" ? "off" : "on" }}).</template
+                  ><template v-else> Questions they don't cover are answered "not covered".</template> No text is generated.
+                </span>
+              </label>
               <label
                 v-for="p in catalog.providers"
                 :key="p.id"
-                :class="cn('relative flex cursor-pointer flex-col rounded-lg border-2 p-3', active?.provider === p.id ? 'border-brand bg-brand/5' : 'border-gray-200 bg-surface hover:border-gray-300', !p.configured && 'cursor-not-allowed opacity-60')"
+                :class="cn('relative flex cursor-pointer flex-col rounded-lg border-2 p-3', !kioskOnly && active?.provider === p.id ? 'border-brand bg-brand/5' : 'border-gray-200 bg-surface hover:border-gray-300', !p.configured && 'cursor-not-allowed opacity-60')"
               >
-                <input type="radio" name="provider" :value="p.id" class="sr-only" :checked="active?.provider === p.id" :disabled="!p.configured" @change="updateSettings({ provider: p.id, model: p.models[0]?.id ?? null })" />
+                <input type="radio" name="provider" :value="p.id" class="sr-only" :checked="!kioskOnly && active?.provider === p.id" :disabled="!p.configured" @change="(setKioskOnly(false), updateSettings({ provider: p.id, model: p.models[0]?.id ?? null }))" />
                 <span class="flex items-center justify-between text-sm font-medium text-ink">
                   {{ p.label }}
-                  <Check v-if="active?.provider === p.id" class="size-5 text-brand" aria-label="Selected" />
+                  <Check v-if="!kioskOnly && active?.provider === p.id" class="size-5 text-brand" aria-label="Selected" />
                   <Lock v-if="!p.configured" class="size-4 text-gray-400" aria-hidden="true" />
                 </span>
                 <span class="mt-1 text-xs text-gray-500">{{ p.configured ? `${p.models.length} models${p.local ? " · local network" : ""}` : "Not configured on this server" }}</span>
               </label>
             </fieldset>
-            <div v-if="active" class="mt-5 grid gap-6 sm:grid-cols-2">
+            <div v-if="active && !kioskOnly" class="mt-5 grid gap-6 sm:grid-cols-2">
               <div>
                 <label for="model" class="block text-sm font-medium text-ink">Model</label>
                 <select id="model" class="input mt-1" :value="active.model" @change="updateSettings({ provider: active.provider, model: ($event.target as HTMLSelectElement).value })">
@@ -296,9 +322,9 @@ async function clearBrowser() {
       </template>
     </AdaptiveNav>
     <p class="text-center text-sm text-gray-500">
-      Settings are saved in this browser automatically. <RouterLink to="/kiosk" class="font-medium text-brand-dark underline">Open the kiosk</RouterLink>
+      Preferences are saved in this browser automatically.
       <template v-if="!NATIVE">
-        · <RouterLink to="/kiosk/curate" class="font-medium text-brand-dark underline">Moderation queue</RouterLink> (moderators) ·
+        <RouterLink to="/kiosk/curate" class="font-medium text-brand-dark underline">Moderation queue</RouterLink> (moderators) ·
         <RouterLink to="/kiosk/admin" class="font-medium text-brand-dark underline">Administration</RouterLink>
       </template>
     </p>

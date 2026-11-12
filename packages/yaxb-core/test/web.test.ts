@@ -5,7 +5,7 @@ import { createKiosk, webSourcesLine } from "../src/agent/index.js";
 import { routeTools } from "../src/agent/routing.js";
 import type { AgentEvent } from "../src/events/index.js";
 import { curatedQA } from "../src/knowledge/index.js";
-import type { Embed } from "../src/knowledge/semantic.js";
+import { composeWebAnswer, type Embed } from "../src/knowledge/semantic.js";
 import { rerankWeb } from "../src/knowledge/server.js";
 import { DEFAULT_AGENT_SETTINGS, capabilities } from "../src/settings/index.js";
 import { createMemoryModerationStore, createMemoryThreadStore } from "../src/stores/index.js";
@@ -220,5 +220,35 @@ describe("web fallback", () => {
     expect(systemOf(model)).toContain("you may call `web_search`");
     expect(queries).toEqual(["holiday pay"]);
     expect(String(model.calls[1]!.find((m) => m.getType() === "tool")?.content)).toContain("[web:1]");
+  });
+});
+
+describe("kiosk only (no AI model): web results quoted as found (KNW-45)", () => {
+  it("quotes the top results with their addresses, and nothing for an emergency", async () => {
+    const { kiosk, model } = setup([]);
+    const results = await kiosk.searchWeb("How much holiday pay for public holiday work?");
+    expect(results.map((r) => r.url)).toEqual(["https://labour.example.gov/holiday-pay"]);
+    expect(model.calls).toHaveLength(0);
+    const a = composeWebAnswer("What is the capital of India?", [
+      { title: "India (Britannica)", url: "https://www.britannica.com/place/India", snippet: "New Delhi is the capital of India." },
+      { title: "", url: "https://example.org/a", snippet: "   " },
+    ])!;
+    expect(a.kind).toBe("web");
+    expect(a.body).toContain("“New Delhi is the capital of India.”");
+    expect(a.text).toContain("(sources: web:1 · britannica.com/place/India)");
+    expect(a.references).toHaveLength(1);
+    expect(composeWebAnswer("I have crushing chest pain right now", [{ title: "x", url: "https://x.org", snippet: "y" }])).toBeNull();
+    expect(await kiosk.searchWeb("I have crushing chest pain right now")).toEqual([]);
+    expect(await setup([], { web: null }).kiosk.searchWeb("anything")).toEqual([]);
+  });
+});
+
+describe("re-ranking that fails", () => {
+  it("keeps the search engine's order instead of losing the results (a rate limit, an outage)", async () => {
+    const failing: Embed = async () => {
+      throw new Error("Workers AI embedding failed: HTTP 429");
+    };
+    const ranked = await rerankWeb("holiday pay", RESULTS, failing, { keep: 3 });
+    expect(ranked.map((r) => [r.url, r.score])).toEqual(RESULTS.map((r) => [r.url, null]));
   });
 });

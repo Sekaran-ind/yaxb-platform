@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The Transcript screen: ask box and the conversation with live agent activity.
 import { MAX_MESSAGE_CHARS } from "@sekaran-ind/yaxb-core/schemas";
-import { ArrowUp, Bot, CheckCircle2, HardDrive, Circle, CircleDot, Loader2, Mic, MicOff, NotebookPen, RotateCcw, Settings2, ShieldCheck, Wrench } from "@lucide/vue";
+import { ArrowUp, Bot, CheckCircle2, HardDrive, Circle, CircleDot, Loader2, Mic, MicOff, RotateCcw, Settings2, ShieldCheck, Wrench } from "@lucide/vue";
 import { computed, nextTick, ref, watch } from "vue";
 import { cn } from "@/lib/cn";
 import AnswerText from "./AnswerText.vue";
@@ -77,14 +77,11 @@ function submit() {
 <template>
   <div :class="cn('relative flex flex-col', heightClass ?? 'min-h-[min(62dvh,560px)]')">
     <div class="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
-      <RouterLink to="/settings" class="chip hover:text-ink">
+      <RouterLink :to="{ path: '/kiosk', query: { prefs: answers === 'local' ? 'knowledge' : 'model' } }" class="chip hover:text-ink">
         <Settings2 class="size-3.5" aria-hidden="true" />
-        <template v-if="answers === 'local'">Knowledge base only · on this device</template>
+        <template v-if="answers === 'local'">Kiosk only · no AI model</template>
         <template v-else>{{ catalogError ? "Agent offline" : modelLabel ? `${provider?.label} · ${modelLabel}` : "Loading model…" }}{{ answers === "auto" ? " · curated answers on this device" : "" }}</template>
       </RouterLink>
-      <span v-if="notebookTitle" class="chip truncate" title="Answers can use this notebook's sources and memory">
-        <NotebookPen class="size-3.5" aria-hidden="true" /> {{ notebookTitle }} · {{ sourceCount }} source{{ sourceCount === 1 ? "" : "s" }}
-      </span>
       <button v-if="turns.length" type="button" class="inline-flex items-center gap-1 hover:text-ink" @click="emit('reset')"><RotateCcw class="size-3.5" aria-hidden="true" /> New conversation</button>
     </div>
 

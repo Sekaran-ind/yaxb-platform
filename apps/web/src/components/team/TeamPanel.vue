@@ -65,7 +65,8 @@ onMounted(async () => {
   const share = route.query.share;
   if (typeof share === "string" && share.startsWith("/kiosk/")) {
     draft.value = share;
-    void router.replace({ query: {} });
+    const { share: _, ...rest } = route.query;
+    void router.replace({ query: rest });
   }
 });
 </script>
