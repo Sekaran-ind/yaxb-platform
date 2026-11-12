@@ -6,7 +6,7 @@ These documents describe what the YAXB kiosk must do, for the people who decide 
 |---|---|---|
 | 01 | [Overview](01-overview.md) | Purpose, who uses the kiosk, principles, surfaces |
 | 02 | [Conversation and answers](02-conversation-and-answers.md) | Asking, answer modes, grounding and citations, safety, escalation |
-| 03 | [Knowledge](03-knowledge.md) | Curated Q&A, notebooks, websites, on-device search, web fallback, tool routing |
+| 03 | [Knowledge](03-knowledge.md) | Curated Q&A, notebooks, websites, child safety (parked), on-device search, web fallback, tool routing |
 | 04 | [Languages and voice](04-languages-and-voice.md) | The language picker, speech in and out, translation |
 | 05 | [Journeys and forms](05-journeys-and-forms.md) | Guided services, slot filling, journey summaries |
 | 06 | [Profiles, activity and feedback](06-profiles-activity-feedback.md) | Visitor profiles, suggested settings, the activity log, session feedback |
@@ -27,6 +27,7 @@ These documents describe what the YAXB kiosk must do, for the people who decide 
 - **Built**: in the code, with automated tests where the behaviour can be tested without a person.
 - **Planned**: agreed and not yet built. Planned requirements are the brief for the work.
 - **Proposed**: a suggested answer to an open question, to be confirmed.
+- **Parked**: agreed, and deliberately deferred until after the current roadmap.
 
 **Acceptance.** "Check:" lines say how a reviewer can confirm a requirement, by a test, a demonstration, or a review.
 
