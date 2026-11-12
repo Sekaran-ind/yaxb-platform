@@ -70,7 +70,7 @@ const pct = (n: number, total: number) => (total ? `${Math.round((n / total) * 1
       <template v-else>
         <div class="mb-3 flex flex-wrap items-center gap-2 text-sm">
           <div class="flex gap-1" role="group" aria-label="Show">
-            <button v-for="s in [{ v: 'open', l: 'Open' }, { v: 'handled', l: 'Handled' }, { v: '', l: 'All' }] as const" :key="s.v" type="button" :aria-pressed="state === s.v" :class="['rounded-full px-3 py-1', state === s.v ? 'bg-brand text-white' : 'bg-mist text-ink']" @click="state = s.v">{{ s.l }}</button>
+            <button v-for="s in [{ v: 'open', l: 'Open' }, { v: 'handled', l: 'Handled' }, { v: '', l: 'All' }] as const" :key="s.v" type="button" :aria-pressed="state === s.v" :class="['rounded-full px-3 py-1', state === s.v ? 'bg-brand-dark text-on-brand' : 'bg-mist text-ink']" @click="state = s.v">{{ s.l }}</button>
           </div>
           <label for="mod-reason" class="sr-only">Reason</label>
           <select id="mod-reason" v-model="reason" class="input w-auto py-1 text-sm">
@@ -150,7 +150,7 @@ const pct = (n: number, total: number) => (total ? `${Math.round((n / total) * 1
       <p v-if="curated.error.value" class="text-sm text-red-800">{{ curated.error.value }}</p>
       <ol class="relative space-y-6 border-l-2 border-gray-200 pl-6">
         <li v-for="item in curated.data.value?.items ?? []" :key="item.id" class="relative">
-          <span class="absolute top-1 -left-[33px] flex size-4 items-center justify-center rounded-full bg-white ring-2 ring-info" />
+          <span class="absolute top-1 -left-[33px] flex size-4 items-center justify-center rounded-full bg-surface ring-2 ring-info" />
           <div class="card p-4">
             <p class="flex items-start gap-2 font-medium text-ink">
               <AlertTriangle v-if="item.red_flag" class="mt-0.5 size-4 shrink-0 text-danger" aria-label="Red flag" />

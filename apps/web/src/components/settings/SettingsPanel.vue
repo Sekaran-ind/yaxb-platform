@@ -7,6 +7,7 @@ import { Check, Lock, ServerCrash } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import AdaptiveNav from "@/components/kiosk/AdaptiveNav.vue";
+import ThemePicker from "./ThemePicker.vue";
 import { effectiveSelection, settings, updateSettings, useCapabilities, useProviders } from "@/composables/settings";
 import { useSpeechOutput } from "@/composables/speech";
 import { useWidth } from "@/composables/width";
@@ -26,7 +27,7 @@ const SECTIONS = [
   { id: "mcp", label: "MCP servers", icon: "library" },
   { id: "memory", label: "Memory & skills", icon: "notebook" },
   { id: "storage", label: "Storage", icon: "file-text" },
-  { id: "kiosk", label: "Layout & voice", icon: "message-square" },
+  { id: "kiosk", label: "Layout, theme & voice", icon: "message-square" },
 ];
 
 // A kiosk command may open a section directly: /settings?section=model (CMD-1).
@@ -79,7 +80,7 @@ async function clearBrowser() {
               <label
                 v-for="p in catalog.providers"
                 :key="p.id"
-                :class="cn('relative flex cursor-pointer flex-col rounded-lg border-2 p-3', active?.provider === p.id ? 'border-brand bg-brand/5' : 'border-gray-200 bg-white hover:border-gray-300', !p.configured && 'cursor-not-allowed opacity-60')"
+                :class="cn('relative flex cursor-pointer flex-col rounded-lg border-2 p-3', active?.provider === p.id ? 'border-brand bg-brand/5' : 'border-gray-200 bg-surface hover:border-gray-300', !p.configured && 'cursor-not-allowed opacity-60')"
               >
                 <input type="radio" name="provider" :value="p.id" class="sr-only" :checked="active?.provider === p.id" :disabled="!p.configured" @change="updateSettings({ provider: p.id, model: p.models[0]?.id ?? null })" />
                 <span class="flex items-center justify-between text-sm font-medium text-ink">
@@ -259,8 +260,13 @@ async function clearBrowser() {
             <h2 class="text-lg font-semibold text-ink">Layout</h2>
             <p class="mt-1 mb-3 text-sm text-gray-500">Auto picks Mini, Pod or Full from the screen size. You can also switch on the kiosk screen.</p>
             <div role="radiogroup" aria-label="Kiosk layout" class="flex flex-wrap gap-2">
-              <button v-for="l in layoutChoices" :key="l" type="button" role="radio" :aria-checked="settings.layout === l" :class="cn('rounded-full px-4 py-1.5 text-sm capitalize', settings.layout === l ? 'bg-brand text-white' : 'bg-mist text-gray-700 hover:text-ink')" @click="updateSettings({ layout: l })">{{ layoutLabel(l) }}</button>
+              <button v-for="l in layoutChoices" :key="l" type="button" role="radio" :aria-checked="settings.layout === l" :class="cn('rounded-full px-4 py-1.5 text-sm capitalize', settings.layout === l ? 'bg-brand-dark text-on-brand' : 'bg-mist text-gray-700 hover:text-ink')" @click="updateSettings({ layout: l })">{{ layoutLabel(l) }}</button>
             </div>
+          </section>
+          <section class="card p-5">
+            <h2 class="text-lg font-semibold text-ink">Theme</h2>
+            <p class="mt-1 mb-3 text-sm text-gray-500">Colours and contrast for this kiosk. High contrast suits low vision and bright places.</p>
+            <ThemePicker />
           </section>
           <section class="card p-5">
             <h2 class="text-lg font-semibold text-ink">Voice</h2>

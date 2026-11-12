@@ -4,6 +4,7 @@ import { MAX_MESSAGE_CHARS } from "@sekaran-ind/yaxb-core/schemas";
 import { Bot, CheckCircle2, HardDrive, Circle, CircleDot, Loader2, NotebookPen, RotateCcw, Send, Settings2, ShieldCheck, Wrench } from "@lucide/vue";
 import { computed, nextTick, ref, watch } from "vue";
 import { cn } from "@/lib/cn";
+import AnswerText from "./AnswerText.vue";
 import CommandCard from "./CommandCard.vue";
 import type { ChatTurn, ProvidersResponse, ToolActivity } from "@/lib/types";
 
@@ -97,7 +98,7 @@ function submit() {
       <p v-if="!turns.length" class="pt-16 text-center text-gray-400">Let us explore. Ask a question or tap the microphone.</p>
       <template v-for="t in turns" :key="t.id">
         <div v-if="t.role === 'user'" class="flex justify-end">
-          <p class="max-w-[85%] rounded-2xl rounded-br-sm bg-brand px-4 py-2 whitespace-pre-wrap text-white">{{ t.text }}</p>
+          <p class="max-w-[85%] rounded-2xl rounded-br-sm bg-brand-dark px-4 py-2 whitespace-pre-wrap text-on-brand">{{ t.text }}</p>
         </div>
         <div v-else class="flex gap-3">
           <HardDrive v-if="t.local" class="mt-1 size-6 shrink-0 text-brand" aria-label="Answered on this device from the knowledge base" />
@@ -132,7 +133,7 @@ function submit() {
               @sign-in="emit('card', t.id, 'sign-in')"
               @ask-assistant="emit('card', t.id, 'ask-assistant')"
             />
-            <p v-if="t.text" class="leading-relaxed whitespace-pre-wrap text-ink">{{ t.text }}</p>
+            <AnswerText v-if="t.text" :text="t.text" />
             <div v-if="t.text && !t.card && !t.pending && !t.error" class="text-xs text-gray-500">
               <p v-if="t.review === 'sent'" role="status" class="inline-flex items-center gap-1"><ShieldCheck class="size-3.5 text-success" aria-hidden="true" /> Sent to the moderators to check. Thank you.</p>
               <button

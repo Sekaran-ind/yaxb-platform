@@ -19,7 +19,7 @@ const { data, error } = useAgentResource<{ sources: KnowledgeSource[] }>("source
           <p class="mt-1 text-xs text-gray-400">Moderator: {{ s.moderator }} · Curators: {{ s.curator }}<template v-if="s.baseline_date"> · Baseline {{ s.baseline_date }}</template></p>
         </div>
       </div>
-      <span class="rounded-full bg-brand px-2.5 py-0.5 text-xs font-medium text-white">New</span>
+      <span class="rounded-full bg-brand-dark px-2.5 py-0.5 text-xs font-medium text-on-brand">New</span>
     </li>
   </ol>
 </template>

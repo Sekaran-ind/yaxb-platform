@@ -70,6 +70,7 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
 - **Vue app** (`src/`): `router.ts` lazy-loads pages; `composables/` replace React hooks (`settings.ts` is one reactive object saved to localStorage; `chat.ts`, `notebook.ts`, `speech.ts`, `width.ts`). `lib/browser/` (store, offline models, documents) is framework-free.
 - Imports use `@/` (meaning `apps/web/src/`). Never put secrets in the client, and never log message content (the moderation queue may hold health details).
 - Tailwind v4 has no config file. Tokens and reusable classes live in `src/styles.css`, and reusable classes must use `@utility`.
+- Themes (`lib/themes.ts`, `settings.theme`, SET-10..11): `[data-theme]` blocks in `styles.css` override the tokens, and dark themes invert Tailwind's gray scale (plus red-700/800 and green-800). Use `bg-surface`/`bg-canvas`/`bg-mist`, `text-ink`/`text-body`/`text-gray-*`, and `bg-brand-dark text-on-brand` for filled buttons and bubbles; never `bg-white` or white text on `bg-brand`. `bg-console` stays dark in every theme. Answers render through `AnswerText.vue` (`lib/answer-format.ts`: Markdown read into data, never `v-html`).
 - The kiosk layout lives in `components/kiosk/KioskShell.vue`, which owns the chat, speech, notebook and journey handlers. `AdaptiveNav.vue` renders each screen through a named slot.
 - Transformers.js runs in module workers (`src/workers/`).
 

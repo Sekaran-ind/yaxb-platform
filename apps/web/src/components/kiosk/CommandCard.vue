@@ -36,7 +36,7 @@ const STATE_NOTE: Partial<Record<CommandCard["state"], string>> = { done: "Done.
       </span>
     </header>
 
-    <div class="space-y-3 bg-white px-4 py-3 text-sm">
+    <div class="space-y-3 bg-surface px-4 py-3 text-sm">
       <p v-if="card.text" class="leading-relaxed whitespace-pre-wrap text-ink">{{ card.text }}</p>
 
       <table v-if="card.changes?.length" class="w-full text-left text-sm">

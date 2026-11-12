@@ -25,7 +25,7 @@ async function send() {
 
 <template>
   <p v-if="thanks" role="status" class="rounded-xl bg-success/10 px-4 py-3 text-sm text-ink">Thank you for your feedback.</p>
-  <section v-else-if="feedback.open.value" class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-brand/20" aria-labelledby="feedback-q">
+  <section v-else-if="feedback.open.value" class="rounded-xl bg-surface p-4 shadow-sm ring-1 ring-brand/20" aria-labelledby="feedback-q">
     <div class="flex items-start justify-between gap-3">
       <h3 id="feedback-q" class="font-medium text-ink">{{ FEEDBACK_QUESTION }}</h3>
       <button type="button" class="text-gray-400 hover:text-ink" aria-label="Not now" @click="feedback.submit('skipped')"><X class="size-4" aria-hidden="true" /></button>
@@ -37,7 +37,7 @@ async function send() {
         type="button"
         role="radio"
         :aria-checked="picked === r.value"
-        :class="cn('inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm ring-1', picked === r.value ? 'bg-brand text-white ring-brand' : 'bg-white text-ink ring-gray-200 hover:ring-brand')"
+        :class="cn('inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm ring-1', picked === r.value ? 'bg-brand-dark text-on-brand ring-brand' : 'bg-surface text-ink ring-gray-200 hover:ring-brand')"
         @click="picked = r.value"
       >
         <component :is="ICONS[r.value]" class="size-4" aria-hidden="true" /> {{ r.label }}

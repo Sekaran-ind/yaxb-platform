@@ -4,6 +4,7 @@
 import type { LayoutChoice } from "@sekaran-ind/yaxb-core/screens";
 import { DEFAULT_AGENT_SETTINGS, type AgentSettings, type Capabilities } from "@sekaran-ind/yaxb-core/settings";
 import { reactive, ref, watch } from "vue";
+import { applyTheme, isThemeChoice, type ThemeChoice } from "@/lib/themes";
 import { SETTINGS_STORAGE_KEY, type ProvidersResponse } from "@/lib/types";
 
 export type KioskSettings = {
@@ -17,6 +18,8 @@ export type KioskSettings = {
   agent: AgentSettings;
   /** Kiosk layout: auto picks mini, pod or full from the space available. */
   layout: LayoutChoice;
+  /** Colours and contrast (lib/themes.ts); "system" follows the device's light or dark mode. */
+  theme: ThemeChoice;
   activeNotebook: string | null;
   /** yaxb-box connection for Storage: Box. Stays in this browser; never sent with a chat turn. */
   box: { url: string; token: string };
@@ -31,6 +34,7 @@ const DEFAULTS: KioskSettings = {
   speechRate: 1,
   agent: DEFAULT_AGENT_SETTINGS,
   layout: "auto",
+  theme: "system",
   activeNotebook: null,
   box: { url: "", token: "" },
 };
@@ -38,6 +42,7 @@ const DEFAULTS: KioskSettings = {
 function load(): KioskSettings {
   try {
     const saved = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) ?? "{}") as Partial<KioskSettings>;
+    if (!isThemeChoice(saved.theme)) delete saved.theme;
     return { ...DEFAULTS, ...saved, agent: { ...DEFAULT_AGENT_SETTINGS, ...saved.agent, knowledge: { ...DEFAULT_AGENT_SETTINGS.knowledge, ...saved.agent?.knowledge } }, box: { ...DEFAULTS.box, ...saved.box } };
   } catch {
     return structuredClone(DEFAULTS);
@@ -56,6 +61,17 @@ watch(
     }
   },
   { deep: true },
+);
+
+// The theme follows the setting (and the device, for "system").
+let stopTheme: (() => void) | null = null;
+watch(
+  () => settings.theme,
+  (t) => {
+    stopTheme?.();
+    if (typeof document !== "undefined") stopTheme = applyTheme(t);
+  },
+  { immediate: true },
 );
 
 export function updateSettings(patch: Partial<KioskSettings>) {
