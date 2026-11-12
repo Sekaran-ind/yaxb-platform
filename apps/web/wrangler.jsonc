@@ -27,6 +27,11 @@
     }
   ],
 
+  // The team's signaling relay (worker/team.ts, TEAM-10/20/50): presence and pairing for
+  // device-to-device chat and calls. It forwards offers, answers and ICE candidates only.
+  "durable_objects": { "bindings": [{ "name": "TEAM", "class_name": "TeamHub" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TeamHub"] }],
+
   // Per-session chat limit and per-IP form limit. namespace_id is any number unique to your account.
   "ratelimits": [
     { "name": "CHAT_LIMITER", "namespace_id": "4101", "simple": { "limit": 20, "period": 60 } },

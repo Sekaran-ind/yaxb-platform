@@ -3,7 +3,7 @@
 // answer's review: a rating, each cited source relevant or not, the sources that should have been
 // cited, context, and optionally a proposed knowledge-base entry. Earlier reviews stay as history.
 import { RATINGS, type Rating, type Review, type ReviewAnswer } from "@sekaran-ind/yaxb-core/reviews";
-import { ArrowLeft, Check, History, Plus, RefreshCw, X } from "@lucide/vue";
+import { ArrowLeft, Check, History, Plus, RefreshCw, Share2, X } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import ModeratorSignIn from "./ModeratorSignIn.vue";
@@ -107,7 +107,10 @@ watch(state, loadList);
 
     <!-- one answer -->
     <template v-if="!signedOut && answerId && detail">
-      <button type="button" class="inline-flex items-center gap-1 text-sm text-brand-dark hover:underline" @click="open(null)"><ArrowLeft class="size-4" aria-hidden="true" /> All answers</button>
+      <div class="flex items-center justify-between gap-3">
+        <button type="button" class="inline-flex items-center gap-1 text-sm text-brand-dark hover:underline" @click="open(null)"><ArrowLeft class="size-4" aria-hidden="true" /> All answers</button>
+        <RouterLink :to="{ path: '/kiosk/team', query: { share: `/kiosk/review?answer=${detail.answer.id}` } }" class="btn-ghost h-8 text-xs" title="Send a link to this answer to a team member"><Share2 class="size-3.5" aria-hidden="true" /> Share in team chat</RouterLink>
+      </div>
 
       <section class="card space-y-3 p-5">
         <p class="text-xs text-gray-500">

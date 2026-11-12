@@ -3,6 +3,7 @@ import { ChevronLeft } from "@lucide/vue";
 import { useRoute } from "vue-router";
 import SiteFooter from "@/components/site/SiteFooter.vue";
 import SiteNavbar from "@/components/site/SiteNavbar.vue";
+import CallLayer from "@/components/team/CallLayer.vue";
 import { NATIVE } from "@/lib/platform";
 
 const route = useRoute();
@@ -25,5 +26,7 @@ const route = useRoute();
       <RouterView />
     </main>
     <SiteFooter />
+    <!-- A team call or a ringing call, above every page (TEAM-20). -->
+    <CallLayer />
   </template>
 </template>

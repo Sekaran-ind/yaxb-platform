@@ -10,8 +10,14 @@
 import { z } from "zod";
 import { knowledgeSources } from "../knowledge/index.js";
 import { LANGUAGES, type LanguageCode } from "../schemas/index.js";
+import { leavesNoAdministrator } from "../team/index.js";
 
-export const MODERATOR_ROLES = ["moderator", "curator"] as const;
+/** A team rule refused a change (TEAM-6). */
+export class TeamRuleError extends Error {}
+const LAST_ADMIN = "The team needs at least one active administrator. Make someone else an administrator first.";
+
+/** Roles (TEAM-1). An administrator member may manage the team, like the ADMIN_TOKEN holder. */
+export const MODERATOR_ROLES = ["moderator", "curator", "administrator"] as const;
 export type ModeratorRole = (typeof MODERATOR_ROLES)[number];
 export const KEY_PREFIX = "yaxb_mod_";
 
@@ -38,7 +44,7 @@ export type ModeratorProfile = {
   languages: LanguageCode[];
   /** Knowledge source ids (knowledge_sources.json) they look after. */
   sources: string[];
-  preferences: { reviewLanguage?: LanguageCode; queue?: "open" | "all" };
+  preferences: { reviewLanguage?: LanguageCode; queue?: "open" | "all"; availability?: "available" | "busy" | "away" };
   updated_at: string;
 };
 
@@ -51,6 +57,8 @@ export const AUDIT_ACTIONS = {
   "moderator.key_rotated": "Moderator key rotated",
   "moderator.updated": "Moderator details changed",
   "moderator.profile_updated": "Moderator profile changed",
+  "moderator.removed": "Member removed",
+  "moderator.reinstated": "Member reinstated with a new key",
   "moderation.viewed": "Moderation queue opened",
   "moderation.handled": "Escalated question handled",
   "answer.reviewed": "Answer reviewed",
@@ -96,7 +104,7 @@ export const moderatorProfileSchema = z.strictObject({
     .max(20)
     .default([])
     .refine((ids) => ids.every((id) => knowledgeSources.some((s) => s.id === id)), { message: "Unknown knowledge source." }),
-  preferences: z.strictObject({ reviewLanguage: LANGUAGE.optional(), queue: z.enum(["open", "all"]).optional() }).default({}),
+  preferences: z.strictObject({ reviewLanguage: LANGUAGE.optional(), queue: z.enum(["open", "all"]).optional(), availability: z.enum(["available", "busy", "away"]).optional() }).default({}),
 });
 export type ModeratorProfileInput = z.input<typeof moderatorProfileSchema>;
 
@@ -144,6 +152,8 @@ export interface ModeratorStore {
   update(id: string, patch: Partial<Pick<Moderator, "name" | "label" | "roles" | "status" | "key_prefix" | "expires_at" | "last_seen_at" | "reviews">>, keyHash?: string): Promise<Moderator | null>;
   getProfile(id: string): Promise<ModeratorProfile | null>;
   putProfile(p: ModeratorProfile): Promise<void>;
+  /** Remove a member and their profile (TEAM-2); the audit log keeps the history. */
+  remove(id: string): Promise<boolean>;
   audit(e: AuditEvent): Promise<void>;
   auditLog(opts?: { limit?: number; actorId?: string; before?: string }): Promise<AuditEvent[]>;
 }
@@ -188,6 +198,7 @@ export function createModeratorService(store: ModeratorStore) {
     },
 
     async revoke(id: string) {
+      if (leavesNoAdministrator(await store.list(), id, { suspend: true })) throw new TeamRuleError(LAST_ADMIN);
       const m = await store.update(id, { status: "revoked" });
       if (m) await store.audit(auditEvent({ actor_type: "admin", actor_id: null, actor_name: null, action: "moderator.key_revoked", target_id: id, details: { name: m.name } }));
       return m;
@@ -199,15 +210,26 @@ export function createModeratorService(store: ModeratorStore) {
       if (!old) return null;
       const key = newModeratorKey();
       const m = await store.update(id, { status: "active", key_prefix: keyPrefixOf(key) }, await hashKey(key));
-      await store.audit(auditEvent({ actor_type: "admin", actor_id: null, actor_name: null, action: "moderator.key_rotated", target_id: id, details: { name: old.name } }));
+      await store.audit(auditEvent({ actor_type: "admin", actor_id: null, actor_name: null, action: old.status === "revoked" ? "moderator.reinstated" : "moderator.key_rotated", target_id: id, details: { name: old.name } }));
       return m ? { moderator: m, key } : null;
     },
 
     async change(id: string, patch: unknown) {
       const p = updateModeratorSchema.parse(patch);
+      if (p.roles && leavesNoAdministrator(await store.list(), id, { roles: p.roles })) throw new TeamRuleError(LAST_ADMIN);
       const m = await store.update(id, { ...(p.name ? { name: p.name } : {}), ...(p.label !== undefined ? { label: p.label || null } : {}), ...(p.roles ? { roles: p.roles } : {}) });
       if (m) await store.audit(auditEvent({ actor_type: "admin", actor_id: null, actor_name: null, action: "moderator.updated", target_id: id, details: { fields: Object.keys(p) } }));
       return m;
+    },
+
+    /** Remove a member (TEAM-2): their key stops working and their profile goes. */
+    async remove(id: string, actor: { name: string | null } = { name: null }) {
+      const m = await store.get(id);
+      if (!m) return false;
+      if (leavesNoAdministrator(await store.list(), id, { remove: true })) throw new TeamRuleError(LAST_ADMIN);
+      await store.remove(id);
+      await store.audit(auditEvent({ actor_type: "admin", actor_id: null, actor_name: actor.name, action: "moderator.removed", target_id: id, details: { name: m.name } }));
+      return true;
     },
 
     /** Sign in with a key: the moderator when the key is theirs, active and not expired. */
@@ -279,6 +301,10 @@ export function createMemoryModeratorStore(): ModeratorStore {
     },
     async putProfile(p) {
       profiles.set(p.moderator_id, p);
+    },
+    async remove(id) {
+      profiles.delete(id);
+      return rows.delete(id);
     },
     async audit(e) {
       log.unshift(e);

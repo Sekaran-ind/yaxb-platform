@@ -62,6 +62,7 @@ const pct = (n: number, total: number) => (total ? `${Math.round((n / total) * 1
         <div v-if="!signInNeeded" class="flex flex-wrap items-center gap-3 text-xs">
           <RouterLink to="/kiosk/review" class="font-medium text-brand-dark hover:underline">Review answers</RouterLink>
           <RouterLink to="/kiosk/quality" class="font-medium text-brand-dark hover:underline">Quality (F1)</RouterLink>
+          <RouterLink to="/kiosk/team" class="font-medium text-brand-dark hover:underline">Team</RouterLink>
           <RouterLink to="/kiosk/moderator" class="font-medium text-brand-dark hover:underline">My moderator profile</RouterLink>
           <button type="button" class="inline-flex items-center gap-1 hover:text-ink" @click="loadQueue"><RefreshCw class="size-3.5" aria-hidden="true" /> Refresh</button>
         </div>

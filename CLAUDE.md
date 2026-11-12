@@ -155,6 +155,14 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
 - Web: "Ask a moderator to check this answer" under each answer (`TranscriptPane`, `KioskShell.reviewAnswer`), `/kiosk/review` (`AnswerReviews.vue`), `/kiosk/quality` (`QualityDashboard.vue`: sortable table, weeks, worst answers, proposals to copy into `curated_qa.json`), and handled/filters on Curate. `ModeratorSignIn.vue` and `lib/api.ts` are shared.
 - Run core tests from PowerShell with an upper-case `C:` path: under Git Bash's `/c/` vitest loads twice and every file fails with "reading 'config'".
 
+## The team: chat and calls
+
+- `team/` (core, export `./team`): `PairingHub` (pairs two members' devices per room, `roomName(a, b, channel)`, relays unread, 4403 outside the pair, 4409 a second device), `Presence` (online members with availability; `invite`/`cancel`/`decline` for chat or video, `unavailable` back when the invitee is offline; anything else ignored), `memberStatus` (invited until the first sign-in, suspended when revoked), `teamMember`, `leavesNoAdministrator` (TEAM-6). The wire protocol is clinux-desk's (`ready`/offer/answer/ice/`peer-left`).
+- Moderators: the `administrator` role (such a member may use Administration, like `ADMIN_TOKEN`), `preferences.availability`, `remove` (store and service), `TeamRuleError` for the last-administrator rule (the Worker returns 409).
+- Worker: the `TeamHub` Durable Object (`worker/team.ts`, binding `TEAM`, one instance named "team") holds both; `GET /api/team`, `PUT /api/team/availability`, and the WebSockets `/api/team/presence` and `/api/team/signal?peer=&channel=`, members with their own key only, same origin. The Worker sets the member and room headers; the browser never chooses them. `Permissions-Policy` allows the camera and screen capture for calls.
+- Web: `lib/browser/p2p.ts` (`TeamPresence`, `P2PChat` over a data channel, `P2PVideo` with camera, microphone, screen share; STUN only), `lib/browser/team-chat.ts` (history in IndexedDB per member, never on the server), `composables/team.ts` (one instance: opening a chat invites the other device, which joins on its own; a call rings), `components/team/TeamPanel.vue` (`/kiosk/team`) and `CallLayer.vue` (in `App.vue`, so a call survives page changes). "Share in team chat" on a reviewed answer and the quality page puts a `/kiosk/...` link in the composer; messages show such links as links.
+- Not built: team meetings of three or more (RealtimeKit, TEAM-22), the box relay offline (TEAM-30..32), a visitor talking to a person (TEAM-40..42).
+
 ## Websites as notebook sources
 
 - `web/pages.ts` (core, export `./web/pages`): `fetchPage` and `fetchSite` (KNW-20..22) guard against SSRF (SEC-4):

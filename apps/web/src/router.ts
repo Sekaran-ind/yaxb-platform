@@ -19,6 +19,7 @@ export const router = createRouter({
     { path: "/kiosk/curate", component: () => import("./pages/CuratePage.vue"), meta: { title: "Curate" } },
     { path: "/kiosk/review", component: () => import("./pages/ReviewPage.vue"), meta: { title: "Review answers" } },
     { path: "/kiosk/quality", component: () => import("./pages/QualityPage.vue"), meta: { title: "Answer quality" } },
+    { path: "/kiosk/team", component: () => import("./pages/TeamPage.vue"), meta: { title: "Team" } },
     { path: "/kiosk/moderator", component: () => import("./pages/ModeratorPage.vue"), meta: { title: "Moderator profile" } },
     { path: "/kiosk/admin", component: () => import("./pages/AdminPage.vue"), meta: { title: "Administration" } },
     { path: "/settings", component: () => import("./pages/SettingsPage.vue"), meta: { title: "Settings" } },

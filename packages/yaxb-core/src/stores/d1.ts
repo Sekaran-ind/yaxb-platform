@@ -256,6 +256,12 @@ export function createD1ModeratorStore(db: D1Like): ModeratorStore {
       const r = await db.prepare("SELECT moderator_id, display_name, languages, sources, preferences, updated_at FROM moderator_profiles WHERE moderator_id = ?1").bind(id).first<{ moderator_id: string; display_name: string; languages: string; sources: string; preferences: string; updated_at: string }>();
       return r ? { ...r, languages: JSON.parse(r.languages), sources: JSON.parse(r.sources), preferences: JSON.parse(r.preferences) } : null;
     },
+    async remove(id) {
+      await db.prepare("DELETE FROM moderator_profiles WHERE moderator_id = ?1").bind(id).run();
+      const had = await db.prepare("SELECT id FROM moderators WHERE id = ?1").bind(id).first();
+      await db.prepare("DELETE FROM moderators WHERE id = ?1").bind(id).run();
+      return Boolean(had);
+    },
     async putProfile(p) {
       await db
         .prepare(

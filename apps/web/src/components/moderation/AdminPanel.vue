@@ -1,8 +1,10 @@
 <script setup lang="ts">
-// Administration (MOD-20..23, MOD-25): sign in with the administrator token, then issue moderator
-// keys (shown once), change, revoke or rotate them, and read the audit log.
+// Administration (MOD-20..23, MOD-25, TEAM-1..6): sign in with the administrator token (or as a
+// member with the administrator role), then invite members (their key is shown once), change their
+// roles, suspend, reinstate or remove them, and read the audit log.
 import { AUDIT_ACTIONS, MODERATOR_ROLES, type AuditEvent, type Moderator, type ModeratorStatus } from "@sekaran-ind/yaxb-core/moderators";
-import { Copy, KeyRound, Lock, LogOut, RefreshCw, RotateCw, ShieldAlert, UserPlus } from "@lucide/vue";
+import { memberStatus, type MemberStatus } from "@sekaran-ind/yaxb-core/team";
+import { Copy, KeyRound, Lock, LogOut, Pencil, RefreshCw, RotateCw, ShieldAlert, Trash2, UserPlus } from "@lucide/vue";
 import { onMounted, ref } from "vue";
 import { cn } from "@/lib/cn";
 
@@ -61,7 +63,16 @@ const issue = () =>
     shownKey.value = { name: r.moderator.name, key: r.key };
     form.value = null;
   });
-const revoke = (m: Row) => confirm(`Revoke ${m.name}'s key? They are signed out at once.`) && act(() => api(`/api/admin/moderators/${m.id}/revoke`, { method: "POST" }));
+const revoke = (m: Row) => confirm(`Suspend ${m.name}? Their key stops working and they are signed out at once.`) && act(() => api(`/api/admin/moderators/${m.id}/revoke`, { method: "POST" }));
+const remove = (m: Row) => confirm(`Remove ${m.name} from the team? Their key and profile are deleted; the audit log keeps the history.`) && act(() => api(`/api/admin/moderators/${m.id}`, { method: "DELETE" }));
+/** Editing a member's roles inline. */
+const editing = ref<{ id: string; roles: string[] } | null>(null);
+const saveRoles = () =>
+  act(async () => {
+    if (!editing.value) return;
+    await api(`/api/admin/moderators/${editing.value.id}`, { method: "PATCH", body: JSON.stringify({ roles: editing.value.roles }) });
+    editing.value = null;
+  });
 const rotate = (m: Row) =>
   confirm(`Give ${m.name} a new key? The old one stops working at once.`) &&
   act(async () => {
@@ -75,7 +86,7 @@ async function copyKey() {
   setTimeout(() => (copied.value = false), 1500);
 }
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : "—");
-const STATUS_CLASS: Record<ModeratorStatus, string> = { active: "bg-success/10 text-ink", revoked: "bg-danger/10 text-red-800", expired: "bg-warning/20 text-ink" };
+const STATUS_CLASS: Record<MemberStatus, string> = { active: "bg-success/10 text-ink", invited: "bg-info/10 text-ink", suspended: "bg-danger/10 text-red-800", expired: "bg-warning/20 text-ink" };
 const detailText = (d: AuditEvent["details"]) => (d ? Object.entries(d).map(([k, v]) => `${k}: ${v}`).join(" · ") : "");
 onMounted(load);
 </script>
@@ -109,9 +120,9 @@ onMounted(load);
 
       <section class="card p-5">
         <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h3 class="font-semibold text-ink">Moderators</h3>
+          <h3 class="font-semibold text-ink">Team</h3>
           <div class="flex gap-2">
-            <button type="button" class="btn-light" @click="form = { name: '', label: '', roles: ['moderator'], expiresInDays: null }"><UserPlus class="size-4" aria-hidden="true" /> Add moderator</button>
+            <button type="button" class="btn-light" @click="form = { name: '', label: '', roles: ['moderator'], expiresInDays: null }"><UserPlus class="size-4" aria-hidden="true" /> Invite member</button>
             <button type="button" class="btn-light" aria-label="Refresh" @click="load"><RefreshCw class="size-4" aria-hidden="true" /></button>
             <button type="button" class="btn-light" @click="signOut"><LogOut class="size-4" aria-hidden="true" /> Sign out</button>
           </div>
@@ -140,7 +151,7 @@ onMounted(load);
           </div>
         </form>
 
-        <p v-if="!rows.length" class="text-sm text-gray-500">No moderators yet. Add one to issue their key.</p>
+        <p v-if="!rows.length" class="text-sm text-gray-500">No members yet. Invite one to issue their key.</p>
         <div v-else class="overflow-x-auto">
           <table class="w-full min-w-[640px] text-left text-sm">
             <thead class="text-xs text-gray-500">
@@ -149,17 +160,27 @@ onMounted(load);
             <tbody>
               <tr v-for="m in rows" :key="m.id" class="border-t border-gray-100">
                 <td class="py-2 pr-3"><span class="font-medium text-ink">{{ m.name }}</span><span v-if="m.label" class="block text-xs text-gray-500">{{ m.label }}</span></td>
-                <td class="pr-3 capitalize">{{ m.roles.join(", ") }}</td>
                 <td class="pr-3">
-                  <span :class="cn('rounded-full px-2 py-0.5 text-xs capitalize', STATUS_CLASS[m.status])">{{ m.status }}</span>
+                  <form v-if="editing?.id === m.id" class="flex flex-wrap items-center gap-2" @submit.prevent="saveRoles">
+                    <label v-for="r in MODERATOR_ROLES" :key="r" class="inline-flex items-center gap-1 text-xs capitalize"><input v-model="editing.roles" type="checkbox" :value="r" class="size-3.5 accent-brand" />{{ r }}</label>
+                    <button type="submit" class="btn-primary h-7 px-2.5 text-xs" :disabled="busy || !editing.roles.length">Save</button>
+                    <button type="button" class="btn-ghost h-7 px-2 text-xs" @click="editing = null">Cancel</button>
+                  </form>
+                  <button v-else type="button" class="group inline-flex items-center gap-1 capitalize hover:text-ink" :title="`Change ${m.name}'s roles`" @click="editing = { id: m.id, roles: [...m.roles] }">
+                    {{ m.roles.join(", ") }} <Pencil class="size-3 opacity-0 group-hover:opacity-60" aria-hidden="true" />
+                  </button>
+                </td>
+                <td class="pr-3">
+                  <span :class="cn('rounded-full px-2 py-0.5 text-xs capitalize', STATUS_CLASS[memberStatus(m)])">{{ memberStatus(m) }}</span>
                   <span v-if="m.expires_at && m.status === 'active'" class="block text-xs text-gray-500">until {{ new Date(m.expires_at).toLocaleDateString() }}</span>
                 </td>
                 <td class="pr-3 font-mono text-xs text-gray-600">{{ m.key_prefix }}</td>
                 <td class="pr-3 text-xs text-gray-600">{{ when(m.last_seen_at) }}</td>
                 <td class="pr-3">{{ m.reviews }}</td>
                 <td class="text-right whitespace-nowrap">
-                  <button type="button" class="rounded p-1.5 text-gray-600 hover:bg-mist" :aria-label="`Rotate ${m.name}'s key`" title="Rotate key" :disabled="busy" @click="rotate(m)"><RotateCw class="size-4" /></button>
-                  <button v-if="m.status !== 'revoked'" type="button" class="rounded p-1.5 text-red-700 hover:bg-danger/10" :aria-label="`Revoke ${m.name}'s key`" title="Revoke key" :disabled="busy" @click="revoke(m)"><ShieldAlert class="size-4" /></button>
+                  <button type="button" class="rounded p-1.5 text-gray-600 hover:bg-mist" :aria-label="m.status === 'revoked' ? `Reinstate ${m.name} with a new key` : `Rotate ${m.name}'s key`" :title="m.status === 'revoked' ? 'Reinstate (new key)' : 'Rotate key'" :disabled="busy" @click="rotate(m)"><RotateCw class="size-4" /></button>
+                  <button v-if="m.status !== 'revoked'" type="button" class="rounded p-1.5 text-red-700 hover:bg-danger/10" :aria-label="`Suspend ${m.name}`" title="Suspend" :disabled="busy" @click="revoke(m)"><ShieldAlert class="size-4" /></button>
+                  <button type="button" class="rounded p-1.5 text-red-700 hover:bg-danger/10" :aria-label="`Remove ${m.name}`" title="Remove from the team" :disabled="busy" @click="remove(m)"><Trash2 class="size-4" /></button>
                 </td>
               </tr>
             </tbody>

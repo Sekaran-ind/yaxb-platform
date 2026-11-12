@@ -4,7 +4,7 @@
 // from moderators' reviews. No number below MIN_REVIEWS reviews. Below the table: the selected
 // row's weeks and its worst answers, and the proposed knowledge-base entries.
 import { RATINGS, type ScoreRow } from "@sekaran-ind/yaxb-core/reviews";
-import { ChevronDown, ChevronUp, ClipboardCopy, RefreshCw } from "@lucide/vue";
+import { ChevronDown, ChevronUp, ClipboardCopy, RefreshCw, Share2 } from "@lucide/vue";
 import { computed, onMounted, ref, watch } from "vue";
 import ModeratorSignIn from "./ModeratorSignIn.vue";
 import { api, ApiError } from "@/lib/api";
@@ -100,6 +100,7 @@ watch(weeks, load);
             <option :value="12">Last 12 weeks</option>
             <option :value="52">Last year</option>
           </select>
+          <RouterLink :to="{ path: '/kiosk/team', query: { share: '/kiosk/quality' } }" class="inline-flex items-center gap-1 text-xs hover:text-ink"><Share2 class="size-3.5" aria-hidden="true" /> Share</RouterLink>
           <button type="button" class="inline-flex items-center gap-1 text-xs hover:text-ink" @click="load"><RefreshCw class="size-3.5" aria-hidden="true" /> Refresh</button>
         </div>
       </div>
