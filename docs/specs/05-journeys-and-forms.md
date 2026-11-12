@@ -28,7 +28,7 @@ Guided services: a sequence of steps that ask the visitor something, run an on-d
 
 | ID | Requirement | Status |
 |---|---|---|
-| JRN-20 | For each configured journey, the kiosk must be able to show a summary card: its title, what it does, its steps in order, what it asks for, which on-device models or assistant it uses, and whether anything leaves the device. The summary is generated from the journey definition, so it is always current. | Planned |
-| JRN-21 | A summary of all journeys must be available on the Services screen and to the assistant (so "what can you do?" is answered from it, see CMD-2). | Planned |
-| JRN-22 | After a journey finishes, the kiosk should be able to show a summary of the run: the steps completed, the answers given (as the visitor saw them) and the result, which the visitor can save to the notebook. | Planned |
-| JRN-23 | With a profile open, the activity log records that a journey was completed (never its answers), and the profile page may show a count of journeys used. | Built (log); Planned (count) |
+| JRN-20 | For each configured journey, the kiosk must be able to show a summary card: its title, what it does, its steps in order, what it asks for, which on-device models or assistant it uses, and whether anything leaves the device. The summary is generated from the journey definition, so it is always current. | Built |
+| JRN-21 | A summary of all journeys must be available on the Services screen and to the assistant (so "what can you do?" is answered from it, see CMD-2). | Built |
+| JRN-22 | After a journey finishes, the kiosk should be able to show a summary of the run: the steps completed, the answers given (as the visitor saw them) and the result, which the visitor can save to the notebook. | Built |
+| JRN-23 | With a profile open, the activity log records that a journey was completed (never its answers), and the profile page may show a count of journeys used. | Built |

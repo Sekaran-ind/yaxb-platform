@@ -18,6 +18,8 @@ const shown = ref(25);
 
 const p = computed(() => account.profile.value!);
 const ageLabel = computed(() => AGE_RANGES.find((a) => a.value === p.value.ageRange)?.label);
+const journeysUsed = computed(() => account.activity.value.filter((e) => e.action === "journey.completed").length);
+const questionsAsked = computed(() => account.activity.value.filter((e) => e.action === "question.asked").length);
 const interests = computed(() => p.value.interests.map((i) => INTEREST_DOMAINS.find((d) => d.id === i)?.label ?? i));
 
 function ago(at: string) {
@@ -78,6 +80,7 @@ async function erase() {
           {{ languageLabel(p.language) }}<template v-if="ageLabel"> · {{ ageLabel }}</template><template v-if="p.city"> · {{ p.city }}</template>
         </p>
         <p v-if="interests.length" class="mt-1 text-sm text-gray-600">Interested in {{ interests.join(", ") }}</p>
+        <p class="mt-1 text-xs text-gray-500">{{ questionsAsked }} question{{ questionsAsked === 1 ? "" : "s" }} asked · {{ journeysUsed }} service{{ journeysUsed === 1 ? "" : "s" }} used</p>
       </div>
       <div class="flex flex-wrap gap-2">
         <button type="button" class="btn-light" @click="editing = true">Edit answers</button>

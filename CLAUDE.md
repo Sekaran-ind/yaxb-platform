@@ -124,6 +124,17 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
   - `logActivity()` does nothing while no profile is open. It is called by chat turns (`question.asked`, `web.searched`, `question.escalated`), journeys (`journey.completed`) and the notebook composable.
   - UI: `components/account/` (`AccountScreen` sign-in, `AccountSetup` the diary-style steps, `AccountPanel` suggestions, activity log, passphrase, export, erase), the `account` screen in `screens.yaml`, the header chip, and the "For you" section on Services.
 
+## Journey summaries
+
+- `journeys/summary.ts`:
+  - `summarizeJourney` (JRN-20) gives a journey's steps in run order, what it asks for, the services it uses (`SERVICE_INFO`, one entry per `JOURNEY_SERVICES` name, checked by a test), `leavesDevice`, and a one-line `privacy` sentence.
+  - `journeysText` goes into the deep agent's offerings (JRN-21).
+  - `summarizeRun` (JRN-22) gives the steps, the answers as displayed, the result, and Markdown.
+- Web:
+  - `JourneySummaryCard.vue`: the info button on each journey item, and "How each service works" on Services.
+  - JourneyPanel shows the privacy line, "What this service did" and "Save to notebook".
+  - The profile shows question and service counts from the activity log.
+
 ## Session feedback
 
 - `feedback/` (core): `feedbackSchema` holds the rating (bad, fine, good or skipped), an optional comment, the mode, language, whether a profile was open, and the answer count. Nothing else. `shouldAskFeedback` (FBK-2), `summarizeFeedback` (MOD-40), `FeedbackStore` (memory, plus D1 `createD1FeedbackStore`, migration 0003). `FEEDBACK_RATE` (0 to 1, default 1/3) is in capabilities.
