@@ -13,6 +13,9 @@
 //      them back into passages from the core's own data, and search_knowledge_base offers them to
 //      the agent first via config.configurable.localKnowledge.
 import { AUTO_ESCALATION_REASON, looksLikeEmergency } from "../agent/safety.js";
+
+/** The emergency check, for surfaces that can't load the agent (it's plain code). */
+export { looksLikeEmergency };
 import { notebookPart, type Notebook } from "../notebook/index.js";
 import type { RetrievedRef } from "../schemas/index.js";
 import { curatedQA, knowledgeSources, type CuratedItem, type Passage, type Retriever } from "./index.js";

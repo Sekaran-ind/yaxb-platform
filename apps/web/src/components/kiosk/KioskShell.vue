@@ -6,7 +6,7 @@
 // Owns the conversation, voice, notebook and journey handlers, and passes them to the screens.
 import { kioskContent } from "@sekaran-ind/yaxb-core/content";
 import type { ServiceHandler } from "@sekaran-ind/yaxb-core/journeys";
-import { composeLocalAnswer, EMBEDDING_MODELS, type LocalAnswer } from "@sekaran-ind/yaxb-core/knowledge/semantic";
+import { composeLocalAnswer, EMBEDDING_MODELS, looksLikeEmergency, type LocalAnswer } from "@sekaran-ind/yaxb-core/knowledge/semantic";
 import { LAYOUTS, resolveLayout, screensFor, type LayoutChoice } from "@sekaran-ind/yaxb-core/screens";
 import { DEFAULT_LANGUAGE, type LanguageCode } from "@sekaran-ind/yaxb-core/settings";
 import { Languages, Settings2, UserRound, X } from "@lucide/vue";
@@ -14,7 +14,8 @@ import { computed, onBeforeUnmount, onMounted, ref, toRef } from "vue";
 import { logActivity, useAccount } from "@/composables/account";
 import { askOnce, useChat } from "@/composables/chat";
 import { useNotebook } from "@/composables/notebook";
-import { effectiveSelection, settings, updateSettings, useProviders } from "@/composables/settings";
+import { useFeedback } from "@/composables/feedback";
+import { effectiveSelection, settings, updateSettings, useCapabilities, useProviders } from "@/composables/settings";
 import { useSpeechInput, useSpeechOutput } from "@/composables/speech";
 import { useWidth } from "@/composables/width";
 import { answer, classify, onOfflineProgress, summarize, translate, type OfflineProgress } from "@/lib/browser/offline";
@@ -24,6 +25,7 @@ import { LANGUAGES, speechLangFor } from "@/lib/languages";
 import type { KioskStatus } from "@/lib/types";
 import AccountScreen from "@/components/account/AccountScreen.vue";
 import AdaptiveNav, { type NavScreen } from "./AdaptiveNav.vue";
+import FeedbackPrompt from "./FeedbackPrompt.vue";
 import KnowledgeSources from "./KnowledgeSources.vue";
 import NotebookScreen from "./NotebookScreen.vue";
 import PatientInfo from "./PatientInfo.vue";
@@ -40,6 +42,8 @@ const nb = useNotebook(toRef(() => settings.agent.storage), activeNotebook, toRe
 const chat = useChat(nb.store, nb.refresh);
 const account = useAccount();
 const { data: catalog, error: catalogError } = useProviders();
+const { data: caps } = useCapabilities();
+const feedback = useFeedback();
 const voiceOut = useSpeechOutput();
 const failed = ref(false);
 const screen = ref<string | null>(kioskContent.screens.defaultScreen ?? null);
@@ -130,6 +134,16 @@ async function ask(question: string) {
     if (tools.some((t) => t.name === "web_search")) void logActivity("web.searched");
     if (tools.some((t) => t.name === "flag_for_moderation")) void logActivity("question.escalated", { via: "agent" });
     if (settings.speakResponses && reply) await voiceOut.speak(reply, { voiceName: settings.voiceName, rate: settings.speechRate, lang: speechLangFor(language.value) });
+    // Session feedback, once in a while (FBK-2): only now, after the answer and its read-aloud.
+    feedback.consider({
+      answers: chat.turns.value.filter((t) => t.role === "assistant" && t.text && !t.error).length,
+      rate: caps.value?.feedback?.rate ?? 0,
+      busy: chat.busy.value,
+      journeyOpen: journey.value !== null,
+      speaking: voiceOut.speaking.value,
+      emergency: looksLikeEmergency(question),
+      profile: Boolean(account.profile.value),
+    });
   } catch {
     failed.value = true;
   }
@@ -271,6 +285,7 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
         </div>
       </div>
 
+      <FeedbackPrompt class="mb-3" />
       <div :class="cn(layout === 'full' ? 'grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]' : layout === 'pod' ? 'space-y-3' : 'space-y-2')">
         <PlayerPanel
           :variant="playerVariant"

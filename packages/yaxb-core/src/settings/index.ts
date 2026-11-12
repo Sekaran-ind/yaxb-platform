@@ -5,6 +5,7 @@ import { kioskContent } from "../content/index.js";
 import { EMBEDDING_MODEL_IDS, EMBEDDING_MODELS } from "../knowledge/semantic.js";
 import { mcpServerInfo, parseMcpServers, type McpServerInfo } from "../mcp/index.js";
 import { webSearchFromEnv } from "../web/index.js";
+import { feedbackRate } from "../feedback/index.js";
 import type { Env } from "../providers/index.js";
 
 export const STORAGE_OPTIONS = [
@@ -105,6 +106,8 @@ export type Capabilities = {
   embeddingModels: typeof EMBEDDING_OPTIONS;
   /** The web search this deployment configured for the fallback (no keys), or null. */
   web: { provider: "tavily" | "brave"; domains: readonly string[] } | null;
+  /** How often sessions are asked for feedback: 0 (never) to 1 (every session). FEEDBACK_RATE. */
+  feedback: { rate: number };
   languages: typeof LANGUAGES;
   skills: { name: string; description: string }[];
   mcp: McpServerInfo[];
@@ -121,6 +124,7 @@ export function capabilities(env: Env): Capabilities {
     subagents: SUBAGENT_OPTIONS,
     answers: ANSWER_OPTIONS,
     embeddingModels: EMBEDDING_OPTIONS,
+    feedback: { rate: feedbackRate(env) },
     web: (() => {
       const w = webSearchFromEnv(env);
       return w ? { provider: w.provider, domains: w.domains } : null;

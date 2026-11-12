@@ -1,6 +1,6 @@
 import { createKiosk, type Kiosk } from "@sekaran-ind/yaxb-core/agent";
 import { createVectorizeRetriever } from "@sekaran-ind/yaxb-core/knowledge";
-import { createD1Kv, createD1ModerationStore, createD1ThreadStore } from "@sekaran-ind/yaxb-core/stores/d1";
+import { createD1FeedbackStore, createD1Kv, createD1ModerationStore, createD1ThreadStore } from "@sekaran-ind/yaxb-core/stores/d1";
 import { KvStore } from "@sekaran-ind/yaxb-core/stores/kv";
 import { stringEnv, type Bindings } from "./env";
 
@@ -18,6 +18,7 @@ export function kiosk(env: Bindings): Kiosk {
       env: stringEnv(env),
       threads: createD1ThreadStore(env.DB),
       moderation: createD1ModerationStore(env.DB),
+      feedback: createD1FeedbackStore(env.DB),
       // Storage "server": the agent's /memories/ in D1 through Deep Agents' StoreBackend.
       store: new KvStore(createD1Kv(env.DB)),
       vector: env.VECTORIZE && env.AI ? createVectorizeRetriever({ index: env.VECTORIZE, ai: env.AI }) : undefined,

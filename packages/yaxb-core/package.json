@@ -98,6 +98,10 @@
     "./accounts/crypto": {
       "types": "./dist/accounts/crypto.d.ts",
       "default": "./dist/accounts/crypto.js"
+    },
+    "./feedback": {
+      "types": "./dist/feedback/index.d.ts",
+      "default": "./dist/feedback/index.js"
     }
   },
   "files": [

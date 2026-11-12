@@ -1,7 +1,7 @@
 import { ref } from "vue";
 
 /** GET a read-only kiosk resource from /api/agent/<name>, with refresh. */
-export function useAgentResource<T>(name: "sources" | "curated" | "moderation") {
+export function useAgentResource<T>(name: "sources" | "curated" | "moderation" | "feedback") {
   const data = ref<T | null>(null);
   const error = ref<string | null>(null);
   async function refresh() {

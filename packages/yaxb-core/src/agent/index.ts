@@ -35,6 +35,7 @@ import { createServerIndex, rerankWeb, SERVER_EMBEDDING, webPassages, workersAiE
 import { webSearchFromEnv, type WebSearch } from "../web/index.js";
 import { ROUTE_LIMIT, routeTools } from "./routing.js";
 import type { TurnWeb } from "./tools.js";
+import { createMemoryFeedbackStore, feedbackSchema, summarizeFeedback, type FeedbackStore } from "../feedback/index.js";
 import type { ModerationStore, ThreadState, ThreadStore } from "../stores/index.js";
 import { createKioskAgent, createLeanKioskAgent, translate, type FinalState, type Harness, type HarnessOptions, type KioskAgent } from "./harness.js";
 import { deepPromptAddendum, turnPromptAddendum } from "./prompts.js";
@@ -90,6 +91,8 @@ export type KioskDeps = {
    * Default: Workers AI bge-m3 when CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are set; null = none.
    */
   embed?: Embed | null;
+  /** Session feedback (FBK). Default: kept in memory. */
+  feedback?: FeedbackStore;
 };
 
 export const USER_MESSAGES = {
@@ -191,6 +194,7 @@ export function createKiosk(deps: KioskDeps) {
     vector: deps.vector,
     onError: (e) => deps.onError?.(e, { where: "vector-search" }),
   });
+  const feedback = deps.feedback ?? createMemoryFeedbackStore();
   const fetchImpl: typeof fetch = deps.fetch ?? ((input, init) => fetch(input, init));
   // The deployment's web search (TAVILY_API_KEY / BRAVE_SEARCH_API_KEY) and server sentence-transformer (Workers AI bge-m3).
   const webSearch = deps.webSearch !== undefined ? deps.webSearch : webSearchFromEnv(deps.env, fetchImpl);
@@ -481,6 +485,10 @@ export function createKiosk(deps: KioskDeps) {
     forget: (threadId: string) => deps.threads.delete(threadId),
     vectorEnabled: knowledge.vectorEnabled,
     extract,
+    /** Record a session's feedback (validated; nothing identifying). */
+    addFeedback: async (input: unknown) => feedback.add(feedbackSchema.parse(input)),
+    /** Totals and comments for moderators (MOD-40). */
+    feedbackSummary: async (limit = 2000) => summarizeFeedback(await feedback.list(limit)),
   };
 }
 

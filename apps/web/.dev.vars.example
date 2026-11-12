@@ -31,3 +31,12 @@ AIRTABLE_API_TOKEN=
 AIRTABLE_BASE_ID=
 MAILCHIMP_API_KEY=
 MAILCHIMP_AUDIENCE_ID=
+
+# Web search fallback (docs/specs/03-knowledge.md, KNW-40): one of these. Optional allowlist of sites.
+TAVILY_API_KEY=
+BRAVE_SEARCH_API_KEY=
+WEB_SEARCH_DOMAINS=
+
+# How often a session is asked "How is YAXB doing this session?" (FBK): 0 = never, 1 = every
+# session. Default about one in three.
+FEEDBACK_RATE=

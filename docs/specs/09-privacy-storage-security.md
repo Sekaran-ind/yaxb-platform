@@ -9,7 +9,7 @@
 | Conversations | As Settings → Storage says: browser, session, local box, or the server (D1, 30 days) | Only to the chosen store |
 | Visitor profile and activity log | Browser (IndexedDB), encrypted | Never, except an export the visitor makes |
 | Escalated questions | Server (D1) moderation queue | Yes: that is their purpose |
-| Session feedback (planned) | Server | Yes, without identifying the visitor |
+| Session feedback | Server (D1) | Yes, without identifying the visitor |
 | Moderator profiles and reviews (planned) | Server | Yes |
 
 ## Requirements
