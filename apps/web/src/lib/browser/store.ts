@@ -160,7 +160,14 @@ export function newNotebook(title = "My notebook"): NotebookRecord {
 }
 
 export function withSource(n: NotebookRecord, source: Omit<NotebookSource, "id" | "addedAt"> & Partial<Pick<NotebookSource, "id">>): NotebookRecord {
-  const s: NotebookSource = { id: source.id ?? newId(), title: source.title, mime: source.mime, text: source.text, addedAt: nowIso() };
+  const s: NotebookSource = {
+    id: source.id ?? newId(),
+    title: source.title,
+    mime: source.mime,
+    text: source.text,
+    addedAt: nowIso(),
+    ...(source.url ? { url: source.url, fetchedAt: source.fetchedAt ?? nowIso() } : {}),
+  };
   return { ...n, sources: [...n.sources, s], updatedAt: nowIso() };
 }
 

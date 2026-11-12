@@ -16,11 +16,11 @@ What the kiosk answers from, and how it finds the right passage.
 
 | ID | Requirement | Status |
 |---|---|---|
-| KNW-20 | A visitor (or moderator, for the knowledge base) must be able to add a website to a notebook by its address. The kiosk fetches the page, keeps its readable text (no scripts, navigation or ads), and stores it as a source with its title, address and the date it was read. | Planned |
-| KNW-21 | Pages must be fetched by the server, not the browser (browsers block most cross-site reads), with these limits: http(s) only; no private, local or link-local addresses (no requests to the kiosk's own network); at most 2 MB; at most 10 seconds; redirects re-checked against the same rules. | Planned |
-| KNW-22 | A website source must be refreshable on request, showing when it was last read. It may optionally include pages linked from it on the same site, up to a stated number. | Planned |
-| KNW-23 | Answers that use a website source must cite it as `notebook:<id>` and show its address. | Planned |
-| KNW-24 | Website text is untrusted data like any document (OVR-6). | Planned |
+| KNW-20 | A visitor (or moderator, for the knowledge base) must be able to add a website to a notebook by its address. The kiosk fetches the page, keeps its readable text (no scripts, navigation or ads), and stores it as a source with its title, address and the date it was read. | Built |
+| KNW-21 | Pages must be fetched by the server, not the browser (browsers block most cross-site reads), with these limits: http(s) only; no private, local or link-local addresses (no requests to the kiosk's own network); at most 2 MB; at most 10 seconds; redirects re-checked against the same rules. | Built |
+| KNW-22 | A website source must be refreshable on request, showing when it was last read. It may optionally include pages linked from it on the same site, up to a stated number. | Built |
+| KNW-23 | Answers that use a website source must cite it as `notebook:<id>` and show its address. | Built |
+| KNW-24 | Website text is untrusted data like any document (OVR-6). | Built |
 
 Check: a test that a request to `http://192.168.1.1`, `http://localhost` or a redirect to them is refused; a demonstration of adding, citing and refreshing a page.
 

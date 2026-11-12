@@ -42,7 +42,7 @@ These documents describe what the YAXB kiosk must do, for the people who decide 
 ## Glossary
 
 - **Knowledge base**: the curated Q&A, approved by moderators, that ships with the kiosk.
-- **Notebook**: the visitor's own collection of sources (documents, and websites once KNW-20 is built) with a memory, which the assistant can read and cite.
+- **Notebook**: the visitor's own collection of sources (documents and websites) with a memory, which the assistant can read and cite.
 - **Grounded answer**: an answer whose every fact comes from a cited source.
 - **Sentence-transformer**: a small model that turns text into vectors, so questions can be matched by meaning, in any of the kiosk's languages.
 - **Journey**: a guided service made of steps (questions, on-device models, the assistant), defined in YAML.

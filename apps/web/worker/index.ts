@@ -3,6 +3,7 @@
 // leave the Worker.
 import { toSSEStream } from "@sekaran-ind/yaxb-core/events";
 import { feedbackSchema } from "@sekaran-ind/yaxb-core/feedback";
+import { dohResolver, fetchSite, PageError } from "@sekaran-ind/yaxb-core/web/pages";
 import { chatRequestSchema, extractRequestSchema } from "@sekaran-ind/yaxb-core/schemas";
 import { createMemoryRateLimiter } from "@sekaran-ind/yaxb-core/stores";
 import { Hono, type Context } from "hono";
@@ -137,6 +138,28 @@ app.post("/api/feedback", async (c) => {
   if (!parsed.success) return jsonError(c, 422, "Invalid feedback.");
   await kiosk(c.env).addFeedback(parsed.data);
   return c.json({ ok: true });
+});
+
+/**
+ * Websites as notebook sources (KNW-20..24, SEC-4): fetch a page (and up to 5 pages it links to on
+ * the same site) and return its readable text. Nothing is stored here: the browser adds it to the
+ * visitor's notebook. No private or local addresses, every redirect checked, 2 MB and 10 s caps.
+ */
+const webSourceSchema = z.strictObject({ url: z.string().trim().min(1).max(2000), follow: z.number().int().min(0).max(5).default(0) });
+app.post("/api/sources/web", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  const id = await clientId(c);
+  if (!(await withinLimit("form", c.env.FORM_LIMITER, `web-source:${id}`))) return jsonError(c, 429, "Too many websites in a short time. Please wait a minute.");
+  const parsed = webSourceSchema.safeParse((await readJson(c, MAX_FORM_BODY)).body);
+  if (!parsed.success) return jsonError(c, 422, "Enter a web address.");
+  try {
+    const site = await fetchSite(parsed.data.url, parsed.data.follow, { resolve: dohResolver() });
+    return c.json({ pages: site.pages.map(({ url, title, text, fetchedAt }) => ({ url, title, text, fetchedAt })), skipped: site.skipped });
+  } catch (e) {
+    if (e instanceof PageError) return jsonError(c, 422, e.message);
+    console.error(JSON.stringify({ msg: "web source failure", error: e instanceof Error ? `${e.name}: ${e.message.slice(0, 120)}` : "unknown" }));
+    return jsonError(c, 502, "That page couldn't be loaded.");
+  }
 });
 
 // Read-only kiosk resources. `moderation` holds visitors' escalated questions: moderators only.
