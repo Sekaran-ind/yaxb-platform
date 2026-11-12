@@ -7,12 +7,11 @@
 import { aboutKiosk, confirmText, PROFILE_FORM, profileFields, profilePatch, type CommandEffect, type CommandMatch } from "@sekaran-ind/yaxb-core/commands";
 import { kioskContent } from "@sekaran-ind/yaxb-core/content";
 import type { ServiceHandler } from "@sekaran-ind/yaxb-core/journeys";
-import { composeLocalAnswer, EMBEDDING_MODELS, looksLikeEmergency, type LocalAnswer } from "@sekaran-ind/yaxb-core/knowledge/semantic";
-import { LAYOUTS, resolveLayout, screensFor, type LayoutChoice } from "@sekaran-ind/yaxb-core/screens";
+import { composeLocalAnswer, composeWebAnswer, EMBEDDING_MODELS, looksLikeEmergency, type LocalAnswer } from "@sekaran-ind/yaxb-core/knowledge/semantic";
+import { resolveLayout, screensFor } from "@sekaran-ind/yaxb-core/screens";
 import { DEFAULT_LANGUAGE, type LanguageCode } from "@sekaran-ind/yaxb-core/settings";
-import { Languages, Settings2, UserRound, X } from "@lucide/vue";
 import { computed, onBeforeUnmount, onMounted, ref, toRef } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { logActivity, useAccount } from "@/composables/account";
 import { askOnce, useChat } from "@/composables/chat";
 import { useNotebook } from "@/composables/notebook";
@@ -25,7 +24,7 @@ import { recognizeCommand, yesOrNo } from "@/lib/browser/commands";
 import { modelFor, searchLocal, semanticReady, warmUp, type LocalSearch } from "@/lib/browser/semantic";
 import { extractWithModel, matchOnDevice } from "@/lib/browser/slots";
 import { cn } from "@/lib/cn";
-import { LANGUAGES, languageLabel, speechLangFor } from "@/lib/languages";
+import { languageLabel, speechLangFor } from "@/lib/languages";
 import type { CommandCard, KioskStatus } from "@/lib/types";
 import AccountScreen from "@/components/account/AccountScreen.vue";
 import AdaptiveNav, { type NavScreen } from "./AdaptiveNav.vue";
@@ -34,12 +33,11 @@ import KnowledgeSources from "./KnowledgeSources.vue";
 import NotebookScreen from "./NotebookScreen.vue";
 import PatientInfo from "./PatientInfo.vue";
 import PlayerPanel from "./PlayerPanel.vue";
-import SandboxPane from "./SandboxPane.vue";
 import ScorecardPane from "./ScorecardPane.vue";
 import ServicesScreen from "./ServicesScreen.vue";
 import TranscriptPane from "./TranscriptPane.vue";
-import ThemePicker from "@/components/settings/ThemePicker.vue";
-import { NATIVE } from "@/lib/platform";
+import KioskPreferences from "./KioskPreferences.vue";
+import ProfileButton from "./ProfileButton.vue";
 import TranslatePane from "./TranslatePane.vue";
 
 
@@ -69,9 +67,6 @@ onBeforeUnmount(() => offProgress?.());
 
 // The visitor's language: speech in and out, the agent's replies, on-device answers translated.
 const language = computed<LanguageCode>(() => settings.agent.language ?? DEFAULT_LANGUAGE);
-function setLanguage(code: LanguageCode) {
-  updateSettings({ agent: { ...settings.agent, language: code } });
-}
 
 // How questions are answered (Settings → Knowledge). Automatic falls back to the device when no
 // AI provider is configured.
@@ -92,6 +87,26 @@ function localAnswer(question: string, found: LocalSearch) {
   return composeLocalAnswer(question, found, { threshold: t.answer, notebookThreshold: t.notebook });
 }
 
+/**
+ * Kiosk only (no AI model), KNW-45: a question the device couldn't answer gets the web's top
+ * results, quoted as found with their addresses, when this deployment has web search and the
+ * visitor hasn't turned it off. Never for a possible emergency.
+ */
+async function withWeb(question: string, a: LocalAnswer, signal: AbortSignal): Promise<LocalAnswer> {
+  if (a.kind !== "none" || a.emergency || settings.agent.knowledge?.web === "off" || !caps.value?.web) return a;
+  try {
+    const res = await fetch("/api/agent/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }), signal });
+    if (!res.ok) return a;
+    const { results } = (await res.json()) as { results: { title: string; url: string; snippet: string }[] };
+    const web = composeWebAnswer(question, results);
+    if (web) void logActivity("web.searched");
+    return web ?? a;
+  } catch (e) {
+    if ((e as Error).name === "AbortError") throw e;
+    return a;
+  }
+}
+
 /** An on-device answer, translated on the device when the visitor chose another language. */
 async function present(a: LocalAnswer, signal: AbortSignal) {
   if (a.flag) {
@@ -99,7 +114,9 @@ async function present(a: LocalAnswer, signal: AbortSignal) {
     void logActivity("question.escalated", { via: "device" });
   }
   const sources = a.text.slice(a.body.length);
-  if (language.value === "eng_Latn") return { text: a.text, spoken: a.body };
+  // Read aloud without the list marks.
+  const spoken = a.body.replace(/\*\*/g, "").replace(/^- /gm, "");
+  if (language.value === "eng_Latn") return { text: a.text, spoken };
   try {
     const body = await translate(a.body, language.value, { signal });
     return { text: `${body}\n\nTranslated on this device from English.${sources}`, spoken: body };
@@ -111,6 +128,13 @@ async function present(a: LocalAnswer, signal: AbortSignal) {
 
 // ---- kiosk commands (CMD-1..6, 10, 11): a card in the conversation, handled on this device ----------
 const router = useRouter();
+const route = useRoute();
+
+// Preferences (profile, language, layout, theme, voice, knowledge, model…) open inside the kiosk,
+// in place of its screens: /kiosk?prefs=<section>. There's no separate settings page.
+const prefsOpen = computed(() => typeof route.query.prefs === "string");
+const openPrefs = (section = "profile") => void router.push({ path: "/kiosk", query: { prefs: section } });
+const closePrefs = () => void router.push({ path: "/kiosk" });
 const ANSWER_LABELS: Record<string, string> = { agent: "AI agent, grounded", local: "This device only", auto: "Automatic" };
 const LAYOUT_NAMES: Record<string, string> = { auto: "Automatic", mini: "Simple (one thing at a time)", pod: "Pod", full: "Full" };
 const clampRate = (r: number) => Math.round(Math.min(1.6, Math.max(0.6, r)) * 10) / 10;
@@ -161,7 +185,7 @@ async function cardFor(question: string, m: CommandMatch): Promise<CommandCard> 
       setScreen(e.screen);
       return { ...base, title: `${m.command.label}.`, state: "done" };
     case "open-settings":
-      void router.push({ path: "/settings", query: { section: e.section } });
+      openPrefs(e.section);
       return { ...base, title: `${m.command.label}.`, state: "done" };
     case "about":
       return { ...base, title: m.command.label, state: "info", text: aboutKiosk(e.topic, { journeys: kioskContent.journeys, webSearch: Boolean(caps.value?.web) && settings.agent.knowledge.web !== "off" }) };
@@ -175,7 +199,7 @@ async function cardFor(question: string, m: CommandMatch): Promise<CommandCard> 
     }
     case "profile":
       if (e.action === "open") {
-        setScreen("account");
+        openPrefs("profile");
         return { ...base, title: `${m.command.label}.`, state: "done" };
       }
       if (e.action === "sign-out") return { ...base, title: `${m.command.label}?`, state: "confirm" };
@@ -222,7 +246,7 @@ async function onCard(turnId: string, action: "yes" | "no" | "start" | "sign-in"
   const card = chat.turns.value.find((t) => t.id === turnId)?.card;
   if (!card) return;
   if (action === "no") return chat.updateCard(turnId, { state: "cancelled" }, ctx);
-  if (action === "sign-in") return setScreen("account");
+  if (action === "sign-in") return openPrefs("profile");
   if (action === "start" && card.journey) {
     journey.value = card.journey;
     screen.value = "services";
@@ -275,7 +299,7 @@ async function ask(question: string) {
   try {
     let reply: string;
     if (mode === "local") {
-      reply = await chat.sendLocal(question, ctx, async (signal) => present(localAnswer(question, await searchLocal(model, question, ctx.notebook, { signal })), signal));
+      reply = await chat.sendLocal(question, ctx, async (signal) => present(await withWeb(question, localAnswer(question, await searchLocal(model, question, ctx.notebook, { signal })), signal), signal));
     } else {
       // Search on the device first when its model is ready; never hold a question for the download.
       let found: LocalSearch | null = null;
@@ -391,8 +415,6 @@ function onStop() {
   chat.stop();
 }
 
-const LAYOUT_LABELS: Record<LayoutChoice, string> = { auto: "Auto", mini: "Mini", pod: "Pod", full: "Full" };
-const layoutChoices: LayoutChoice[] = ["auto", ...LAYOUTS];
 const playerVariant = computed(() => (layout.value === "full" ? "full" : layout.value === "pod" ? "strip" : "mini"));
 const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3 : width.value));
 </script>
@@ -401,57 +423,21 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
   <!-- Measure the full available width (not the mini card), so Auto can grow back out of mini. -->
   <div ref="root" class="w-full">
     <div :class="cn('mx-auto px-3 py-5 sm:px-5 sm:py-6', layout === 'mini' ? 'max-w-md' : 'max-w-7xl')">
-      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div class="min-w-0">
-          <p class="eyebrow">AI Kiosk</p>
-          <h1 :class="cn('font-semibold tracking-tight text-ink', layout === 'mini' ? 'text-xl' : 'text-2xl')">How can we help today?</h1>
-          <p v-if="nb.notebook.value" class="mt-0.5 truncate text-xs text-gray-500">
-            Notebook: {{ nb.notebook.value.title }} · {{ sourceCount }} source{{ sourceCount === 1 ? "" : "s" }}
-            <span v-if="offline" class="ml-2 text-info">· Loading on-device model{{ offline.progress ? ` ${Math.round(offline.progress)}%` : "…" }}</span>
-          </p>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <div role="radiogroup" aria-label="Kiosk layout" class="hidden rounded-full bg-mist p-0.5 text-xs sm:flex">
-            <button
-              v-for="l in layoutChoices"
-              :key="l"
-              type="button"
-              role="radio"
-              :aria-checked="settings.layout === l"
-              :title="l === 'auto' ? `Automatic (now ${LAYOUT_LABELS[layout]})` : undefined"
-              :class="cn('rounded-full px-2.5 py-1 font-medium transition', settings.layout === l ? 'bg-surface text-ink shadow-sm' : 'text-gray-500 hover:text-ink')"
-              @click="updateSettings({ layout: l })"
-            >
-              {{ LAYOUT_LABELS[l] }}
-            </button>
-          </div>
-          <label class="flex items-center gap-1.5 rounded-full bg-mist py-1 pr-1 pl-3 text-xs text-gray-600">
-            <Languages class="size-4" aria-hidden="true" />
-            <span class="sr-only">Language</span>
-            <select
-              class="rounded-full border-0 bg-surface py-1 pr-7 pl-2 text-xs font-medium text-ink max-w-36 shadow-sm sm:max-w-44"
-              :value="language"
-              aria-label="Language"
-              @change="setLanguage(($event.target as HTMLSelectElement).value as LanguageCode)"
-            >
-              <option v-for="l in LANGUAGES" :key="l.code" :value="l.code" :lang="l.speech">{{ l.native === l.label ? l.label : `${l.native} · ${l.label}` }}</option>
-            </select>
-          </label>
-          <ThemePicker compact class="hidden sm:flex" />
-          <button type="button" class="inline-flex items-center gap-1.5 rounded-full bg-mist px-3 py-1.5 text-xs font-medium text-ink hover:ring-1 hover:ring-brand" @click="setScreen('account')">
-            <UserRound class="size-4" aria-hidden="true" />{{ account.profile.value ? account.profile.value.nickname : "Sign in" }}
-          </button>
-          <RouterLink to="/settings" class="btn-light size-9 p-0" aria-label="Settings" title="Settings"><Settings2 class="size-4" aria-hidden="true" /></RouterLink>
-          <RouterLink v-if="!NATIVE" to="/" class="btn-light size-9 p-0" aria-label="Close the kiosk" title="Close the kiosk"><X class="size-4" aria-hidden="true" /></RouterLink>
-        </div>
-      </div>
-
       <FeedbackPrompt class="mb-3" />
-      <div :class="cn(layout === 'full' ? 'grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]' : layout === 'pod' ? 'space-y-3' : 'space-y-2')">
+      <h1 class="sr-only">Yaxb AI Kiosk</h1>
+      <!-- The kiosk: one frame holding the player (with the kiosk's controls) and its screens. -->
+      <div
+        :class="
+          cn(
+            'rounded-[2rem] border border-gray-200/70 bg-surface p-2 shadow-[var(--shadow-lift)]',
+            layout === 'full' ? 'grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]' : 'space-y-2',
+          )
+        "
+      >
         <PlayerPanel
           :variant="playerVariant"
           :status="status"
-          title="CA Health Kiosk"
+          title="Yaxb AI Kiosk"
           :is-playing="voiceOut.speaking.value && !voiceOut.paused.value"
           :speaking="voiceOut.speaking.value"
           :listening="voiceIn.listening.value"
@@ -461,18 +447,27 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
           @mic="onMic"
           @pause-resume="onPauseResume"
           @stop="onStop"
-        />
+        >
+          <template #meta>
+            <template v-if="nb.notebook.value">{{ nb.notebook.value.title }} · {{ sourceCount }} source{{ sourceCount === 1 ? "" : "s" }}</template>
+            <span v-if="offline" class="block text-brand">Loading on-device model{{ offline.progress ? ` ${Math.round(offline.progress)}%` : "…" }}</span>
+          </template>
+          <template #controls>
+            <ProfileButton :nickname="account.profile.value?.nickname ?? null" :open="prefsOpen" @toggle="prefsOpen ? closePrefs() : openPrefs()" />
+          </template>
+        </PlayerPanel>
         <div
           :class="
             cn(
-              'rounded-2xl bg-surface shadow-sm ring-1 ring-gray-100',
-              layout === 'full' && 'h-[600px] overflow-y-auto p-4 [scrollbar-width:thin]',
-              layout === 'pod' && 'min-h-[520px] p-4',
-              layout === 'mini' && 'p-3',
+              layout === 'full' && 'h-[600px] overflow-y-auto px-3 pt-3 [scrollbar-width:thin]',
+              layout === 'pod' && 'min-h-[520px] px-3 pt-2 pb-1',
+              layout === 'mini' && 'px-1.5 pt-1',
             )
           "
         >
+          <KioskPreferences v-if="prefsOpen" :nickname="account.profile.value?.nickname ?? null" @close="closePrefs" />
           <AdaptiveNav
+            v-else
             :screens="navScreens"
             :mode="kioskContent.screens.nav?.[layout]"
             :storage-key="`kiosk-${layout}`"
@@ -527,7 +522,6 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
               <KnowledgeSources v-else-if="componentOf(s.id) === 'records'" />
               <ScorecardPane v-else-if="componentOf(s.id) === 'scorecard'" />
               <TranslatePane v-else-if="componentOf(s.id) === 'translate'" :initial-text="lastAnswer" @speak="(t, lang) => voiceOut.speak(t, { lang })" />
-              <SandboxPane v-else-if="componentOf(s.id) === 'sandbox'" />
             </template>
           </AdaptiveNav>
         </div>

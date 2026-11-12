@@ -64,6 +64,7 @@ Check: tests with classifier and resolver fakes that flagged pages, adult-rated 
 | KNW-41 | Coverage is decided from the browser's matches when it searched, otherwise from the server's sentence-transformer (bge-m3). When coverage can't be decided, web search is offered to the agent as a tool instead. | Built |
 | KNW-42 | The organisation may restrict web search to a list of sites (for example official health sites). | Built |
 | KNW-43 | The visitor must be able to switch web search off (Settings → Knowledge), and on-device mode never searches the web. | Built |
+| KNW-45 | **Kiosk only (no AI model)**: a question the knowledge base and notebook don't cover gets the top web results (up to 3, ranked by meaning when the server sentence-transformer is available), each quoted as the search returned it with its address, under a line saying they are not checked by the kiosk's moderators. Nothing is generated or rewritten. Not when web search is off, not configured, or the question may be an emergency. | Built |
 | KNW-44 | The question is sent to the search service, so the Settings text must say so, and possible emergencies are never searched (ANS-35). | Built |
 
 ## Tool routing

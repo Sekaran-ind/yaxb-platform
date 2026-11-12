@@ -19,7 +19,7 @@ export const JOURNEY_SERVICES = [
 ] as const;
 
 /** Screen components the kiosk renders. */
-export const SCREEN_COMPONENTS = ["transcript", "services", "notebook", "account", "patient-info", "records", "scorecard", "translate", "sandbox"] as const;
+export const SCREEN_COMPONENTS = ["transcript", "services", "notebook", "account", "patient-info", "records", "scorecard", "translate"] as const;
 
 export type Skill = { name: string; description: string; markdown: string };
 

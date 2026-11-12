@@ -6,7 +6,7 @@ import { NATIVE } from "./lib/platform";
 const NATIVE_ROUTES: RouteRecordRaw[] = [
   { path: "/", redirect: "/kiosk" },
   { path: "/kiosk", component: () => import("./pages/KioskPage.vue"), meta: { title: "AI Kiosk" } },
-  { path: "/settings", component: () => import("./pages/SettingsPage.vue"), meta: { title: "Settings" } },
+  { path: "/settings", redirect: (to) => ({ path: "/kiosk", query: { prefs: typeof to.query.section === "string" ? to.query.section : "profile" } }) },
   { path: "/:rest(.*)*", redirect: "/kiosk" },
 ];
 
@@ -22,7 +22,8 @@ export const router = createRouter({
     { path: "/kiosk/team", component: () => import("./pages/TeamPage.vue"), meta: { title: "Team" } },
     { path: "/kiosk/moderator", component: () => import("./pages/ModeratorPage.vue"), meta: { title: "Moderator profile" } },
     { path: "/kiosk/admin", component: () => import("./pages/AdminPage.vue"), meta: { title: "Administration" } },
-    { path: "/settings", component: () => import("./pages/SettingsPage.vue"), meta: { title: "Settings" } },
+    // Preferences open inside the kiosk (KioskPreferences); old links and commands still land there.
+    { path: "/settings", redirect: (to) => ({ path: "/kiosk", query: { prefs: typeof to.query.section === "string" ? to.query.section : "profile" } }) },
     { path: "/contact", component: () => import("./pages/ContactPage.vue"), meta: { title: "Contact" } },
     { path: "/faq", component: () => import("./pages/FaqPage.vue"), meta: { title: "FAQ" } },
     { path: "/terms-conditions", component: () => import("./pages/TermsPage.vue"), meta: { title: "Terms & Privacy" } },

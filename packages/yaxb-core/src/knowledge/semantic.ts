@@ -166,7 +166,7 @@ export type CuratedHit = { id: string; score: number };
 export type NotebookHit = { sourceId: string; part: number; score: number; title: string; excerpt: string; url?: string };
 
 export type LocalAnswer = {
-  kind: "curated" | "notebook" | "none";
+  kind: "curated" | "notebook" | "web" | "none";
   /** Shown in the transcript: the answer, then "(sources: …)". */
   text: string;
   /** Read aloud and translated: the answer without the sources line. */
@@ -181,6 +181,7 @@ export type LocalAnswer = {
 export const LOCAL_MESSAGES = {
   emergency: "If this is an emergency, call your local emergency number now or tell the nearest staff member.",
   notCovered: "The kiosk's knowledge base and your notebook do not cover this question. A staff member can help you.",
+  webIntro: "The kiosk's knowledge base doesn't cover this. These web pages may help; they are quoted as found, not checked by the kiosk's moderators:",
   redFlag: "This topic is marked for follow-up by a person. It has been passed to the moderation team.",
 } as const;
 
@@ -194,6 +195,24 @@ function curatedReference(item: CuratedItem): Reference {
   if (src?.moderator) parts.push(`moderated by ${src.moderator}`);
   if (src?.baseline_date) parts.push(`baseline ${src.baseline_date}`);
   return { id: `curated:${item.id}`, label: parts.join(", ") };
+}
+
+/**
+ * Kiosk only (no AI model) and not covered: the best web results, quoted as the search returned
+ * them, with their addresses (KNW-45). Nothing is summarised or rewritten.
+ */
+export function composeWebAnswer(question: string, results: readonly { title: string; url: string; snippet: string }[], { keep = 3 } = {}): LocalAnswer | null {
+  if (looksLikeEmergency(question)) return null;
+  const top = results.filter((r) => r.snippet.trim() && /^https?:\/\//.test(r.url)).slice(0, keep);
+  if (!top.length) return null;
+  const where = (url: string) => url.replace(/^https?:\/\/(www\.)?/, "").replace(/[()]/g, "").slice(0, 100);
+  const references = top.map((r, i) => ({ id: `web:${i + 1}`, label: where(r.url) }));
+  const quote = (s: string) => {
+    const t = s.replace(/\s+/g, " ").trim();
+    return t.length > 280 ? `${t.slice(0, 277).replace(/\s+\S*$/, "")}…` : t;
+  };
+  const body = [LOCAL_MESSAGES.webIntro, ...top.map((r) => `- **${plain(r.title) || where(r.url)}**: “${quote(r.snippet)}”`)].join("\n");
+  return { kind: "web", body, text: `${body}\n\n${sourcesLine(references)}`, references, score: null, flag: null, emergency: false };
 }
 
 /**

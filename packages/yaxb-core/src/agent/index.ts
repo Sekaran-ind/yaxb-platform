@@ -494,6 +494,16 @@ export function createKiosk(deps: KioskDeps) {
       filter.state || filter.reason ? filterModeration(await deps.moderation.list(500), filter).slice(0, limit) : deps.moderation.list(limit),
     /** Mark an escalated question handled (MOD-4); null when the item is unknown or the store can't. */
     handle: async (id: string, note: string, by: string) => (deps.moderation.handle ? deps.moderation.handle(id, note, by) : null),
+    /**
+     * Kiosk only (no AI model): the web results for a question the device couldn't answer, ranked
+     * by meaning when the server sentence-transformer is available. Never for a possible emergency,
+     * and nothing when the deployment has no web search.
+     */
+    searchWeb: async (question: string, { signal }: { signal?: AbortSignal } = {}) => {
+      if (!webSearch || looksLikeEmergency(question)) return [];
+      const ranked = await rerankWeb(question, await webSearch.search(question, { count: 8, signal }), embed, { keep: 3 });
+      return ranked.map(({ title, url, snippet }) => ({ title, url, snippet }));
+    },
     /** Escalate a question answered without the agent (on-device answers). */
     flag: (question: string, reason: string) => deps.moderation.add(question, reason),
     forget: (threadId: string) => deps.threads.delete(threadId),

@@ -143,6 +143,25 @@ app.post("/api/agent/flag", async (c) => {
 });
 
 /**
+ * Kiosk only (no AI model), KNW-45: web results for a question the device couldn't answer, which
+ * the browser quotes as found. Same origin, session and rate limit as a chat turn; never for a
+ * possible emergency (the core returns nothing).
+ */
+const searchSchema = z.strictObject({ question: z.string().trim().min(1).max(1000) });
+app.post("/api/agent/search", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  const id = await clientId(c);
+  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, id))) return jsonError(c, 429, "Too many questions in a short time. Please wait a minute.");
+  const parsed = searchSchema.safeParse((await readJson(c, MAX_FORM_BODY)).body);
+  if (!parsed.success) return jsonError(c, 422, "Invalid request.");
+  try {
+    return c.json({ results: await kiosk(c.env).searchWeb(parsed.data.question, { signal: c.req.raw.signal }) });
+  } catch {
+    return jsonError(c, 502, "The web search couldn't be reached.");
+  }
+});
+
+/**
  * Slot filling's model pass: the AI model reads what the visitor said into the fields of a journey
  * step (looked up by the core, never sent by the client), with a schema-constrained answer.
  */

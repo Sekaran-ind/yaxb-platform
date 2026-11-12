@@ -6,4 +6,3 @@ icon: wrench
 order: 30
 items:
   - { key: translate, label: Translate text, icon: languages, journey: translate-text }
-  - { key: sandbox, label: Try the on-device models, icon: flask-conical, screen: sandbox, layouts: [full] }
