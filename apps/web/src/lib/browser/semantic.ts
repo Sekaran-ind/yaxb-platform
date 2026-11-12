@@ -28,7 +28,7 @@ import { embedTexts } from "./offline";
 /** Parts embedded per notebook at most (about 1 MB of text): keeps the first search bearable. */
 const MAX_NOTEBOOK_PARTS = 2500;
 
-type Part = { sourceId: string; title: string; part: number; text: string; vector: number[] };
+type Part = { sourceId: string; title: string; part: number; text: string; vector: number[]; url?: string };
 const sourceVectors = new Map<string, Part[]>();
 
 const ready = new Set<EmbeddingModelId>();
@@ -67,7 +67,7 @@ async function notebookParts(model: EmbeddingModelId, notebook: Notebook | null,
     if (!parts) {
       const texts = semanticChunks(s.text).slice(0, Math.max(0, MAX_NOTEBOOK_PARTS - all.length));
       const vectors = await embedTexts(model, texts.map((t) => `${s.title}. ${t}`), signal);
-      parts = texts.map((text, i) => ({ sourceId: s.id, title: s.title, part: i + 1, text, vector: vectors[i]! }));
+      parts = texts.map((text, i) => ({ sourceId: s.id, title: s.title, part: i + 1, text, vector: vectors[i]!, ...(s.url ? { url: s.url } : {}) }));
       sourceVectors.set(key, parts);
     }
     all.push(...parts);
@@ -112,7 +112,7 @@ export async function searchLocal(
         );
       }
     }
-    notebookHits.push({ sourceId: p.sourceId, part: p.part, score: p.score, title: p.title, excerpt });
+    notebookHits.push({ sourceId: p.sourceId, part: p.part, score: p.score, title: p.title, excerpt, ...(p.url ? { url: p.url } : {}) });
   }
 
   // The best references go with the turn even when weak: the server tells from their scores

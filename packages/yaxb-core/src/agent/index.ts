@@ -126,9 +126,12 @@ function skillFiles(skills: Skill[], now = new Date().toISOString()): Record<str
   );
 }
 
-/** A closing "(sources: web:1 · who.int/page)" line for the web ids an answer cites, or "". */
+/**
+ * A closing "(sources: web:1 · who.int/page)" line for the web results and website notebook sources
+ * (notebook:<id>) an answer cites, with their addresses, or "".
+ */
 export function webSourcesLine(answer: string, urls: Record<string, string>): string {
-  const cited = [...new Set(answer.match(/\bweb:\d+\b/g) ?? [])].filter((id) => urls[id]);
+  const cited = [...new Set(answer.match(/\b(?:web:\d+|notebook:[A-Za-z0-9_-]+)/g) ?? [])].filter((id) => urls[id]);
   if (!cited.length) return "";
   // Brackets would end the (sources: …) line early, and the speech filter with it.
   const where = (url: string) =>
@@ -443,7 +446,8 @@ export function createKiosk(deps: KioskDeps) {
         yield ev;
       }
       // Web sources the answer cites, by site and address, so the visitor can see where it came from.
-      const line = webSourcesLine(answer, turnWeb.urls);
+      const notebookUrls = Object.fromEntries((notebook?.sources ?? []).filter((s) => s.url).map((s) => [`notebook:${s.id}`, s.url!]));
+      const line = webSourcesLine(answer, { ...notebookUrls, ...turnWeb.urls });
       if (line) yield { type: "token", text: line };
     } catch (e) {
       if (signal?.aborted) return; // the caller went away; nothing to report or save

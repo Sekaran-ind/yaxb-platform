@@ -106,6 +106,10 @@
     "./commands": {
       "types": "./dist/commands/index.d.ts",
       "default": "./dist/commands/index.js"
+    },
+    "./web/pages": {
+      "types": "./dist/web/pages.d.ts",
+      "default": "./dist/web/pages.js"
     }
   },
   "files": [

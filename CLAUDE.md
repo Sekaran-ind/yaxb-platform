@@ -124,6 +124,17 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
   - `logActivity()` does nothing while no profile is open. It is called by chat turns (`question.asked`, `web.searched`, `question.escalated`), journeys (`journey.completed`) and the notebook composable.
   - UI: `components/account/` (`AccountScreen` sign-in, `AccountSetup` the diary-style steps, `AccountPanel` suggestions, activity log, passphrase, export, erase), the `account` screen in `screens.yaml`, the header chip, and the "For you" section on Services.
 
+## Websites as notebook sources
+
+- `web/pages.ts` (core, export `./web/pages`): `fetchPage` and `fetchSite` (KNW-20..22) guard against SSRF (SEC-4):
+  - `urlProblem` allows http(s) only, refuses credentials and odd ports, and refuses local names and private addresses in every spelling (`parseIPv4` handles decimal, hex, octal and short forms; `isPrivateAddress` covers v4, v6 and v4-mapped).
+  - `checkResolved` resolves the host first (`dohResolver`, DNS over HTTPS) and refuses it if any address is private.
+  - Redirects use `redirect: "manual"`, and every hop is re-checked. Limits: 2 MB (streamed), 10 s.
+  - Only HTML, text and Markdown are accepted. `readableText` keeps `<main>`/`<article>` text, drops head, nav and scripts, and turns headings into Markdown.
+- Worker: `POST /api/sources/web { url, follow 0..5 }` returns the pages and stores nothing.
+- Notebook sources may carry `url` and `fetchedAt`. Their address shows in the notebook README and files, in `resolveRetrieved` passages, in on-device references, and in the closing sources line (`webSourcesLine` now also takes `notebook:<id>` → url).
+- Web: NotebookScreen has "Add a website" (with linked pages), shows the address, and has "Read again" (`refreshSource`).
+
 ## Kiosk commands
 
 - `commands/` (core):

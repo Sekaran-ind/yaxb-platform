@@ -144,7 +144,7 @@ export function resolveRetrieved(refs: readonly RetrievedRef[], notebook: Notebo
     } else {
       const [id, part] = ref.slice(9).split("#");
       const found = notebookPart(notebook, id!, Number(part));
-      if (found) out.push({ source: `notebook:${id}`, content: `${found.title} (part ${part})\n${found.text}`, score: rounded, redFlag: false });
+      if (found) out.push({ source: `notebook:${id}`, content: `${found.title} (part ${part})${found.url ? `\nWebsite: ${found.url}` : ""}\n${found.text}`, score: rounded, redFlag: false });
     }
   }
   return out;
@@ -163,7 +163,7 @@ export const CURATED_SOURCE_ID = "policies";
 export type Reference = { id: string; label: string };
 export type CuratedHit = { id: string; score: number };
 /** A notebook part, with the sentences that best match the question already picked out. */
-export type NotebookHit = { sourceId: string; part: number; score: number; title: string; excerpt: string };
+export type NotebookHit = { sourceId: string; part: number; score: number; title: string; excerpt: string; url?: string };
 
 export type LocalAnswer = {
   kind: "curated" | "notebook" | "none";
@@ -215,7 +215,8 @@ export function composeLocalAnswer(
 
   const useNotebook = bestNotebook && (!bestCurated || bestNotebook.score > bestCurated.score);
   if (useNotebook) {
-    const references = [{ id: `notebook:${bestNotebook.sourceId}`, label: `${bestNotebook.title}, part ${bestNotebook.part}` }];
+    const site = bestNotebook.url ? `, ${bestNotebook.url.replace(/^https?:\/\/(www\.)?/, "").slice(0, 100)}` : "";
+    const references = [{ id: `notebook:${bestNotebook.sourceId}`, label: `${bestNotebook.title}, part ${bestNotebook.part}${site}` }];
     const body = [...lead, `Your notebook source “${plain(bestNotebook.title)}” says: “${bestNotebook.excerpt.trim()}”`].join("\n\n");
     return { kind: "notebook", body, text: `${body}\n\n${sourcesLine(references)}`, references, score: bestNotebook.score, flag: emergencyFlag, emergency };
   }

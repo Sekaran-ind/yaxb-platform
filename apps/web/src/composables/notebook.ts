@@ -90,11 +90,17 @@ export function useNotebook(storage: Ref<StorageId>, activeId: Ref<string | null
       await store.value.deleteNotebook(id);
       refresh();
     },
-    async addSource(source: { title: string; mime: string; text: string }) {
+    async addSource(source: { title: string; mime: string; text: string; url?: string; fetchedAt?: string }) {
       const current = await latest();
       if (!current) throw new Error("No notebook is open.");
       await save(withSource(current, source));
       void logActivity("notebook.source_added", { sources: current.sources.length + 1 });
+    },
+    /** A website source read again (KNW-22): new text, title and time, same id and citation. */
+    async refreshSource(id: string, page: { title: string; text: string; fetchedAt: string }) {
+      const current = await latest();
+      if (!current) return;
+      await save({ ...current, sources: current.sources.map((s) => (s.id === id ? { ...s, title: page.title.slice(0, 200), text: page.text, fetchedAt: page.fetchedAt } : s)) });
     },
     async removeSource(id: string) {
       const current = await latest();
