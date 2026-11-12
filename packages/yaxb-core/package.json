@@ -136,7 +136,10 @@
     "typecheck": "tsc --noEmit",
     "test": "node tools/build-content.mjs && vitest run",
     "content": "node tools/build-content.mjs",
-    "embeddings": "node tools/build-embeddings.mjs"
+    "embeddings": "node tools/build-embeddings.mjs",
+    "prebuild": "npm run build:core --prefix ../yaxb-journeys",
+    "pretest": "npm run build:core --prefix ../yaxb-journeys",
+    "pretypecheck": "npm run build:core --prefix ../yaxb-journeys"
   },
   "dependencies": {
     "@langchain/anthropic": "1.6.2",
@@ -145,6 +148,7 @@
     "@langchain/langgraph-checkpoint": "1.2.2",
     "@langchain/langgraph-sdk": "1.15.0",
     "@langchain/openai": "1.8.2",
+    "@sekaran-ind/yaxb-journeys": "0.1.0",
     "deepagents": "1.16.3",
     "js-yaml": "5.5.0",
     "langchain": "1.6.3",

@@ -7,6 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This is an npm-workspaces monorepo with one core and several surfaces, the same pattern as clinux-core with clinux-desk, clinux-pro and clinux-diary:
 
 - `packages/yaxb-core` (`@sekaran-ind/yaxb-core`): TypeScript built to `dist/` with `tsc`. It holds the kiosk agent and everything the surfaces share. Behaviour changes go here, not in a surface.
+- `packages/yaxb-journeys` (`@sekaran-ind/yaxb-journeys`): Service → Journey → Questionnaire, installable in other projects. It has two parts:
+  - A headless engine (tsc → `dist/`): journeys, expressions, fields, questionnaires, services, screens and bundles.
+  - Vue components (`vue/`, built with Vite library mode plus vue-tsc → `dist/vue/`, with `style.css`).
+  - yaxb-core re-exports the engine as `./journeys`, `./services` and `./screens`, so build this package before the core (`yaxb.mjs` and the core's `pre*` scripts do).
 - `apps/web`: a Vue 3 single-page app (Vite, Tailwind 4) served as Workers static assets, plus a Hono Worker (`worker/`) for `/api` that runs yaxb-core's agent. Built and run by `@cloudflare/vite-plugin`.
 - `apps/cli`: the `yaxb` command, plain ES modules. Its logic is in `src/cli.js` (`run()` takes an injected `createKiosk`); `src/main.js` wires it up.
 - `apps/native` (`@sekaran-ind/yaxb-native`): the kiosk as an Android and iOS app (Capacitor 8). Its web content is `apps/web` built with `vite build --mode native` into `apps/web/dist/native`; see its README.
@@ -191,6 +195,20 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
   - `onCard` carries out the buttons. A spoken "yes" or "no" (several languages, `yesOrNo`) answers a pending card.
   - Settings opens a section from `?section=`.
 - Slot filling picks a choice field's option by meaning when it clearly leads (`OPTION_BY_MEANING`).
+
+## Questionnaires and the journey studio (JRN-30..35)
+
+- **Engine** (`packages/yaxb-journeys/src`):
+  - `fields.ts` holds `Field`, `fieldListProblems`, and the `when` visibility logic (`fieldVisible`, `formProblems`, `keptAnswers`). `when` may read `values.*`, `answers.*` and `context.*`.
+  - `questionnaires.ts`: `kind: questionnaire` with `sections` (or `fields`). A journey step with `questionnaire: <id>` gets its `fields` and `sections` copied in by `compileJourney(src, { questionnaires })`. `RunState.prompt.sections` carries the pages.
+  - `bundle.ts`: `compileBundle(yaml, { services, screens })` takes multi-document YAML in any order. It returns `{ services, journeys, questionnaires, documents, problems[{ level, line, kind, id, message }], ok }`. `problemLine` points at the quoted name. `previewHandlers` provides stand-ins.
+  - Core content may hold `content/questionnaires/*.questionnaire.yaml`.
+- **Vue** (`packages/yaxb-journeys/vue`):
+  - Components: `AdaptiveNav` (the kiosk's, plus `lockMode`), `QuestionnaireForm` (sections as nav screens), `JourneyRunner`, `ServiceItems`, `FlowPreview`, `StructureTree`, `FlowStudio`.
+  - Plain CSS with `.yj` and `--yj-*` tokens. The defaults are in `:where()`, and `apps/web/src/styles.css` maps them to the site's theme tokens.
+  - Icons come from the host via `provideIcons`.
+- **Portal**: `/studio` (`pages/StudioPage.vue`, navbar "Journey studio") checks against `JOURNEY_SERVICES` and the kiosk's screen ids.
+- The kiosk still has its own `components/kiosk/AdaptiveNav.vue` (Tailwind). Moving it to the package's is open, and needs a visual check.
 
 ## Journey summaries
 

@@ -1,8 +1,9 @@
-// The kiosk's built-in content, compiled and checked once: skills, journeys, services, screens.
+// The kiosk's built-in content, compiled and checked once: skills, questionnaires, journeys,
+// services, screens.
 // Authored in packages/yaxb-core/content/ (YAML and SKILL.md), bundled by tools/build-content.mjs.
 import { load } from "js-yaml";
 import contentJson from "../data/content.json" with { type: "json" };
-import { compileJourney, type Journey } from "../journeys/index.js";
+import { compileJourney, compileQuestionnaire, type Journey, type Questionnaire } from "../journeys/index.js";
 import { compileScreens, type ScreenConfig } from "../screens/index.js";
 import { compileService, type Service } from "../services/index.js";
 
@@ -23,7 +24,7 @@ export const SCREEN_COMPONENTS = ["transcript", "services", "notebook", "account
 
 export type Skill = { name: string; description: string; markdown: string };
 
-const raw = contentJson as { skills: { name: string; markdown: string }[]; journeys: string[]; services: string[]; screens: string };
+const raw = contentJson as { skills: { name: string; markdown: string }[]; journeys: string[]; questionnaires?: string[]; services: string[]; screens: string };
 
 /** name and description from a SKILL.md's YAML frontmatter. */
 export function skillMeta(markdown: string): { name: string; description: string } | null {
@@ -46,9 +47,16 @@ function build() {
     else skills.push({ ...meta, markdown: s.markdown });
   }
 
+  const questionnaires: Questionnaire[] = [];
+  for (const src of raw.questionnaires ?? []) {
+    const r = compileQuestionnaire(src);
+    if (r.ok) questionnaires.push(r.questionnaire);
+    else problems.push(...r.problems.map((p) => `questionnaire: ${p}`));
+  }
+
   const journeys: Journey[] = [];
   for (const src of raw.journeys) {
-    const r = compileJourney(src, { services: JOURNEY_SERVICES });
+    const r = compileJourney(src, { services: JOURNEY_SERVICES, questionnaires });
     if (r.ok) journeys.push(r.journey);
     else problems.push(...r.problems.map((p) => `journey: ${p}`));
   }
@@ -64,7 +72,7 @@ function build() {
     else problems.push(...r.problems.map((p) => `service: ${p}`));
   }
 
-  return { skills, journeys, services, screens, problems };
+  return { skills, questionnaires, journeys, services, screens, problems };
 }
 
 /** The compiled content. `problems` is empty for shippable content (a test checks it). */

@@ -28,6 +28,8 @@ export const router = createRouter({
     { path: "/kiosk/admin", redirect: staff("admin") },
     // Preferences open inside the kiosk (KioskPreferences); old links and commands still land there.
     { path: "/settings", redirect: (to) => ({ path: "/kiosk", query: { prefs: typeof to.query.section === "string" ? to.query.section : "profile" } }) },
+    // Services, journeys and questionnaires as YAML, previewed in the kiosk's navigation (JRN-30).
+    { path: "/studio", component: () => import("./pages/StudioPage.vue"), meta: { title: "Journey studio" } },
     { path: "/contact", component: () => import("./pages/ContactPage.vue"), meta: { title: "Contact" } },
     { path: "/faq", component: () => import("./pages/FaqPage.vue"), meta: { title: "FAQ" } },
     { path: "/terms-conditions", component: () => import("./pages/TermsPage.vue"), meta: { title: "Terms & Privacy" } },

@@ -32,3 +32,15 @@ Guided services: a sequence of steps that ask the visitor something, run an on-d
 | JRN-21 | A summary of all journeys must be available on the Services screen and to the assistant (so "what can you do?" is answered from it, see CMD-2). | Built |
 | JRN-22 | After a journey finishes, the kiosk should be able to show a summary of the run: the steps completed, the answers given (as the visitor saw them) and the result, which the visitor can save to the notebook. | Built |
 | JRN-23 | With a profile open, the activity log records that a journey was completed (never its answers), and the profile page may show a count of journeys used. | Built |
+
+## Questionnaires and the journey studio
+
+| ID | Requirement | Status |
+|---|---|---|
+| JRN-30 | Content has three levels: a service lists items, an item opens a journey, and a journey's question step may use a questionnaire (`questionnaire: <id>`) instead of listing its own fields. A questionnaire is its own YAML document with sections of fields, so several journeys can share one. | Built |
+| JRN-31 | A question may be asked only when a condition holds (`when`), in the same safe language as journeys. It can read the same form's answers, earlier steps' answers and the context. A hidden question is never required, and its answer is kept empty. | Built |
+| JRN-32 | Services, journeys and questionnaires must compile together from one YAML file of several documents, with references checked across them (an unknown journey, questionnaire, handler or screen is an error), and each problem pointing at the line it is about. Content nobody reaches is a warning. | Built |
+| JRN-33 | The portal must offer a journey studio (`/studio`): an editor for that YAML, its problems, and a live preview that runs the journeys in the adaptive navigation at the kiosk's sizes (Mini, Pod, Full) and in each navigation mode, plus a tree from service to questionnaire. The draft stays in the browser. Services such as the assistant run as labelled stand-ins. | Built |
+| JRN-34 | The journey engine and its components must be a package other projects can install (`@sekaran-ind/yaxb-journeys`): a headless core with no DOM, and Vue components with their own plain CSS that the host themes through variables. The kiosk uses the same engine. | Built |
+| JRN-35 | The kiosk's own journey panel should show a questionnaire's sections as pages, as the studio does. It currently lists every question on one page. | Planned |
+
