@@ -123,11 +123,11 @@ onMounted(load);
         </fieldset>
         <fieldset>
           <legend class="mb-1 text-sm font-medium text-ink">Knowledge sources you look after</legend>
-          <div class="grid gap-1 sm:grid-cols-2">
+          <div class="grid gap-1 @lg:grid-cols-2">
             <label v-for="s in sources.data.value?.sources ?? []" :key="s.id" class="inline-flex items-center gap-1.5 text-sm"><input v-model="draft.sources" type="checkbox" :value="s.id" class="size-4 accent-brand" />{{ s.title }}</label>
           </div>
         </fieldset>
-        <div class="grid gap-3 sm:grid-cols-2">
+        <div class="grid gap-3 @lg:grid-cols-2">
           <div>
             <label for="mp-queue" class="mb-1 block text-sm font-medium text-ink">Moderation queue shows</label>
             <select id="mp-queue" v-model="draft.queue" class="input"><option value="open">Open items</option><option value="all">Everything</option></select>

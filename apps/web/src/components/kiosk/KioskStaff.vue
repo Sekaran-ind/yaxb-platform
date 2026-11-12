@@ -1,47 +1,34 @@
 <script setup lang="ts">
-// The staff's side of the kiosk, inside Services (For staff): answer quality, reviewing answers,
-// the moderation queue, the team (chat and calls), your moderator profile and administration.
-// Each needs a moderator key (administration: the administrator); visitors see a sign-in.
-// The section is in the kiosk's address (/kiosk?screen=services&staff=team), so links and the old
-// /kiosk/curate, /kiosk/admin… addresses open the right one.
+// A staff section inside Services (For staff): answer quality, reviewing answers, the moderation
+// queue, the team (chat and calls), your moderator profile, or administration. Each needs a
+// moderator key (administration: the administrator); visitors see a sign-in. The Services list is
+// the menu: this shows the one section in the kiosk's address (/kiosk?screen=services&staff=team),
+// so links and the old /kiosk/curate, /kiosk/admin… addresses open it.
+import { kioskContent } from "@sekaran-ind/yaxb-core/content";
 import { computed } from "vue";
-import { useRoute, useRouter } from "vue-router";
-import AdaptiveNav from "./AdaptiveNav.vue";
+import { useRoute } from "vue-router";
 import CurateTimeline from "./CurateTimeline.vue";
 import AdminPanel from "@/components/moderation/AdminPanel.vue";
 import AnswerReviews from "@/components/moderation/AnswerReviews.vue";
 import ModeratorProfile from "@/components/moderation/ModeratorProfile.vue";
 import QualityDashboard from "@/components/moderation/QualityDashboard.vue";
 import TeamPanel from "@/components/team/TeamPanel.vue";
-import { useWidth } from "@/composables/width";
+import { iconFor } from "@/lib/icons";
 
-const SECTIONS = [
-  { id: "quality", label: "Quality", icon: "gauge" },
-  { id: "review", label: "Review answers", icon: "message-square" },
-  { id: "moderation", label: "Moderation", icon: "search" },
-  { id: "team", label: "Team", icon: "user-round" },
-  { id: "profile", label: "My profile", icon: "notebook" },
-  { id: "admin", label: "Administration", icon: "wrench" },
-];
+const COMPONENTS = { quality: QualityDashboard, review: AnswerReviews, moderation: CurateTimeline, team: TeamPanel, profile: ModeratorProfile, admin: AdminPanel } as const;
+type Section = keyof typeof COMPONENTS;
+
 const route = useRoute();
-const router = useRouter();
-const { el, width } = useWidth();
-const section = computed({
-  get: () => (typeof route.query.staff === "string" && SECTIONS.some((s) => s.id === route.query.staff) ? route.query.staff : "quality"),
-  // A section's own state (an open answer, a shared link) belongs to that section only.
-  set: (id: string) => void router.replace({ path: "/kiosk", query: { screen: "services", staff: id } }),
-});
+const section = computed<Section>(() => (typeof route.query.staff === "string" && route.query.staff in COMPONENTS ? (route.query.staff as Section) : "quality"));
+/** The section's name and icon, from its card in the For staff service. */
+const item = computed(() => kioskContent.services.find((s) => s.id === "staff")?.items.find((i) => i.staff === section.value));
 </script>
 
 <template>
-  <div ref="el">
-    <AdaptiveNav v-model:active="section" :screens="SECTIONS" mode="tabs" storage-key="staff" :width="width">
-      <template #quality><QualityDashboard /></template>
-      <template #review><AnswerReviews /></template>
-      <template #moderation><CurateTimeline /></template>
-      <template #team><TeamPanel /></template>
-      <template #profile><ModeratorProfile /></template>
-      <template #admin><AdminPanel /></template>
-    </AdaptiveNav>
-  </div>
+  <section :aria-labelledby="`staff-${section}`" class="@container space-y-3">
+    <h2 :id="`staff-${section}`" class="flex items-center gap-2 text-base font-semibold text-ink">
+      <component :is="iconFor(item?.icon)" v-if="iconFor(item?.icon)" class="size-4 text-brand" aria-hidden="true" />{{ item?.label ?? "Staff" }}
+    </h2>
+    <component :is="COMPONENTS[section]" />
+  </section>
 </template>

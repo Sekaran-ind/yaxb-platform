@@ -61,7 +61,7 @@ function swap() {
         <select id="tgt-lang" v-model="tgt" class="input mt-1"><option v-for="l in LANGUAGES" :key="l.code" :value="l.code">{{ l.label }}</option></select>
       </div>
     </div>
-    <div class="grid gap-4 md:grid-cols-2">
+    <div class="grid gap-4 @2xl:grid-cols-2">
       <textarea v-model="input" class="input min-h-40" maxlength="2000" aria-label="Text to translate" />
       <textarea :value="output" class="input min-h-40 bg-mist" readonly aria-label="Translation" />
     </div>

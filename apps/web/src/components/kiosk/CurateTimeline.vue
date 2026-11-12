@@ -121,7 +121,7 @@ const pct = (n: number, total: number) => (total ? `${Math.round((n / total) * 1
             <li v-for="r in RATINGS" :key="r" class="inline-flex items-center gap-1.5"><span :class="['size-2.5 rounded-full', BAR[r]]" aria-hidden="true" />{{ r[0]!.toUpperCase() + r.slice(1) }} {{ feedback.data.value.counts[r] }}</li>
           </ul>
         </div>
-        <div class="mt-3 grid gap-3 sm:grid-cols-2">
+        <div class="mt-3 grid gap-3 @lg:grid-cols-2">
           <table class="card w-full p-0 text-sm">
             <caption class="px-4 pt-3 text-left text-xs font-medium text-gray-500">By day</caption>
             <thead><tr class="text-xs text-gray-500"><th class="px-4 py-1 text-left font-normal">Day</th><th class="px-2 font-normal">Good</th><th class="px-2 font-normal">Fine</th><th class="px-2 font-normal">Bad</th></tr></thead>

@@ -37,7 +37,7 @@ async function test() {
     <p class="text-sm text-gray-600">
       yaxb-box keeps everything on a Raspberry Pi on this network (SQLite, backed up continuously by Litestream). Run <code>node yaxb.mjs box-deploy --host &lt;user&gt;@&lt;pi&gt;</code> to install it; it prints the URL and token.
     </p>
-    <div class="grid gap-3 sm:grid-cols-2">
+    <div class="grid gap-3 @lg:grid-cols-2">
       <div>
         <label for="box-url" class="block text-sm font-medium text-ink">Box URL</label>
         <input id="box-url" v-model="url" class="input mt-1" placeholder="https://192.168.1.14:47870" autocomplete="off" />

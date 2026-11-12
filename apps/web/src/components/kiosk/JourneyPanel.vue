@@ -242,7 +242,7 @@ onBeforeUnmount(() => {
         <ol class="mt-2 space-y-1">
           <li v-for="(st, i) in run.steps" :key="i" class="flex items-center gap-2"><CheckCircle2 v-if="st.ok" class="size-4 text-success" aria-hidden="true" /><XCircle v-else class="size-4 text-danger" aria-hidden="true" />{{ st.label }}</li>
         </ol>
-        <dl v-if="run.answers.length" class="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-[auto_1fr]">
+        <dl v-if="run.answers.length" class="mt-2 grid gap-x-4 gap-y-1 @lg:grid-cols-[auto_1fr]">
           <template v-for="(a, i) in run.answers" :key="i"><dt class="text-gray-500">{{ a.field }}</dt><dd class="text-ink">{{ a.value }}</dd></template>
         </dl>
       </details>

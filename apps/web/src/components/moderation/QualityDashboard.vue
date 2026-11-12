@@ -135,7 +135,7 @@ watch(weeks, load);
         </table>
       </div>
 
-      <section v-if="current" class="grid gap-4 md:grid-cols-2" :aria-label="`Details for ${current.title}`">
+      <section v-if="current" class="grid gap-4 @2xl:grid-cols-2" :aria-label="`Details for ${current.title}`">
         <div class="card p-4">
           <h3 class="mb-1 font-semibold text-ink">{{ current.title }} by week</h3>
           <p class="mb-2 text-xs text-gray-500">{{ current.tp }} relevant · {{ current.fp }} not relevant · {{ current.fn }} missing sources, overall.</p>

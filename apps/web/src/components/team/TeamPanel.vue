@@ -76,7 +76,7 @@ onMounted(async () => {
     <ModeratorSignIn v-if="team.signedOut.value" why="Team members: sign in with your own moderator key." @signed-in="team.load()" />
     <p v-if="team.error.value" role="alert" class="mb-4 rounded-md bg-danger/10 px-4 py-3 text-sm text-red-800">{{ team.error.value }}</p>
 
-    <div v-if="team.me.value" class="grid gap-4 md:grid-cols-[18rem_minmax(0,1fr)]">
+    <div v-if="team.me.value" class="grid gap-4 @2xl:grid-cols-[18rem_minmax(0,1fr)]">
       <!-- members -->
       <aside class="card p-3">
         <div class="flex items-center gap-3 rounded-xl bg-mist p-3">
