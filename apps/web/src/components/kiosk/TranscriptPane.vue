@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The Transcript screen: ask box and the conversation with live agent activity.
 import { MAX_MESSAGE_CHARS } from "@sekaran-ind/yaxb-core/schemas";
-import { Bot, CheckCircle2, HardDrive, Circle, CircleDot, Loader2, NotebookPen, RotateCcw, Send, Settings2, ShieldCheck, Wrench } from "@lucide/vue";
+import { ArrowUp, Bot, CheckCircle2, HardDrive, Circle, CircleDot, Loader2, Mic, MicOff, NotebookPen, RotateCcw, Settings2, ShieldCheck, Wrench } from "@lucide/vue";
 import { computed, nextTick, ref, watch } from "vue";
 import { cn } from "@/lib/cn";
 import AnswerText from "./AnswerText.vue";
@@ -11,6 +11,11 @@ import type { ChatTurn, ProvidersResponse, ToolActivity } from "@/lib/types";
 const props = defineProps<{
   turns: ChatTurn[];
   busy: boolean;
+  /** The pane's height: the conversation scrolls inside it, under the floating composer. */
+  heightClass?: string;
+  /** Voice input from the composer's microphone (the same as the console's). */
+  listening?: boolean;
+  voiceSupported?: boolean;
   selection: { provider: string; model: string } | null;
   /** Whether a question can be sent now (a provider, or on-device answers). */
   canAsk: boolean;
@@ -24,7 +29,7 @@ const props = defineProps<{
   sourceCount: number;
 }>();
 /** card: a command card's button (yes, no, start, sign-in, ask-assistant) for the shell to carry out. */
-const emit = defineEmits<{ ask: [question: string]; reset: []; card: [turnId: string, action: "yes" | "no" | "start" | "sign-in" | "ask-assistant"]; review: [turnId: string] }>();
+const emit = defineEmits<{ mic: []; ask: [question: string]; reset: []; card: [turnId: string, action: "yes" | "no" | "start" | "sign-in" | "ask-assistant"]; review: [turnId: string] }>();
 
 const TOOL_LABELS: Record<string, string> = {
   search_knowledge_base: "Searching the knowledge base",
@@ -46,6 +51,7 @@ function toolLabel(t: ToolActivity) {
 
 const draft = ref("");
 const end = ref<HTMLElement | null>(null);
+const scroller = ref<HTMLElement | null>(null);
 const provider = computed(() => props.catalog?.providers.find((p) => p.id === props.selection?.provider));
 const modelLabel = computed(() => provider.value?.models.find((m) => m.id === props.selection?.model)?.label);
 const noProvider = computed(() => props.answers !== "local" && props.catalog && !props.catalog.providers.some((p) => p.configured));
@@ -54,7 +60,9 @@ watch(
   () => props.turns.map((t) => t.text.length + t.tools.length).join(),
   async () => {
     await nextTick();
-    end.value?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    // Keep the latest message in view above the floating composer.
+    if (props.heightClass) scroller.value?.scrollTo({ top: scroller.value.scrollHeight, behavior: "smooth" });
+    else end.value?.scrollIntoView({ behavior: "smooth", block: "end" });
   },
 );
 
@@ -67,7 +75,7 @@ function submit() {
 </script>
 
 <template>
-  <div class="flex min-h-[360px] flex-col">
+  <div :class="cn('relative flex flex-col', heightClass ?? 'min-h-[min(62dvh,560px)]')">
     <div class="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
       <RouterLink to="/settings" class="chip hover:text-ink">
         <Settings2 class="size-3.5" aria-hidden="true" />
@@ -84,17 +92,8 @@ function submit() {
       No AI provider is configured. Add a provider key as a Worker secret (locally: <code>apps/web/.dev.vars</code>).
     </p>
 
-    <form class="flex items-center gap-2 rounded-full border border-gray-200 bg-surface py-1.5 pr-1.5 pl-5 shadow-[var(--shadow-soft)] transition focus-within:border-gray-400 focus-within:ring-4 focus-within:ring-brand/15" @submit.prevent="submit">
-      <label for="kiosk-question" class="sr-only">Your question</label>
-      <input id="kiosk-question" v-model="draft" class="min-w-0 flex-1 bg-transparent py-2 text-ink outline-none placeholder:text-gray-400" placeholder="Ask anything…" :maxlength="MAX_MESSAGE_CHARS" autocomplete="off" />
-      <button type="submit" class="btn-primary size-10 shrink-0 p-0 sm:w-auto sm:px-4" :disabled="!canAsk || !draft.trim()" aria-label="Ask">
-        <Loader2 v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
-        <Send v-else class="size-4" aria-hidden="true" />
-        <span class="hidden sm:inline">Ask</span>
-      </button>
-    </form>
 
-    <div class="mt-4 flex-1 space-y-4" aria-live="polite">
+    <div ref="scroller" :class="cn('-mx-1 mt-2 flex-1 space-y-5 px-1', heightClass ? 'min-h-0 overflow-y-auto pb-36 [scrollbar-width:thin]' : 'pb-4')" aria-live="polite">
       <div v-if="!turns.length" class="pt-16 text-center">
         <p class="text-lg font-medium tracking-tight text-ink">Ask a question, or tap the microphone.</p>
         <p class="mt-1 text-sm text-gray-500">Answers come from trusted sources, with references.</p>
@@ -158,7 +157,43 @@ function submit() {
           </div>
         </div>
       </template>
-      <div ref="end" />
+      <div ref="end" class="scroll-mb-36" />
+    </div>
+
+    <!-- The composer floats over the bottom of the conversation, as in chat apps: inside the pane when
+         it has a fixed height (full layout), otherwise pinned to the bottom of the screen while the
+         conversation is in view. -->
+    <div
+      :class="
+        cn(
+          'pointer-events-none z-10 bg-linear-to-t from-surface from-55% to-transparent px-0.5 pt-12',
+          heightClass ? 'absolute inset-x-0 bottom-0 pb-0.5' : 'sticky bottom-0 -mx-0.5 pb-[max(0.5rem,env(safe-area-inset-bottom))]',
+        )
+      "
+    >
+      <form
+        class="pointer-events-auto flex items-center gap-1.5 rounded-[1.75rem] border border-gray-200 bg-surface/95 py-1.5 pr-1.5 pl-5 shadow-[var(--shadow-lift)] backdrop-blur-xl transition focus-within:border-gray-400 focus-within:ring-4 focus-within:ring-brand/15"
+        @submit.prevent="submit"
+      >
+        <label for="kiosk-question" class="sr-only">Your question</label>
+        <input id="kiosk-question" v-model="draft" class="min-w-0 flex-1 bg-transparent py-2.5 text-ink outline-none placeholder:text-gray-400" :placeholder="listening ? 'Listening…' : 'Ask anything…'" :maxlength="MAX_MESSAGE_CHARS" autocomplete="off" />
+        <button
+          v-if="voiceSupported"
+          type="button"
+          :class="cn('grid size-10 shrink-0 place-items-center rounded-full transition', listening ? 'bg-brand text-console ring-4 ring-brand/25' : 'text-gray-500 hover:bg-mist hover:text-ink')"
+          :aria-pressed="listening"
+          :aria-label="listening ? 'Stop listening' : 'Ask by voice'"
+          @click="emit('mic')"
+        >
+          <MicOff v-if="listening" class="size-4" aria-hidden="true" />
+          <Mic v-else class="size-4" aria-hidden="true" />
+        </button>
+        <button type="submit" class="btn-primary size-10 shrink-0 p-0" :disabled="!canAsk || !draft.trim()" aria-label="Ask">
+          <Loader2 v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
+          <ArrowUp v-else class="size-4" aria-hidden="true" />
+        </button>
+      </form>
+      <p class="mt-1.5 truncate text-center text-[11px] text-gray-400">Facts from cited sources. Check important things with a person.</p>
     </div>
   </div>
 </template>
