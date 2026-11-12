@@ -127,6 +127,33 @@ sections:                              # or `fields:` for one page
 - **Questionnaire answers** are `answers.<step>.<field>`. The questions are copied into the step,
   so the runner treats them as ordinary fields.
 
+## Roles
+
+```yaml
+kind: service
+roles: [receptionist, nurse]            # who delivers it
+---
+kind: journey
+roles:
+  initiate: [visitor, receptionist]     # who may start it; visitor = anyone at the kiosk
+  complete: [nurse]                     # who finishes it
+```
+
+- `DEFAULT_ROLES` are Admin (`administrator`), Moderator and Reviewer. Pass your catalogue's ids as `compileBundle(..., { roles })` to check them.
+- `canInitiate(journey, userRoles)` says whether someone may start a journey.
+- A warning says when a journey's roles don't take part in a service that opens it.
+
+## Forms
+
+Services and journeys can be edited as forms that write YAML:
+
+- `serviceToForm` / `formToService` and `journeyToForm` / `formToJourney`, plus `toYaml`.
+- The Vue components are `ServiceForm` and `JourneyForm`, with `RolePicker`.
+- Journey steps are a list. Fields and service input are YAML text inside the form.
+- Steps that combine kinds are listed in `unsupported`, for YAML editing.
+- Questionnaires are written as YAML (`questionnaireTemplate`, `YamlEditor`).
+- `checkDocument(yaml, others, options)` checks one document against the rest of a library.
+
 ## Headless API
 
 ```ts

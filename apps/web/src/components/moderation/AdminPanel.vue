@@ -5,7 +5,8 @@
 import { AUDIT_ACTIONS, MODERATOR_ROLES, type AuditEvent, type Moderator, type ModeratorStatus } from "@sekaran-ind/yaxb-core/moderators";
 import { memberStatus, type MemberStatus } from "@sekaran-ind/yaxb-core/team";
 import { Copy, KeyRound, Lock, LogOut, Pencil, RefreshCw, RotateCw, ShieldAlert, Trash2, UserPlus } from "@lucide/vue";
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
+import { roleCatalogue, roleName, loadLibraryContent } from "@/composables/library";
 import { cn } from "@/lib/cn";
 
 type Row = Moderator & { status: ModeratorStatus };
@@ -26,6 +27,10 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!res.ok) throw new Error(body?.error ?? `Request failed (${res.status}).`);
   return body as T;
 }
+/** Built-in member roles and the organisation's own (Journey library, Roles). */
+const roleOptions = computed(() => [...new Set<string>([...MODERATOR_ROLES, ...roleCatalogue.value.map((r) => r.id)])]);
+onMounted(() => void loadLibraryContent());
+
 async function load() {
   error.value = null;
   try {
@@ -133,7 +138,7 @@ onMounted(load);
           <div><label for="m-label" class="mb-1 block text-sm font-medium text-ink">Label <span class="font-normal text-gray-500">(optional)</span></label><input id="m-label" v-model="form.label" class="input" maxlength="80" placeholder="e.g. Pharmacy team" /></div>
           <fieldset>
             <legend class="mb-1 text-sm font-medium text-ink">Roles</legend>
-            <label v-for="r in MODERATOR_ROLES" :key="r" class="mr-4 inline-flex items-center gap-1.5 text-sm capitalize"><input v-model="form.roles" type="checkbox" :value="r" class="size-4 accent-brand" />{{ r }}</label>
+            <label v-for="r in roleOptions" :key="r" class="mr-4 inline-flex items-center gap-1.5 text-sm"><input v-model="form.roles" type="checkbox" :value="r" class="size-4 accent-brand" />{{ roleName(r) }}</label>
           </fieldset>
           <div>
             <label for="m-exp" class="mb-1 block text-sm font-medium text-ink">Key expires after</label>
@@ -162,12 +167,12 @@ onMounted(load);
                 <td class="py-2 pr-3"><span class="font-medium text-ink">{{ m.name }}</span><span v-if="m.label" class="block text-xs text-gray-500">{{ m.label }}</span></td>
                 <td class="pr-3">
                   <form v-if="editing?.id === m.id" class="flex flex-wrap items-center gap-2" @submit.prevent="saveRoles">
-                    <label v-for="r in MODERATOR_ROLES" :key="r" class="inline-flex items-center gap-1 text-xs capitalize"><input v-model="editing.roles" type="checkbox" :value="r" class="size-3.5 accent-brand" />{{ r }}</label>
+                    <label v-for="r in roleOptions" :key="r" class="inline-flex items-center gap-1 text-xs"><input v-model="editing.roles" type="checkbox" :value="r" class="size-3.5 accent-brand" />{{ roleName(r) }}</label>
                     <button type="submit" class="btn-primary h-7 px-2.5 text-xs" :disabled="busy || !editing.roles.length">Save</button>
                     <button type="button" class="btn-ghost h-7 px-2 text-xs" @click="editing = null">Cancel</button>
                   </form>
                   <button v-else type="button" class="group inline-flex items-center gap-1 capitalize hover:text-ink" :title="`Change ${m.name}'s roles`" @click="editing = { id: m.id, roles: [...m.roles] }">
-                    {{ m.roles.join(", ") }} <Pencil class="size-3 opacity-0 group-hover:opacity-60" aria-hidden="true" />
+                    {{ m.roles.map(roleName).join(", ") }} <Pencil class="size-3 opacity-0 group-hover:opacity-60" aria-hidden="true" />
                   </button>
                 </td>
                 <td class="pr-3">

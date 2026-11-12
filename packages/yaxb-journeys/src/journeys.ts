@@ -5,6 +5,7 @@
 //   id: summarise-source
 //   version: 1
 //   title / summary / icon / category
+//   roles: { initiate: [visitor], complete: [nurse] }   who starts it and who finishes it (roles.ts)
 //   start: pick
 //   steps:
 //     <id>:
@@ -27,10 +28,12 @@ import { load } from "js-yaml";
 import { conditionProblem, holds, placeholders, render, type Scope } from "./expressions.js";
 import { fieldListProblems, formProblems, keptAnswers, type Field } from "./fields.js";
 import { questionnaireFields, type Questionnaire } from "./questionnaires.js";
+import { journeyRoleProblems, type JourneyRoles } from "./roles.js";
 
 export * from "./expressions.js";
 export * from "./fields.js";
 export * from "./questionnaires.js";
+export * from "./roles.js";
 
 export type Branch = { if?: string; to: string };
 
@@ -65,11 +68,13 @@ export type Journey = {
   summary?: string;
   icon?: string;
   category?: string;
+  /** Who may start the journey and who finishes it (roles.ts). */
+  roles?: JourneyRoles;
   start: string;
   steps: Record<string, Step>;
 };
 
-const JOURNEY_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "category", "start", "steps"]);
+const JOURNEY_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "category", "roles", "start", "steps"]);
 const STEP_KEYS = new Set(["ask", "fields", "questionnaire", "service", "with", "onError", "decide", "final", "result", "next", "label", "stage", "icon", "submitLabel"]);
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 const SERVICE = /^[a-z][a-z0-9-]*(?:\.[a-z][a-zA-Z0-9-]*)+$/;
@@ -80,10 +85,12 @@ export type JourneyOptions = {
   services?: readonly string[];
   /** Questionnaires that ask steps may use. */
   questionnaires?: readonly Questionnaire[];
+  /** Role ids that exist; any well-formed id is accepted when absent. */
+  roles?: readonly string[];
 };
 
 /** What's wrong with a journey document ([] when nothing). */
-export function journeyProblems(doc: unknown, { services, questionnaires = [] }: JourneyOptions = {}): string[] {
+export function journeyProblems(doc: unknown, { services, questionnaires = [], roles }: JourneyOptions = {}): string[] {
   const problems: string[] = [];
   if (!doc || typeof doc !== "object" || Array.isArray(doc)) return ["a journey is a YAML mapping"];
   const j = doc as Record<string, unknown>;
@@ -91,6 +98,7 @@ export function journeyProblems(doc: unknown, { services, questionnaires = [] }:
   for (const k of ["id", "title", "start"]) if (!j[k]) problems.push(`${k} is required`);
   for (const k of Object.keys(j)) if (!JOURNEY_KEYS.has(k)) problems.push(`unknown key '${k}'`);
   if (typeof j.id === "string" && !ID.test(j.id)) problems.push("id must be lower-case words joined by '-'");
+  problems.push(...journeyRoleProblems(j.roles, roles));
   const steps = j.steps;
   if (!steps || typeof steps !== "object" || Array.isArray(steps) || !Object.keys(steps).length) {
     problems.push("steps is required");

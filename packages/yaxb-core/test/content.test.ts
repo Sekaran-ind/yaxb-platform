@@ -21,7 +21,7 @@ describe("built-in content", () => {
     expect(full).not.toContain("staff"); // staff sections are a service group (SET-16)
     expect(full).not.toContain("patient-info");
     const staff = servicesFor(kioskContent.services, { layout: "mini" }).find((s) => s.id === "staff");
-    expect(staff?.items.map((i) => i.staff)).toEqual(["quality", "review", "moderation", "team", "profile", "admin"]);
+    expect(staff?.items.map((i) => i.staff)).toEqual(["quality", "review", "moderation", "library", "team", "profile", "admin"]);
     expect(full).not.toContain("translate"); // hidden
     const tools = servicesFor(kioskContent.services, { layout: "mini" }).find((s) => s.id === "tools");
     expect(tools?.items.map((i) => i.key)).toEqual(["translate"]);

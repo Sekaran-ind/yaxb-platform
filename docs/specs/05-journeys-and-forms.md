@@ -44,3 +44,21 @@ Guided services: a sequence of steps that ask the visitor something, run an on-d
 | JRN-34 | The journey engine and its components must be a package other projects can install (`@sekaran-ind/yaxb-journeys`): a headless core with no DOM, and Vue components with their own plain CSS that the host themes through variables. The kiosk uses the same engine. | Built |
 | JRN-35 | The kiosk's own journey panel should show a questionnaire's sections as pages, as the studio does. It currently lists every question on one page. | Planned |
 
+## The journey library and roles
+
+| ID | Requirement | Status |
+|---|---|---|
+| LIB-1 | Staff must be able to keep several libraries, each holding services, journeys and questionnaires (one YAML document per entry). Libraries can be created, renamed, archived and restored; an archived library's content leaves the kiosk. | Built |
+| LIB-2 | A service and a journey must be editable as a form, which writes the YAML, or as YAML directly; a questionnaire is written as YAML. Steps the form can't represent (one step that both asks and runs a service) stay editable as YAML. | Built |
+| LIB-3 | Every save keeps a revision (who, when, an optional note); an earlier revision can be loaded and saved again. | Built |
+| LIB-4 | An entry is checked against the rest of its library as it is edited (unknown questionnaires, journeys, roles, handlers or screens), and can't be submitted for review with errors. | Built |
+| LIB-5 | An entry goes draft → in review → accepted or rejected (rejecting needs a note for the author). Saving takes it back to draft. | Built |
+| LIB-6 | A reviewer can read the entry (form, YAML, a live preview, its history) and accept or reject it. Nobody reviews their own submission (the ADMIN_TOKEN holder excepted). Accepting is refused while it refers to something not yet published. | Built |
+| LIB-7 | Archiving an entry takes it off the kiosk; restoring it brings it back as a draft, to be reviewed again. | Built |
+| LIB-8 | The kiosk's Services screen must load what reviewers accepted, from active libraries, next to its built-in content. A new revision being edited doesn't change what the kiosk serves until it is accepted. | Built |
+| LIB-9 | A service lists the roles that deliver it; a journey says which roles may start it (`visitor`: anyone at the kiosk) and which finish it. A journey's roles should take part in the services that open it (a warning otherwise). | Built |
+| LIB-10 | Admin, Moderator and Reviewer are built-in roles; an administrator adds the organisation's own (id, name, description) and gives members several roles. A role in use by an entry or a member can't be removed. | Built |
+| LIB-11 | The kiosk offers a journey only to those who may start it: visitors see journeys open to anyone; a signed-in member also sees journeys their roles may start. When a journey has roles that finish it, the result tells the visitor who takes it from there. | Built |
+| LIB-12 | Handing a started journey over to the role that finishes it (a queue of runs for that role to complete, with what the visitor gave) is not built yet: it would send the visitor's answers to the server, which needs its own consent and privacy design. | Planned |
+| LIB-13 | Every library change (libraries, entries, reviews, roles) goes into the audit log: who, what, when, never the content. | Built |
+

@@ -210,6 +210,26 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
 - **Portal**: `/studio` (`pages/StudioPage.vue`, navbar "Journey studio") checks against `JOURNEY_SERVICES` and the kiosk's screen ids.
 - The kiosk still has its own `components/kiosk/AdaptiveNav.vue` (Tailwind). Moving it to the package's is open, and needs a visual check.
 
+## The journey library and roles (LIB-1..13)
+
+- **Package**:
+  - `roles.ts`: `DEFAULT_ROLES` (administrator shown as Admin, moderator, reviewer), `VISITOR_ROLE`, `canInitiate`, `roleLabel`. Services have `roles: [...]`; journeys have `roles: { initiate, complete }`. `compileBundle(..., { roles })` checks role ids, and warns when a journey's roles don't take part in a service that opens it.
+  - `forms.ts`: `serviceToForm`/`formToService` and `journeyToForm`/`formToJourney` (steps as a list, fields and `with` as YAML text; `unsupported` names steps that combine kinds). Also `toYaml`, `parseDocument` and `questionnaireTemplate`.
+  - `checkDocument(yaml, others, options)` checks one document in its library's context.
+  - Vue: `ServiceForm`, `JourneyForm`, `RolePicker`, `YamlEditor` (FlowStudio uses it too).
+- **Core** `library/` (export `./library`):
+  - `createLibraryService(store, { services, screens, audit })` takes a `LibraryActor` ({ id, name, roles, admin }) on every call, and refuses with `LibraryError(message, status)`.
+  - Permissions: view = any member; edit = administrator/moderator/curator; review = reviewer/administrator, never your own submission (except `ADMIN_ACTOR_ID`); manage (roles, archiving libraries) = administrator.
+  - Entries: `yaml` is the latest revision; `published_yaml` is the accepted one the kiosk serves. Submit needs no errors in the library's context; accept needs no errors against what is already published. Archive clears `published_yaml`.
+  - `published(viewerRoles)` returns `{ roles, libraries: [{ sources, allowed }] }`. The kiosk compiles every source and offers only the `allowed` journeys.
+  - Stores: memory, and D1 `createD1LibraryStore` (migration 0006). Tests run on both.
+  - Member roles are now any role id; `MODERATOR_ROLES` adds reviewer. The Worker checks that custom ids exist in the catalogue.
+- **Worker**: `GET /api/library/published` (public, filtered by the caller's roles). The rest of `/api/library/*` needs a member or the administrator: overview, roles, libraries (`archive`/`restore`), entries (`submit`, `review`, `archive`, `restore`).
+- **Web**:
+  - Staff → Journey library (`components/library/`: `LibraryPanel`, `LibraryEntryEditor`, `EntryStatus`; `STAFF_SECTIONS` has `library`). Query keys: `tab`, `lib`, `entry` (or `new-<kind>`).
+  - `composables/library.ts` (`loadLibraryContent`, `kioskServices`, `kioskJourneys`, `roleName`) feeds ServicesScreen, AdminPanel's role checkboxes, and JourneyPanel's "Next: <role> will complete this".
+  - Server-side slot filling (`/api/agent/extract`) still looks up only built-in journeys.
+
 ## Journey summaries
 
 - `journeys/summary.ts`:

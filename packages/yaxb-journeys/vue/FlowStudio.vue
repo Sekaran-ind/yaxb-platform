@@ -10,6 +10,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vu
 import FlowPreview from "./FlowPreview.vue";
 import type { LanguageOption, SourceOption } from "./QuestionField.vue";
 import StructureTree from "./StructureTree.vue";
+import YamlEditor from "./YamlEditor.vue";
 
 const props = withDefaults(
   defineProps<{
@@ -92,61 +93,17 @@ const counts = computed(() => {
 });
 
 // ---- the editor -----------------------------------------------------------------------------
-const editor = ref<HTMLTextAreaElement | null>(null);
-const gutter = ref<HTMLElement | null>(null);
-const lineCount = computed(() => source.value.split("\n").length);
+const editor = ref<InstanceType<typeof YamlEditor> | null>(null);
 const marks = computed(() => {
   const m = new Map<number, BundleProblem["level"]>();
   for (const p of bundle.value.problems) if (m.get(p.line) !== "error") m.set(p.line, p.level);
   return m;
 });
-
 function setSource(text: string) {
   source.value = text;
   emit("update:modelValue", text);
 }
-const onInput = (e: Event) => setSource((e.target as HTMLTextAreaElement).value);
-const syncGutter = () => {
-  if (gutter.value && editor.value) gutter.value.scrollTop = editor.value.scrollTop;
-};
-
-// Tab indents by two spaces; Escape, then Tab, leaves the editor (so the keyboard is never trapped).
-let released = false;
-function onKeydown(e: KeyboardEvent) {
-  const el = e.target as HTMLTextAreaElement;
-  if (e.key === "Escape") {
-    released = true;
-    return;
-  }
-  if (e.key !== "Tab" || released || e.ctrlKey || e.metaKey || e.altKey) {
-    if (e.key !== "Shift") released = false;
-    return;
-  }
-  e.preventDefault();
-  const { selectionStart: start, selectionEnd: end, value } = el;
-  if (e.shiftKey) {
-    const lineStart = value.lastIndexOf("\n", start - 1) + 1;
-    const cut = value.startsWith("  ", lineStart) ? 2 : value.startsWith(" ", lineStart) ? 1 : 0;
-    if (!cut) return;
-    el.setRangeText("", lineStart, lineStart + cut, "preserve");
-    el.setSelectionRange(Math.max(lineStart, start - cut), Math.max(lineStart, end - cut));
-  } else {
-    el.setRangeText("  ", start, end, "end");
-  }
-  setSource(el.value);
-}
-
-function goToLine(line: number) {
-  const el = editor.value;
-  if (!el) return;
-  const lines = source.value.split("\n");
-  const start = lines.slice(0, line - 1).reduce((n: number, l: string) => n + l.length + 1, 0);
-  el.focus();
-  el.setSelectionRange(start, start + (lines[line - 1]?.length ?? 0));
-  const lh = parseFloat(getComputedStyle(el).lineHeight) || 20;
-  el.scrollTop = Math.max(0, (line - 4) * lh);
-  syncGutter();
-}
+const goToLine = (line: number) => editor.value?.goToLine(line);
 
 // ---- files ----------------------------------------------------------------------------------
 const fileInput = ref<HTMLInputElement | null>(null);
@@ -241,26 +198,7 @@ const caption = computed(() => `${layout.value[0]!.toUpperCase()}${layout.value.
           </div>
         </div>
         <div class="yj-panel-body">
-          <div class="yj-editor">
-            <div ref="gutter" class="yj-gutter" aria-hidden="true">
-              <span v-for="n in lineCount" :key="n" :class="marks.get(n) && `yj-gutter-${marks.get(n)}`">{{ n }}</span>
-            </div>
-            <textarea
-              ref="editor"
-              class="yj-code-input"
-              :value="source"
-              spellcheck="false"
-              autocapitalize="off"
-              autocomplete="off"
-              wrap="off"
-              aria-label="YAML: services, journeys and questionnaires, separated by --- lines"
-              aria-describedby="yj-studio-status"
-              @input="onInput"
-              @scroll="syncGutter"
-              @keydown="onKeydown"
-            />
-          </div>
-          <p class="yj-help">Tab indents. Press Escape, then Tab, to leave the editor.</p>
+          <YamlEditor ref="editor" :model-value="source" :marks="marks" label="YAML: services, journeys and questionnaires, separated by --- lines" describedby="yj-studio-status" @update:model-value="setSource" />
           <p v-if="fileNote" class="yj-help" role="status">{{ fileNote }}</p>
           <p id="yj-studio-status" class="yj-small yj-mt" :class="errors ? 'yj-status-bad' : 'yj-status-ok'" role="status">
             {{ errors ? `${errors} error${errors === 1 ? "" : "s"}` : "Compiles" }}{{ warnings ? ` · ${warnings} warning${warnings === 1 ? "" : "s"}` : "" }}

@@ -3,12 +3,11 @@
 // item opens a screen, runs a journey, or (For staff) opens a staff section here, inside Services.
 // Cards are laid out by the kiosk's own width (container queries), not the window's, so the Mini
 // kiosk on a wide screen gets one clean column.
-import { kioskContent } from "@sekaran-ind/yaxb-core/content";
 import type { ServiceHandler } from "@sekaran-ind/yaxb-core/journeys";
 import type { Layout } from "@sekaran-ind/yaxb-core/screens";
 import { servicesFor, type ServiceItem } from "@sekaran-ind/yaxb-core/services";
 import { ArrowLeft, ChevronDown, ChevronRight, Info } from "@lucide/vue";
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { NotebookRecord } from "@/lib/browser/store";
 import { cn } from "@/lib/cn";
@@ -17,6 +16,7 @@ import { NATIVE } from "@/lib/platform";
 import JourneyPanel from "./JourneyPanel.vue";
 import JourneySummaryCard from "./JourneySummaryCard.vue";
 import KioskStaff from "./KioskStaff.vue";
+import { kioskJourneys, kioskServices, loadLibraryContent } from "@/composables/library";
 
 // highlight: service item keys the visitor's profile brings forward (yaxb-core accounts preferencesFrom).
 const props = defineProps<{ layout: Layout; openJourney: string | null; services: Record<string, ServiceHandler>; notebook: NotebookRecord | null; highlight?: string[] }>();
@@ -24,17 +24,19 @@ const emit = defineEmits<{ openJourney: [id: string | null]; openScreen: [id: st
 
 const route = useRoute();
 const router = useRouter();
-const journey = computed(() => (props.openJourney ? kioskContent.journeys.find((j) => j.id === props.openJourney) : undefined));
+// Built-in content plus what the journey library has published (LIB-8).
+onMounted(() => void loadLibraryContent());
+const journey = computed(() => (props.openJourney ? kioskJourneys.value.find((j) => j.id === props.openJourney) : undefined));
 // The native app is for visitors: staff work in the web kiosk, where their sign-in is a cookie.
-const offered = computed(() => servicesFor(kioskContent.services, { layout: props.layout, journeys: kioskContent.journeys.map((j) => j.id) }).filter((s) => !(NATIVE && s.id === "staff")));
+const offered = computed(() => servicesFor(kioskServices.value, { layout: props.layout, journeys: kioskJourneys.value.map((j) => j.id) }).filter((s) => !(NATIVE && s.id === "staff")));
 const forYou = computed(() => {
   const items = offered.value.flatMap((s) => s.items);
   return (props.highlight ?? []).map((key) => items.find((i) => i.key === key)).filter((i): i is ServiceItem => Boolean(i));
 });
-const journeyOf = (item: ServiceItem) => (item.journey ? kioskContent.journeys.find((j) => j.id === item.journey) : undefined);
+const journeyOf = (item: ServiceItem) => (item.journey ? kioskJourneys.value.find((j) => j.id === item.journey) : undefined);
 const about = ref<string | null>(null);
 const showAll = ref(false);
-const summaryOf = (item: ServiceItem) => item.summary ?? (item.journey ? kioskContent.journeys.find((j) => j.id === item.journey)?.summary : undefined);
+const summaryOf = (item: ServiceItem) => item.summary ?? (item.journey ? journeyOf(item)?.summary : undefined);
 
 /** A staff section open inside Services (/kiosk?screen=services&staff=team). */
 const staffSection = computed(() => (!NATIVE && typeof route.query.staff === "string" ? route.query.staff : null));
@@ -111,7 +113,7 @@ const backToServices = () => void router.push({ path: "/kiosk", query: { screen:
         <ChevronDown :class="['size-4 transition-transform', showAll ? 'rotate-180' : '']" aria-hidden="true" /> How each service works
       </button>
       <div v-if="showAll" class="mt-3 grid gap-3 @lg:grid-cols-2">
-        <JourneySummaryCard v-for="j in kioskContent.journeys" :key="j.id" :journey="j" />
+        <JourneySummaryCard v-for="j in kioskJourneys" :key="j.id" :journey="j" />
       </div>
     </section>
   </div>
