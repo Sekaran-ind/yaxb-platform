@@ -15,7 +15,7 @@ import { speechLangFor } from "@/lib/languages";
 import JourneyField from "./JourneyField.vue";
 
 const props = defineProps<{ journey: Journey; services: Record<string, ServiceHandler>; notebook: NotebookRecord | null }>();
-const emit = defineEmits<{ close: []; speak: [text: string] }>();
+const emit = defineEmits<{ close: []; speak: [text: string]; done: [] }>();
 
 const state = shallowRef<RunState | null>(null);
 const runner = createRunner(props.journey, { services: props.services, onChange: (s) => (state.value = s) });
@@ -120,6 +120,14 @@ const voice = useSpeechInput(
     void fillFromWords();
   },
   () => speechLangFor(settings.agent.language),
+);
+
+// Tell the shell when the journey finishes (the activity log records that a service was used).
+watch(
+  () => state.value?.status,
+  (s) => {
+    if (s === "done") emit("done");
+  },
 );
 
 async function submit() {

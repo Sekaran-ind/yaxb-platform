@@ -16,7 +16,7 @@ describe("built-in content", () => {
   it("offers fewer screens and services in the mini layout than the full kiosk", () => {
     const mini = screensFor(kioskContent.screens, "mini").map((s) => s.id);
     const full = screensFor(kioskContent.screens, "full").map((s) => s.id);
-    expect(mini).toEqual(["transcript", "services", "notebook"]);
+    expect(mini).toEqual(["transcript", "services", "notebook", "account"]);
     expect(full).toContain("sandbox");
     expect(full).not.toContain("translate"); // hidden
     const tools = servicesFor(kioskContent.services, { layout: "mini" }).find((s) => s.id === "tools");

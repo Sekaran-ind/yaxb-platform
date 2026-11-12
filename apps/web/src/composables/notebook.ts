@@ -2,6 +2,7 @@
 // visit creates an empty notebook, so the kiosk always has one to add to.
 import type { StorageId } from "@sekaran-ind/yaxb-core/settings";
 import { computed, ref, shallowRef, watch, type Ref } from "vue";
+import { logActivity } from "./account";
 import { newNotebook, nowIso, storeFor, withSource, type BoxConnection, type KioskStore, type NotebookRecord, type ThreadRecord } from "@/lib/browser/store";
 
 export function useNotebook(storage: Ref<StorageId>, activeId: Ref<string | null>, box: Ref<BoxConnection>) {
@@ -93,14 +94,19 @@ export function useNotebook(storage: Ref<StorageId>, activeId: Ref<string | null
       const current = await latest();
       if (!current) throw new Error("No notebook is open.");
       await save(withSource(current, source));
+      void logActivity("notebook.source_added", { sources: current.sources.length + 1 });
     },
     async removeSource(id: string) {
       const current = await latest();
-      if (current) await save({ ...current, sources: current.sources.filter((s) => s.id !== id) });
+      if (!current) return;
+      await save({ ...current, sources: current.sources.filter((s) => s.id !== id) });
+      void logActivity("notebook.source_removed", { sources: current.sources.length - 1 });
     },
     async setMemory(memory: string) {
       const current = await latest();
-      if (current) await save({ ...current, memory });
+      if (!current) return;
+      await save({ ...current, memory });
+      void logActivity("notebook.memory_updated", { via: "edit" });
     },
     async remember(note: string) {
       const current = await latest();
@@ -108,6 +114,7 @@ export function useNotebook(storage: Ref<StorageId>, activeId: Ref<string | null
       const base = current.memory.trim() || "# Notebook memory";
       const memory = base.includes("## Notes") ? `${base}\n- ${note.trim()}` : `${base}\n\n## Notes\n- ${note.trim()}`;
       await save({ ...current, memory });
+      void logActivity("notebook.memory_updated", { via: "journey" });
     },
   };
 }

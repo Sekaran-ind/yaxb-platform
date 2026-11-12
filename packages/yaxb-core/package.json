@@ -90,6 +90,14 @@
     "./stores/box": {
       "types": "./dist/stores/box.d.ts",
       "default": "./dist/stores/box.js"
+    },
+    "./accounts": {
+      "types": "./dist/accounts/index.d.ts",
+      "default": "./dist/accounts/index.js"
+    },
+    "./accounts/crypto": {
+      "types": "./dist/accounts/crypto.d.ts",
+      "default": "./dist/accounts/crypto.js"
     }
   },
   "files": [

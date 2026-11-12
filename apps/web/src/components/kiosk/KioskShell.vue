@@ -9,8 +9,9 @@ import type { ServiceHandler } from "@sekaran-ind/yaxb-core/journeys";
 import { composeLocalAnswer, EMBEDDING_MODELS, type LocalAnswer } from "@sekaran-ind/yaxb-core/knowledge/semantic";
 import { LAYOUTS, resolveLayout, screensFor, type LayoutChoice } from "@sekaran-ind/yaxb-core/screens";
 import { DEFAULT_LANGUAGE, type LanguageCode } from "@sekaran-ind/yaxb-core/settings";
-import { Languages, Settings2, X } from "@lucide/vue";
+import { Languages, Settings2, UserRound, X } from "@lucide/vue";
 import { computed, onBeforeUnmount, onMounted, ref, toRef } from "vue";
+import { logActivity, useAccount } from "@/composables/account";
 import { askOnce, useChat } from "@/composables/chat";
 import { useNotebook } from "@/composables/notebook";
 import { effectiveSelection, settings, updateSettings, useProviders } from "@/composables/settings";
@@ -21,6 +22,7 @@ import { modelFor, searchLocal, semanticReady, warmUp, type LocalSearch } from "
 import { cn } from "@/lib/cn";
 import { LANGUAGES, speechLangFor } from "@/lib/languages";
 import type { KioskStatus } from "@/lib/types";
+import AccountScreen from "@/components/account/AccountScreen.vue";
 import AdaptiveNav, { type NavScreen } from "./AdaptiveNav.vue";
 import KnowledgeSources from "./KnowledgeSources.vue";
 import NotebookScreen from "./NotebookScreen.vue";
@@ -36,6 +38,7 @@ import TranslatePane from "./TranslatePane.vue";
 const activeNotebook = computed({ get: () => settings.activeNotebook, set: (id) => updateSettings({ activeNotebook: id }) });
 const nb = useNotebook(toRef(() => settings.agent.storage), activeNotebook, toRef(() => settings.box));
 const chat = useChat(nb.store, nb.refresh);
+const account = useAccount();
 const { data: catalog, error: catalogError } = useProviders();
 const voiceOut = useSpeechOutput();
 const failed = ref(false);
@@ -81,7 +84,10 @@ function localAnswer(question: string, found: LocalSearch) {
 
 /** An on-device answer, translated on the device when the visitor chose another language. */
 async function present(a: LocalAnswer, signal: AbortSignal) {
-  if (a.flag) flag(a.flag);
+  if (a.flag) {
+    flag(a.flag);
+    void logActivity("question.escalated", { via: "device" });
+  }
   const sources = a.text.slice(a.body.length);
   if (language.value === "eng_Latn") return { text: a.text, spoken: a.body };
   try {
@@ -118,6 +124,11 @@ async function ask(question: string) {
       if (local && local.kind !== "none") reply = await chat.sendLocal(question, ctx, (signal) => present(local, signal));
       else reply = await chat.send(question, selection.value!, { ...ctx, retrieved: semantic && found ? found.refs : [] });
     }
+    // The activity log: that a question was asked and how it was answered, never the question.
+    const tools = chat.turns.value[chat.turns.value.length - 1]?.tools ?? [];
+    void logActivity("question.asked", { mode: tools.some((t) => t.name === "local_search") ? "device" : "agent", language: language.value });
+    if (tools.some((t) => t.name === "web_search")) void logActivity("web.searched");
+    if (tools.some((t) => t.name === "flag_for_moderation")) void logActivity("question.escalated", { via: "agent" });
     if (settings.speakResponses && reply) await voiceOut.speak(reply, { voiceName: settings.voiceName, rate: settings.speechRate, lang: speechLangFor(language.value) });
   } catch {
     failed.value = true;
@@ -252,6 +263,9 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
               <option v-for="l in LANGUAGES" :key="l.code" :value="l.code" :lang="l.speech">{{ l.native === l.label ? l.label : `${l.native} · ${l.label}` }}</option>
             </select>
           </label>
+          <button type="button" class="inline-flex items-center gap-1.5 rounded-full bg-mist px-3 py-1.5 text-xs font-medium text-ink hover:ring-1 hover:ring-brand" @click="setScreen('account')">
+            <UserRound class="size-4" aria-hidden="true" />{{ account.profile.value ? account.profile.value.nickname : "Sign in" }}
+          </button>
           <RouterLink to="/settings" class="btn-light px-3 py-2" aria-label="Settings"><Settings2 class="size-4" aria-hidden="true" /></RouterLink>
           <RouterLink to="/" class="btn bg-warning px-3 py-2 text-ink hover:brightness-95"><X class="size-4" aria-hidden="true" /> Close</RouterLink>
         </div>
@@ -312,10 +326,13 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
                 :open-journey="journey"
                 :services="services"
                 :notebook="nb.notebook.value"
+                :highlight="account.profile.value ? (account.preferences.value?.highlight ?? []) : []"
+                @journey-done="(id) => void logActivity('journey.completed', { journey: id })"
                 @open-journey="(id) => (journey = id)"
                 @open-screen="setScreen"
                 @speak="(t) => voiceOut.speak(t)"
               />
+              <AccountScreen v-else-if="componentOf(s.id) === 'account'" />
               <NotebookScreen
                 v-else-if="componentOf(s.id) === 'notebook'"
                 :nb="nb"
