@@ -14,6 +14,7 @@ import type { NotebookRecord } from "@/lib/browser/store";
 import { cn } from "@/lib/cn";
 import { speechLangFor } from "@/lib/languages";
 import JourneyField from "./JourneyField.vue";
+import { roleName } from "@/composables/library";
 
 const props = defineProps<{ journey: Journey; services: Record<string, ServiceHandler>; notebook: NotebookRecord | null }>();
 const emit = defineEmits<{ close: []; speak: [text: string]; done: [] }>();
@@ -24,6 +25,8 @@ const values = ref<Record<string, unknown>>({});
 const problems = ref<string[]>([]);
 const copied = ref(false);
 
+/** Who finishes this journey (its roles.complete), to tell the visitor who takes it from here. */
+const completers = computed(() => (props.journey.roles?.complete ?? []).map(roleName));
 const promptStep = computed(() => state.value?.prompt?.step ?? null);
 const currentLabel = computed(() => (state.value?.current ? (props.journey.steps[state.value.current]?.label ?? state.value.current) : ""));
 
@@ -230,6 +233,7 @@ onBeforeUnmount(() => {
     <div v-if="state?.status === 'done' && state.result" class="card space-y-3 p-4">
       <h4 class="font-semibold text-ink">{{ state.result.title }}</h4>
       <p class="leading-relaxed whitespace-pre-wrap text-ink">{{ state.result.text }}</p>
+      <p v-if="completers.length" class="rounded-lg bg-info/10 px-3 py-2 text-sm text-ink">Next: {{ completers.join(" or ") }} will complete this with you.</p>
       <div class="flex flex-wrap gap-2">
         <button type="button" class="btn-light" @click="emit('speak', state.result.text)"><Volume2 class="size-4" aria-hidden="true" /> Read aloud</button>
         <button type="button" class="btn-light" @click="copy"><Copy class="size-4" aria-hidden="true" /> {{ copied ? "Copied" : "Copy" }}</button>

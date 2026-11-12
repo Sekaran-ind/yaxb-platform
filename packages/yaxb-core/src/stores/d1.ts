@@ -11,6 +11,7 @@ import {
 } from "./index.js";
 import { feedbackSchema, newFeedbackItem, type FeedbackItem, type FeedbackStore } from "../feedback/index.js";
 import type { AuditEvent, Moderator, ModeratorStore } from "../moderators/index.js";
+import type { CustomRole, EntryRevision, Library, LibraryEntry, LibraryStore } from "../library/index.js";
 import type { Kv, KvItem } from "./kv.js";
 
 export interface D1Like {
@@ -287,6 +288,69 @@ export function createD1ModeratorStore(db: D1Like): ModeratorStore {
         .bind(...values)
         .all<Omit<AuditEvent, "details"> & { details: string | null }>();
       return results.map((r) => ({ ...r, details: r.details ? JSON.parse(r.details) : null }));
+    },
+  };
+}
+
+/** The journey library on D1 (migrations/0006_library.sql). */
+export function createD1LibraryStore(db: D1Like): LibraryStore {
+  const ENTRY_COLS =
+    "id, library_id, kind, doc_id, title, yaml, status, revision, published_yaml, published_revision, submitted_by, submitted_by_name, submitted_at, reviewed_by, reviewed_by_name, reviewed_at, review_note, created_at, updated_at, updated_by_name";
+  const role = (r: { id: string; label: string; description: string | null; created_at: string }): CustomRole => ({ id: r.id, label: r.label, created_at: r.created_at, ...(r.description ? { description: r.description } : {}) });
+  return {
+    async roles() {
+      const { results } = await db.prepare("SELECT id, label, description, created_at FROM library_roles ORDER BY label").all<{ id: string; label: string; description: string | null; created_at: string }>();
+      return results.map(role);
+    },
+    async putRole(r) {
+      await db
+        .prepare("INSERT INTO library_roles (id, label, description, created_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (id) DO UPDATE SET label = ?2, description = ?3")
+        .bind(r.id, r.label, r.description ?? null, r.created_at)
+        .run();
+    },
+    async removeRole(id) {
+      const had = await db.prepare("SELECT id FROM library_roles WHERE id = ?1").bind(id).first();
+      await db.prepare("DELETE FROM library_roles WHERE id = ?1").bind(id).run();
+      return Boolean(had);
+    },
+    async libraries() {
+      return (await db.prepare("SELECT id, name, description, status, created_by, created_at, updated_at FROM libraries ORDER BY name").all<Library>()).results;
+    },
+    async library(id) {
+      return db.prepare("SELECT id, name, description, status, created_by, created_at, updated_at FROM libraries WHERE id = ?1").bind(id).first<Library>();
+    },
+    async putLibrary(l) {
+      await db
+        .prepare(
+          "INSERT INTO libraries (id, name, description, status, created_by, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT (id) DO UPDATE SET name = ?2, description = ?3, status = ?4, updated_at = ?7",
+        )
+        .bind(l.id, l.name, l.description, l.status, l.created_by, l.created_at, l.updated_at)
+        .run();
+    },
+    async entries(libraryId) {
+      const sql = `SELECT ${ENTRY_COLS} FROM library_entries ${libraryId ? "WHERE library_id = ?1 " : ""}ORDER BY kind, title`;
+      const stmt = db.prepare(sql);
+      return (await (libraryId ? stmt.bind(libraryId) : stmt).all<LibraryEntry>()).results;
+    },
+    async entry(id) {
+      return db.prepare(`SELECT ${ENTRY_COLS} FROM library_entries WHERE id = ?1`).bind(id).first<LibraryEntry>();
+    },
+    async putEntry(e) {
+      const cols = ENTRY_COLS.split(", ");
+      const updates = cols.slice(1).map((c, i) => `${c} = ?${i + 2}`).join(", ");
+      await db
+        .prepare(`INSERT INTO library_entries (${ENTRY_COLS}) VALUES (${cols.map((_, i) => `?${i + 1}`).join(", ")}) ON CONFLICT (id) DO UPDATE SET ${updates}`)
+        .bind(...cols.map((c) => (e as Record<string, unknown>)[c] ?? null))
+        .run();
+    },
+    async revisions(entryId) {
+      return (await db.prepare("SELECT entry_id, revision, yaml, at, by_id, by_name, note FROM library_revisions WHERE entry_id = ?1 ORDER BY revision DESC").bind(entryId).all<EntryRevision>()).results;
+    },
+    async addRevision(r) {
+      await db
+        .prepare("INSERT INTO library_revisions (entry_id, revision, yaml, at, by_id, by_name, note) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")
+        .bind(r.entry_id, r.revision, r.yaml, r.at, r.by_id, r.by_name, r.note)
+        .run();
     },
   };
 }

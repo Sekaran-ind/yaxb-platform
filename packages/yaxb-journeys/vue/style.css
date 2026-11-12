@@ -801,3 +801,73 @@ textarea.yj-input {
 .yj-section-summary {
   margin-bottom: 0.6rem;
 }
+
+/* ---- forms (ServiceForm, JourneyForm) -------------------------------------------------------- */
+.yj-form {
+  container-type: inline-size;
+}
+.yj-fieldset {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+.yj-fieldset > legend.yj-title {
+  margin-bottom: 0.6rem;
+  padding: 0;
+}
+.yj-fieldset + .yj-fieldset,
+.yj-form-grid + .yj-fieldset,
+.yj-fieldset + .yj-form-grid {
+  margin-top: 0.85rem;
+}
+.yj-form-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+@container (min-width: 36rem) {
+  .yj-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .yj-span-2 {
+    grid-column: span 2;
+  }
+}
+.yj-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.yj-chip-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--yj-line);
+  border-radius: 999px;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.8125rem;
+  color: var(--yj-ink);
+  cursor: pointer;
+}
+.yj-chip-check:has(input:checked) {
+  border-color: var(--yj-strong);
+  background: var(--yj-mist);
+}
+.yj-chip-check input {
+  accent-color: var(--yj-strong);
+}
+.yj-step {
+  padding: 0.85rem;
+}
+.yj-branch {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.yj-branch .yj-input:first-child {
+  flex: 1;
+}
+.yj-mono {
+  font-family: var(--yj-mono);
+  font-size: 0.8125rem;
+}

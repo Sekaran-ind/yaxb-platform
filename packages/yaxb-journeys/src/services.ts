@@ -9,23 +9,37 @@
 //   icon: notebook
 //   order: 10
 //   layouts: [pod, full]                  where it's offered; absent means every layout
+//   roles: [receptionist, nurse]      the roles that deliver it (roles.ts)
 //   items:
 //     - { key: ask, label: Ask about your sources, icon: message-circle, screen: transcript }
 //     - { key: summarise, label: Summarise a source, icon: file-text, journey: summarise-source }
 import { load } from "js-yaml";
+import { roleListProblems } from "./roles.js";
 import { LAYOUTS, type Layout } from "./screens.js";
 
 /** The staff's sections, which a service item may open inside Services (SET-16). */
-export const STAFF_SECTIONS = ["quality", "review", "moderation", "team", "profile", "admin"] as const;
+export const STAFF_SECTIONS = ["quality", "review", "moderation", "library", "team", "profile", "admin"] as const;
 export type StaffSection = (typeof STAFF_SECTIONS)[number];
 
 export type ServiceItem = { key: string; label: string; summary?: string; icon?: string; screen?: string; journey?: string; staff?: StaffSection; layouts?: Layout[] };
-export type Service = { kind: "service"; id: string; title: string; summary?: string; icon?: string; order: number; layouts?: Layout[]; hidden?: boolean; items: ServiceItem[] };
+export type Service = {
+  kind: "service";
+  id: string;
+  title: string;
+  summary?: string;
+  icon?: string;
+  order: number;
+  layouts?: Layout[];
+  hidden?: boolean;
+  /** The roles that take part in delivering the service (roles.ts). */
+  roles?: string[];
+  items: ServiceItem[];
+};
 
-const SERVICE_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "order", "layouts", "hidden", "items"]);
+const SERVICE_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "order", "layouts", "hidden", "roles", "items"]);
 const ITEM_KEYS = new Set(["key", "label", "summary", "icon", "screen", "journey", "staff", "layouts"]);
 
-export function serviceProblems(doc: unknown, { journeys, screens }: { journeys?: readonly string[]; screens?: readonly string[] } = {}): string[] {
+export function serviceProblems(doc: unknown, { journeys, screens, roles }: { journeys?: readonly string[]; screens?: readonly string[]; roles?: readonly string[] } = {}): string[] {
   const problems: string[] = [];
   if (!doc || typeof doc !== "object" || Array.isArray(doc)) return ["a service is a YAML mapping"];
   const s = doc as Record<string, unknown>;
@@ -36,6 +50,7 @@ export function serviceProblems(doc: unknown, { journeys, screens }: { journeys?
     if (v !== undefined && (!Array.isArray(v) || v.some((l) => !LAYOUTS.includes(l as Layout)))) problems.push(`${at}: layouts are ${LAYOUTS.join(", ")}`);
   };
   layoutProblem("service", s.layouts);
+  problems.push(...roleListProblems("roles", s.roles, roles));
   if (s.hidden) return problems;
   if (!Array.isArray(s.items) || !s.items.length) return [...problems, "items is required"];
   const seen = new Set<string>();

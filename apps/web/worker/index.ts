@@ -9,9 +9,10 @@ import { createMemoryRateLimiter } from "@sekaran-ind/yaxb-core/stores";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { settings, stringEnv, type Bindings } from "./env";
-import { kiosk, moderators, reviews } from "./kiosk";
+import { kiosk, library, moderators, reviews } from "./kiosk";
+import { ADMIN_ACTOR_ID, LibraryError, MAX_ENTRY_BYTES, type LibraryActor } from "@sekaran-ind/yaxb-core/library";
 import { proposalEntry, ReviewError, type Reviewer } from "@sekaran-ind/yaxb-core/reviews";
-import { auditEvent, looksLikeKey, statusOf, TeamRuleError } from "@sekaran-ind/yaxb-core/moderators";
+import { auditEvent, looksLikeKey, MODERATOR_ROLES, statusOf, TeamRuleError } from "@sekaran-ind/yaxb-core/moderators";
 import { AVAILABILITY, roomName, teamMember } from "@sekaran-ind/yaxb-core/team";
 import { HUB_HEADERS } from "./team";
 
@@ -340,10 +341,22 @@ app.get("/api/admin/moderators", async (c) => {
   return c.json({ moderators: list.map((m) => ({ ...m, status: statusOf(m) })) });
 });
 
+/** Roles a member is given must be built in or in the library's catalogue (LIB-10). */
+async function unknownRole(c: Context<AppEnv>, body: unknown): Promise<string | null> {
+  const roles = (body as { roles?: unknown } | null)?.roles;
+  if (!Array.isArray(roles)) return null;
+  const known = new Set<string>([...MODERATOR_ROLES, ...(await library(c.env).catalogue()).map((r) => r.id)]);
+  const bad = roles.find((r) => typeof r !== "string" || !known.has(r));
+  return bad === undefined ? null : `There is no role '${String(bad)}'. Add it under Journey library, Roles, first.`;
+}
+
 /** Issue a key. The key is in this response only. */
 app.post("/api/admin/moderators", async (c) => {
   try {
-    const { moderator, key } = await moderators(c.env).issue((await readJson(c, MAX_FORM_BODY)).body as never, { name: "Administrator" });
+    const body = (await readJson(c, MAX_FORM_BODY)).body;
+    const bad = await unknownRole(c, body);
+    if (bad) return jsonError(c, 422, bad);
+    const { moderator, key } = await moderators(c.env).issue(body as never, { name: "Administrator" });
     return c.json({ moderator: { ...moderator, status: statusOf(moderator) }, key });
   } catch (e) {
     return jsonError(c, 422, (e as { issues?: { message: string }[] }).issues?.[0]?.message ?? "Check the details.");
@@ -352,7 +365,10 @@ app.post("/api/admin/moderators", async (c) => {
 
 app.patch("/api/admin/moderators/:id", async (c) => {
   try {
-    const m = await moderators(c.env).change(c.req.param("id"), (await readJson(c, MAX_FORM_BODY)).body);
+    const body = (await readJson(c, MAX_FORM_BODY)).body;
+    const bad = await unknownRole(c, body);
+    if (bad) return jsonError(c, 422, bad);
+    const m = await moderators(c.env).change(c.req.param("id"), body);
     return m ? c.json({ moderator: { ...m, status: statusOf(m) } }) : jsonError(c, 404, "No such moderator.");
   } catch (e) {
     if (e instanceof TeamRuleError) return jsonError(c, 409, e.message);
@@ -483,6 +499,74 @@ function nextCuratedId(ids: string[]) {
   return (i: number) => `qa-${String(top + 1 + i).padStart(3, "0")}`;
 }
 
+
+// ---- the journey library (LIB-1..12) ------------------------------------------------------------------
+
+/** Who acts on the library: the ADMIN_TOKEN holder, or a signed-in member with their roles. */
+async function libraryActor(c: Context<AppEnv>): Promise<LibraryActor | null> {
+  if (await isAdmin(c)) return { id: ADMIN_ACTOR_ID, name: "Administrator", roles: ["administrator"], admin: true };
+  const who = await moderatorOf(c, moderators(c.env));
+  return who ? { id: who.id, name: who.name, roles: who.roles, admin: false } : null;
+}
+
+/** Run a library action, turning its refusals into JSON errors. */
+async function libraryCall(c: Context<AppEnv>, fn: (a: LibraryActor, body: unknown) => Promise<unknown>) {
+  const actor = (await libraryActor(c))!;
+  const body = c.req.method === "GET" || c.req.method === "DELETE" ? null : (await readJson(c, MAX_ENTRY_BYTES * 2 + 4096)).body;
+  try {
+    return c.json((await fn(actor, body)) ?? { ok: true });
+  } catch (e) {
+    if (e instanceof LibraryError) return jsonError(c, e.status, e.message);
+    throw e;
+  }
+}
+
+/**
+ * What the kiosk loads (LIB-8): published services, journeys and questionnaires from active
+ * libraries, and the journeys this viewer may start. Visitors get the ones open to anyone; signed-in
+ * members also get those their roles may start. Public: it is the kiosk's own content.
+ */
+app.get("/api/library/published", async (c) => {
+  const actor = await libraryActor(c);
+  return c.json(await library(c.env).published(actor?.roles ?? [], { all: actor?.admin ?? false }));
+});
+
+/** Every other library route: a signed-in member (or the administrator), same origin for changes. */
+app.use("/api/library/*", async (c, next) => {
+  if (c.req.method !== "GET" && !sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  if (!(await libraryActor(c))) return jsonError(c, 401, "Sign in with your moderator key to use the journey library.");
+  await next();
+});
+
+app.get("/api/library", (c) =>
+  libraryCall(c, async (a) => {
+    const svc = library(c.env);
+    return { me: { id: a.id, name: a.name, roles: a.roles, admin: a.admin, can: svc.permissionsOf(a) }, roles: await svc.catalogue(), libraries: await svc.libraries(a), queue: await svc.reviewQueue(a) };
+  }),
+);
+app.post("/api/library/roles", (c) => libraryCall(c, (a, body) => library(c.env).addRole(a, body)));
+app.patch("/api/library/roles/:id", (c) => libraryCall(c, (a, body) => library(c.env).updateRole(a, c.req.param("id"), body)));
+app.delete("/api/library/roles/:id", (c) =>
+  libraryCall(c, async (a) => {
+    const members = await moderators(c.env).store.list();
+    await library(c.env).removeRole(a, c.req.param("id"), members.map((m) => m.roles));
+    return { removed: true };
+  }),
+);
+app.post("/api/library/libraries", (c) => libraryCall(c, (a, body) => library(c.env).createLibrary(a, body)));
+app.patch("/api/library/libraries/:id", (c) => libraryCall(c, (a, body) => library(c.env).updateLibrary(a, c.req.param("id"), body)));
+app.post("/api/library/libraries/:id/:action{archive|restore}", (c) =>
+  libraryCall(c, (a) => library(c.env).setLibraryStatus(a, c.req.param("id"), c.req.param("action") === "archive" ? "archived" : "active")),
+);
+app.get("/api/library/libraries/:id/entries", (c) => libraryCall(c, async (a) => ({ entries: await library(c.env).entries(a, c.req.param("id")) })));
+app.post("/api/library/libraries/:id/entries", (c) => libraryCall(c, (a, body) => library(c.env).createEntry(a, c.req.param("id"), body)));
+app.get("/api/library/entries/:id", (c) => libraryCall(c, (a) => library(c.env).entry(a, c.req.param("id"))));
+app.put("/api/library/entries/:id", (c) => libraryCall(c, (a, body) => library(c.env).saveEntry(a, c.req.param("id"), body)));
+app.post("/api/library/entries/:id/submit", (c) => libraryCall(c, (a) => library(c.env).submit(a, c.req.param("id"))));
+app.post("/api/library/entries/:id/review", (c) => libraryCall(c, (a, body) => library(c.env).review(a, c.req.param("id"), body)));
+app.post("/api/library/entries/:id/:action{archive|restore}", (c) =>
+  libraryCall(c, (a) => library(c.env).setEntryArchived(a, c.req.param("id"), c.req.param("action") === "archive")),
+);
 
 // ---- the team (TEAM-1..6, TEAM-10, TEAM-20, TEAM-50) ----------------------------------------------------
 

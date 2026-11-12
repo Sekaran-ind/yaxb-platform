@@ -122,6 +122,10 @@
     "./team": {
       "types": "./dist/team/index.d.ts",
       "default": "./dist/team/index.js"
+    },
+    "./library": {
+      "types": "./dist/library/index.d.ts",
+      "default": "./dist/library/index.js"
     }
   },
   "files": [

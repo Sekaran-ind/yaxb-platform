@@ -13,6 +13,7 @@
 import { load } from "js-yaml";
 import { compileJourney, type Journey, type ServiceHandler } from "./journeys.js";
 import { compileQuestionnaire, type Questionnaire } from "./questionnaires.js";
+import { VISITOR_ROLE } from "./roles.js";
 import { compileService, type Service } from "./services.js";
 
 export const BUNDLE_KINDS = ["service", "journey", "questionnaire"] as const;
@@ -47,6 +48,8 @@ export type BundleOptions = {
   services?: readonly string[];
   /** Screen ids that service items may open; not checked when absent. */
   screens?: readonly string[];
+  /** Role ids that exist (a library's catalogue); any well-formed id is accepted when absent. */
+  roles?: readonly string[];
 };
 
 type Chunk = { text: string; line: number };
@@ -154,7 +157,7 @@ export function compileBundle(source: string | string[], options: BundleOptions 
   const journeys: Journey[] = [];
   const journeyDocs = unique("journey");
   for (const p of journeyDocs) {
-    const r = compileJourney(p.doc, { services: options.services, questionnaires });
+    const r = compileJourney(p.doc, { services: options.services, questionnaires, roles: options.roles });
     if (r.ok) journeys.push(r.journey);
     else fail(p, r.problems);
   }
@@ -163,7 +166,7 @@ export function compileBundle(source: string | string[], options: BundleOptions 
   const journeyIds = journeyDocs.flatMap((p) => (p.meta.id ? [p.meta.id] : []));
   const services: Service[] = [];
   for (const p of unique("service")) {
-    const r = compileService(p.doc, { journeys: journeyIds, screens: options.screens });
+    const r = compileService(p.doc, { journeys: journeyIds, screens: options.screens, roles: options.roles });
     if (r.ok) services.push(r.service);
     else fail(p, r.problems);
   }
@@ -178,6 +181,19 @@ export function compileBundle(source: string | string[], options: BundleOptions 
   for (const p of ofKind("questionnaire")) {
     if (p.meta.ok && p.meta.id && !used.has(p.meta.id))
       problems.push({ level: "warning", line: p.line, kind: "questionnaire", id: p.meta.id, message: "no journey step uses this questionnaire" });
+  }
+
+  // A journey's roles should take part in every service that opens it (when the service lists roles).
+  for (const s of services) {
+    if (!s.roles?.length) continue;
+    for (const item of s.items) {
+      const j = item.journey ? journeys.find((x) => x.id === item.journey) : undefined;
+      const p = j && journeyDocs.find((d) => d.meta.id === j.id);
+      if (!j || !p) continue;
+      const missing = [...new Set([...(j.roles?.initiate ?? []), ...(j.roles?.complete ?? [])])].filter((r) => r !== VISITOR_ROLE && !s.roles!.includes(r));
+      for (const r of missing)
+        problems.push({ level: "warning", line: problemLine(p.chunk, `'${r}'`), kind: "journey", id: j.id, message: `role '${r}' doesn't take part in service '${s.id}'` });
+    }
   }
 
   problems.sort((a, b) => a.line - b.line || (a.level === b.level ? 0 : a.level === "error" ? -1 : 1));
@@ -209,3 +225,19 @@ export function previewHandlers(journeys: Journey[], real: Record<string, Servic
 }
 
 export { EXAMPLE_BUNDLE } from "./example.js";
+
+/**
+ * Check one document in the context of others (a library entry among the rest of its library).
+ * Returns the bundle and just this document's problems, with lines counted in `yaml` itself.
+ * The document must be a single document (no `---` inside).
+ */
+export function checkDocument(yaml: string, others: readonly string[], options: BundleOptions = {}): { bundle: Bundle; problems: BundleProblem[] } {
+  if (splitDocuments(yaml).length > 1) {
+    const bundle = compileBundle(yaml, options);
+    return { bundle, problems: [{ level: "error", line: 1, message: "One document per entry: remove the --- lines and save the others as their own entries." }] };
+  }
+  // This document first, so its lines are the bundle's first lines.
+  const bundle = compileBundle([yaml, ...others], options);
+  const lines = yaml.replace(/\r\n?/g, "\n").split("\n").length;
+  return { bundle, problems: bundle.problems.filter((p) => p.line <= lines) };
+}

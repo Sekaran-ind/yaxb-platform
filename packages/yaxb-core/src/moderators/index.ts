@@ -16,9 +16,14 @@ import { leavesNoAdministrator } from "../team/index.js";
 export class TeamRuleError extends Error {}
 const LAST_ADMIN = "The team needs at least one active administrator. Make someone else an administrator first.";
 
-/** Roles (TEAM-1). An administrator member may manage the team, like the ADMIN_TOKEN holder. */
-export const MODERATOR_ROLES = ["moderator", "curator", "administrator"] as const;
-export type ModeratorRole = (typeof MODERATOR_ROLES)[number];
+/**
+ * Built-in roles (TEAM-1, LIB-10). An administrator member may manage the team, like the
+ * ADMIN_TOKEN holder; a reviewer accepts or rejects library entries. A member may also hold the
+ * organisation's own roles (the library's catalogue: front-desk, nurse…), so a role is any role id.
+ */
+export const MODERATOR_ROLES = ["moderator", "curator", "reviewer", "administrator"] as const;
+export type ModeratorRole = string;
+const ROLE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 export const KEY_PREFIX = "yaxb_mod_";
 
 export type ModeratorStatus = "active" | "revoked" | "expired";
@@ -62,6 +67,19 @@ export const AUDIT_ACTIONS = {
   "moderation.viewed": "Moderation queue opened",
   "moderation.handled": "Escalated question handled",
   "answer.reviewed": "Answer reviewed",
+  "library.created": "Library created",
+  "library.changed": "Library renamed or described",
+  "library.archived": "Library archived",
+  "library.restored": "Library restored",
+  "library.entry_saved": "Library entry saved",
+  "library.entry_submitted": "Library entry submitted for review",
+  "library.entry_accepted": "Library entry accepted",
+  "library.entry_rejected": "Library entry rejected",
+  "library.entry_archived": "Library entry archived",
+  "library.entry_restored": "Library entry restored",
+  "library.role_added": "Role added",
+  "library.role_changed": "Role changed",
+  "library.role_removed": "Role removed",
 } as const;
 export type AuditAction = keyof typeof AUDIT_ACTIONS;
 
@@ -79,11 +97,12 @@ export type AuditEvent = {
 
 // ---- input ------------------------------------------------------------------------------------------
 
-const ROLE = z.enum(MODERATOR_ROLES);
+// Built-in roles or the organisation's own (the Worker checks those exist in the catalogue).
+const ROLE = z.string().regex(ROLE_ID, "A role id is lower-case words joined by '-'.");
 export const newModeratorSchema = z.strictObject({
   name: z.string().trim().min(1, "Enter the moderator's name.").max(80),
   label: z.string().trim().max(80).optional(),
-  roles: z.array(ROLE).min(1).max(MODERATOR_ROLES.length).default(["moderator"]),
+  roles: z.array(ROLE).min(1).max(20).default(["moderator"]),
   /** Days until the key expires; none = no expiry. */
   expiresInDays: z.number().int().min(1).max(730).optional(),
 });
@@ -92,7 +111,7 @@ export type NewModerator = z.input<typeof newModeratorSchema>;
 export const updateModeratorSchema = z.strictObject({
   name: z.string().trim().min(1).max(80).optional(),
   label: z.string().trim().max(80).nullable().optional(),
-  roles: z.array(ROLE).min(1).max(MODERATOR_ROLES.length).optional(),
+  roles: z.array(ROLE).min(1).max(20).optional(),
 });
 
 const LANGUAGE = z.enum(LANGUAGES.map((l) => l.code) as [LanguageCode, ...LanguageCode[]]);
