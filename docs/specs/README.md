@@ -14,6 +14,7 @@ These documents describe what the YAXB kiosk must do, for the people who decide 
 | 08 | [Settings and kiosk commands](08-settings-and-commands.md) | Settings, layouts, and the kiosk understanding its own commands |
 | 09 | [Privacy, storage and security](09-privacy-storage-security.md) | What is kept where, what never leaves the device, protections |
 | 10 | [Platforms](10-platforms.md) | Web, native app, CLI, local box, voice device |
+| 11 | [Team and collaboration](11-team-and-collaboration.md) | Team members and roles, chat and video between them, offline relay, a visitor talking to a person |
 
 ## Conventions
 
@@ -35,6 +36,7 @@ These documents describe what the YAXB kiosk must do, for the people who decide 
 |---|---|---|
 | Visitor | Anyone at the kiosk | Nothing, or their device-local profile (06) |
 | Moderator | A person who reviews escalated questions and rates answers | A moderator key (07) |
+| Curator | A person who edits the curated knowledge base | A moderator key with the curator role (11) |
 | Administrator | The organisation running the kiosk (YAXB) | Deployment secrets; issues moderator keys (07) |
 
 ## Glossary
