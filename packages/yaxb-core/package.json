@@ -118,6 +118,10 @@
     "./reviews": {
       "types": "./dist/reviews/index.d.ts",
       "default": "./dist/reviews/index.js"
+    },
+    "./team": {
+      "types": "./dist/team/index.d.ts",
+      "default": "./dist/team/index.js"
     }
   },
   "files": [

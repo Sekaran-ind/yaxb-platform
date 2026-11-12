@@ -11,7 +11,11 @@ import { z } from "zod";
 import { settings, stringEnv, type Bindings } from "./env";
 import { kiosk, moderators, reviews } from "./kiosk";
 import { proposalEntry, ReviewError, type Reviewer } from "@sekaran-ind/yaxb-core/reviews";
-import { auditEvent, looksLikeKey, statusOf } from "@sekaran-ind/yaxb-core/moderators";
+import { auditEvent, looksLikeKey, statusOf, TeamRuleError } from "@sekaran-ind/yaxb-core/moderators";
+import { AVAILABILITY, roomName, teamMember } from "@sekaran-ind/yaxb-core/team";
+import { HUB_HEADERS } from "./team";
+
+export { TeamHub } from "./team";
 import { clientId, fromApp, isAdmin, moderatorCookie, moderatorOf, safeEqual, sessionId, setAdminCookie, setModeratorCookie } from "./session";
 
 export type AppEnv = { Bindings: Bindings; Variables: { reviewer: Reviewer } };
@@ -274,7 +278,17 @@ app.put("/api/moderator/me", async (c) => {
 
 // ---- the administrator (MOD-20..23, MOD-25) -----------------------------------------------------------
 
-app.get("/api/admin", async (c) => c.json({ admin: await isAdmin(c), enabled: Boolean(settings(c.env).ADMIN_TOKEN) }));
+/** The administrator: the ADMIN_TOKEN holder, or a member with the administrator role (TEAM-1). */
+async function administrator(c: Context<AppEnv>): Promise<{ name: string } | null> {
+  if (await isAdmin(c)) return { name: "Administrator" };
+  const m = await memberOf(c);
+  return m?.roles.includes("administrator") ? { name: m.name } : null;
+}
+
+app.get("/api/admin", async (c) => {
+  const who = await administrator(c);
+  return c.json({ admin: Boolean(who), name: who?.name ?? null, enabled: Boolean(settings(c.env).ADMIN_TOKEN) });
+});
 
 app.post("/api/admin", async (c) => {
   if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
@@ -297,7 +311,7 @@ app.delete("/api/admin", async (c) => {
 /** Every admin route below: same origin for changes, and the administrator's cookie. */
 app.use("/api/admin/*", async (c, next) => {
   if (c.req.method !== "GET" && !sameOrigin(c)) return jsonError(c, 403, "Forbidden");
-  if (!(await isAdmin(c))) return jsonError(c, 401, "Administrator sign-in required.");
+  if (!(await administrator(c))) return jsonError(c, 401, "Administrator sign-in required.");
   await next();
 });
 
@@ -321,12 +335,30 @@ app.patch("/api/admin/moderators/:id", async (c) => {
     const m = await moderators(c.env).change(c.req.param("id"), (await readJson(c, MAX_FORM_BODY)).body);
     return m ? c.json({ moderator: { ...m, status: statusOf(m) } }) : jsonError(c, 404, "No such moderator.");
   } catch (e) {
+    if (e instanceof TeamRuleError) return jsonError(c, 409, e.message);
     return jsonError(c, 422, (e as { issues?: { message: string }[] }).issues?.[0]?.message ?? "Check the details.");
   }
 });
 
+/** Remove a member (TEAM-2): their key stops working and their profile goes; the audit log keeps the history. */
+app.delete("/api/admin/moderators/:id", async (c) => {
+  try {
+    const ok = await moderators(c.env).remove(c.req.param("id"), (await administrator(c)) ?? { name: null });
+    return ok ? c.json({ removed: true }) : jsonError(c, 404, "No such moderator.");
+  } catch (e) {
+    if (e instanceof TeamRuleError) return jsonError(c, 409, e.message);
+    throw e;
+  }
+});
+
 app.post("/api/admin/moderators/:id/revoke", async (c) => {
-  const m = await moderators(c.env).revoke(c.req.param("id"));
+  let m;
+  try {
+    m = await moderators(c.env).revoke(c.req.param("id"));
+  } catch (e) {
+    if (e instanceof TeamRuleError) return jsonError(c, 409, e.message);
+    throw e;
+  }
   return m ? c.json({ moderator: { ...m, status: statusOf(m) } }) : jsonError(c, 404, "No such moderator.");
 });
 
@@ -432,6 +464,66 @@ function nextCuratedId(ids: string[]) {
 }
 
 
+// ---- the team (TEAM-1..6, TEAM-10, TEAM-20, TEAM-50) ----------------------------------------------------
+
+/** A member: signed in with their own key (the shared token has no identity to call or message). */
+async function memberOf(c: Context<AppEnv>) {
+  const who = await moderatorOf(c, moderators(c.env));
+  return who?.moderator ? who.moderator : null;
+}
+
+/** The team as members see it: names, roles, status and availability (TEAM-3). */
+app.get("/api/team", async (c) => {
+  const me = await memberOf(c);
+  if (!me) return jsonError(c, 401, "Sign in with your own moderator key to see the team.");
+  const svc = moderators(c.env);
+  const list = await svc.store.list();
+  const members = await Promise.all(list.filter((m) => statusOf(m) === "active").map(async (m) => teamMember(m, await svc.store.getProfile(m.id))));
+  return c.json({ me: members.find((m) => m.id === me.id) ?? teamMember(me, null), members });
+});
+
+/** Set my availability (TEAM-4). */
+const availabilitySchema = z.strictObject({ value: z.enum(AVAILABILITY) });
+app.put("/api/team/availability", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  const me = await memberOf(c);
+  if (!me) return jsonError(c, 401, "Moderator sign-in required.");
+  const parsed = availabilitySchema.safeParse((await readJson(c, MAX_FORM_BODY)).body);
+  if (!parsed.success) return jsonError(c, 422, "Choose available, busy or away.");
+  const svc = moderators(c.env);
+  const p = await svc.profile(me);
+  await svc.store.putProfile({ ...p, preferences: { ...p.preferences, availability: parsed.data.value }, updated_at: new Date().toISOString() });
+  return c.json({ availability: parsed.data.value });
+});
+
+/**
+ * The signaling sockets: presence (who is online, invitations) and a pair's room for a chat or a
+ * call. Only signed-in, active members; a room only for the two members it names (TEAM-50).
+ */
+app.get("/api/team/:socket{presence|signal}", async (c) => {
+  if (c.req.header("upgrade") !== "websocket") return jsonError(c, 426, "Expected a WebSocket.");
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  const me = await memberOf(c);
+  if (!me) return jsonError(c, 401, "Moderator sign-in required.");
+  const headers = new Headers(c.req.raw.headers);
+  headers.set(HUB_HEADERS.member, me.id);
+  if (c.req.param("socket") === "presence") {
+    headers.set(HUB_HEADERS.kind, "presence");
+    const p = await moderators(c.env).store.getProfile(me.id);
+    headers.set(HUB_HEADERS.availability, p?.preferences.availability ?? "available");
+  } else {
+    const peerId = c.req.query("peer") ?? "";
+    const channel = c.req.query("channel") === "video" ? "video" : "chat";
+    const peer = /^[0-9a-f-]{36}$/.test(peerId) && peerId !== me.id ? await moderators(c.env).store.get(peerId) : null;
+    if (!peer || statusOf(peer) !== "active") return jsonError(c, 404, "That member isn't on the team.");
+    headers.set(HUB_HEADERS.kind, "room");
+    headers.set(HUB_HEADERS.room, roomName(me.id, peer.id, channel));
+  }
+  // One relay for the team: a team is small, and both sides of a pair must meet in one place.
+  const hub = c.env.TEAM.get(c.env.TEAM.idFromName("team"));
+  return hub.fetch(new Request(c.req.raw.url, { headers }));
+});
+
 app.delete("/api/moderator", (c) => {
   if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
   setModeratorCookie(c, null);
@@ -517,7 +609,8 @@ function securityHeaders(env: Bindings, url: URL): Record<string, string> {
     "Referrer-Policy": "strict-origin-when-cross-origin",
     ...(local ? {} : { "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload" }),
     // The kiosk needs the microphone for voice input; nothing else.
-    "Permissions-Policy": "camera=(), geolocation=(), payment=(), microphone=(self)",
+    // The microphone for voice input; the camera and screen sharing for team calls (TEAM-20).
+    "Permissions-Policy": "camera=(self), display-capture=(self), geolocation=(), payment=(), microphone=(self)",
     "Cross-Origin-Opener-Policy": "same-origin",
   };
 }
