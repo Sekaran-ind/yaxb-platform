@@ -24,53 +24,74 @@ const TEAM = [
 </script>
 
 <template>
-  <PageSection color="light" title-tag="h1" title="We focus on enabling AI interventions for enterprises through a tailored approach on our platform and seamlessly integrate into their ecosystem">
-    <div class="relative isolate overflow-hidden rounded-xl bg-console px-6 py-20 text-white md:py-28">
-      <div aria-hidden="true" class="absolute inset-0 -z-10 bg-cover bg-center opacity-80" style="background-image: url(/headphone.jpg)" />
-      <div aria-hidden="true" class="absolute inset-0 -z-10 bg-radial from-black/75 via-black/45 to-black/20" />
-      <div class="flex flex-wrap items-center justify-center gap-8">
-        <p class="text-3xl font-semibold drop-shadow md:text-4xl">Let us explore...</p>
-        <RouterLink to="/kiosk" class="btn-primary px-6 py-3 text-base">Try me</RouterLink>
+  <section class="relative isolate overflow-hidden">
+    <div aria-hidden="true" class="absolute inset-x-0 -top-40 -z-10 h-[36rem] bg-[radial-gradient(60%_60%_at_50%_0%,color-mix(in_oklab,var(--color-brand)_18%,transparent),transparent_70%)]" />
+    <div class="mx-auto grid max-w-6xl items-center gap-14 px-4 pt-16 pb-20 sm:px-6 md:pt-24 lg:grid-cols-[1.1fr_1fr]">
+      <div>
+        <p class="eyebrow">Self-service AI platform</p>
+        <h1 class="mt-4 text-4xl font-semibold tracking-[-0.035em] text-balance text-ink md:text-6xl">Answers people can trust, at every kiosk.</h1>
+        <p class="mt-6 max-w-xl text-lg text-pretty text-gray-600">
+          We enable AI interventions for enterprises through a tailored approach on our platform, integrated seamlessly into your ecosystem: answers grounded in your own knowledge and cited every time, by voice or text, in fourteen languages.
+        </p>
+        <div class="mt-9 flex flex-wrap items-center gap-3">
+          <RouterLink to="/kiosk" class="btn-primary h-11 px-6">Try the kiosk</RouterLink>
+          <a href="#explore" class="btn-ghost h-11 px-5">What we offer →</a>
+        </div>
+        <dl class="mt-12 grid max-w-md grid-cols-3 gap-6 border-t border-gray-200/70 pt-6 text-sm">
+          <div><dt class="text-gray-500">Languages</dt><dd class="mt-1 text-xl font-semibold tracking-tight text-ink">14</dd></div>
+          <div><dt class="text-gray-500">Answers</dt><dd class="mt-1 text-xl font-semibold tracking-tight text-ink">Cited</dd></div>
+          <div><dt class="text-gray-500">On device</dt><dd class="mt-1 text-xl font-semibold tracking-tight text-ink">Private</dd></div>
+        </dl>
+      </div>
+      <div class="console mx-auto w-full max-w-md px-7 py-9" aria-hidden="true">
+        <div class="flex items-center justify-between">
+          <p class="text-[10px] font-semibold tracking-[0.22em] text-white/50 uppercase">YAXB Kiosk</p>
+          <span class="inline-flex items-center gap-1.5 text-[11px] text-white/60"><span class="size-1.5 rounded-full bg-brand" /> Listening</span>
+        </div>
+        <p class="mt-10 text-2xl font-medium tracking-tight text-white">“How much is holiday pay?”</p>
+        <div class="mt-8 flex h-14 items-center gap-[3px]">
+          <span v-for="i in 34" :key="i" class="voice-bar voice-bar-live" :style="{ height: `${30 + 70 * Math.sin((Math.PI * i) / 34) ** 1.5}%`, animationDelay: `${((i * 137) % 100) / 100}s` }" />
+        </div>
+        <div class="mt-8 rounded-2xl bg-white/5 p-4 text-sm leading-relaxed text-white/80 ring-1 ring-white/10">
+          Work on a declared holiday is paid at twice the daily wage.
+          <span class="mt-3 flex gap-1.5"><span class="rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-white/70">Wages policy · 4.2</span></span>
+        </div>
       </div>
     </div>
-    <header class="mt-14 mb-10 text-center">
-      <h2 class="text-3xl font-semibold text-balance md:text-5xl">Self-Service AI Platform</h2>
-      <p class="mx-auto mt-4 max-w-3xl text-lg text-pretty opacity-80">Integrate Yaxb seamlessly into your digital world and elevate the experience using AI with support of multi-modal interactions like Text, Voice, Audio, Video and Gestures</p>
-    </header>
-  </PageSection>
+  </section>
 
-  <PageSection id="explore" title="Our Offerings on the Self Service AI Platform">
-    <div class="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-      <article v-for="item in OFFERINGS" :key="item.title">
-        <img :src="item.image" alt="" class="aspect-[4/3] w-full object-contain" loading="lazy" />
-        <h3 class="mt-5 text-lg font-medium text-ink">{{ item.title }}</h3>
-        <p class="mt-3 text-sm leading-relaxed">{{ item.body }}</p>
+  <PageSection id="explore" title="What we offer" subtitle="From the first idea to a kiosk in daily use.">
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <article v-for="item in OFFERINGS" :key="item.title" class="card p-6">
+        <div class="grid size-14 place-items-center rounded-2xl bg-mist ring-1 ring-gray-200/70"><img :src="item.image" alt="" class="size-8 object-contain" loading="lazy" /></div>
+        <h3 class="mt-5 text-base font-semibold text-ink">{{ item.title }}</h3>
+        <p class="mt-2 text-sm leading-relaxed text-gray-600">{{ item.body }}</p>
       </article>
     </div>
   </PageSection>
 
-  <PageSection id="about" title="Yaxb Features">
+  <PageSection id="about" title="How people talk to YAXB">
     <div class="grid items-center gap-12 lg:grid-cols-2">
       <img src="/chat.svg" alt="Illustration" class="mx-auto max-h-[28rem] w-full object-contain" loading="lazy" />
       <div class="space-y-8">
         <div v-for="f in FEATURES" :key="f.title" class="flex items-start gap-5">
-          <component :is="f.icon" :class="['size-8 shrink-0', f.color]" aria-hidden="true" />
+          <span class="grid size-11 shrink-0 place-items-center rounded-xl bg-mist ring-1 ring-gray-200/70"><component :is="f.icon" class="size-5 text-ink" aria-hidden="true" /></span>
           <div>
-            <h3 class="text-lg font-bold text-ink">{{ f.title }}</h3>
-            <p class="mt-1 text-gray-500">{{ f.description }}</p>
+            <h3 class="text-base font-semibold text-ink">{{ f.title }}</h3>
+            <p class="mt-1 text-sm leading-relaxed text-gray-600">{{ f.description }}</p>
           </div>
         </div>
       </div>
     </div>
   </PageSection>
 
-  <PageSection color="light" background-image="/backgroundcard.jpeg" :background-image-opacity="0.8" title="Meet the Team">
+  <PageSection color="light" title="Meet the team">
     <div class="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
       <article v-for="m in TEAM" :key="m.name" class="card flex flex-col items-center p-7 text-center">
-        <img :src="m.avatar" :alt="m.name" width="128" height="128" class="size-32 rounded-full object-cover" loading="lazy" />
-        <p class="mt-5 text-lg text-ink">{{ m.name }}</p>
-        <p class="text-xs font-semibold tracking-wide uppercase">{{ m.role }}</p>
-        <p class="mt-5 text-sm leading-relaxed">{{ m.bio }}</p>
+        <img :src="m.avatar" :alt="m.name" width="96" height="96" class="size-24 rounded-full object-cover ring-4 ring-mist" loading="lazy" />
+        <p class="mt-5 text-base font-semibold tracking-tight text-ink">{{ m.name }}</p>
+        <p class="eyebrow mt-1">{{ m.role }}</p>
+        <p class="mt-4 text-sm leading-relaxed text-gray-600">{{ m.bio }}</p>
       </article>
     </div>
   </PageSection>

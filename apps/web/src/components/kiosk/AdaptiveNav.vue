@@ -111,7 +111,7 @@ const itemClass = (on: boolean) => cn("flex w-full items-center justify-between 
   <!-- Tabs. -->
   <div v-else>
     <div class="mb-3 flex items-center justify-between gap-2">
-      <div role="tablist" aria-label="Screens" class="flex flex-wrap gap-1 rounded-full bg-mist p-1">
+      <div role="tablist" aria-label="Screens" class="no-scrollbar flex min-w-0 gap-0.5 overflow-x-auto rounded-full bg-mist p-0.5">
         <button
           v-for="s in screens"
           :id="`${uid}-tab-${s.id}`"
@@ -120,7 +120,7 @@ const itemClass = (on: boolean) => cn("flex w-full items-center justify-between 
           role="tab"
           :aria-selected="s.id === current"
           :aria-controls="`${uid}-panel`"
-          :class="cn('rounded-full px-3 py-1.5 text-sm font-medium', s.id === current ? 'bg-surface text-ink shadow-sm' : 'text-gray-600 hover:text-ink')"
+          :class="cn('shrink-0 rounded-full px-3 py-1.5 text-[13px] font-medium whitespace-nowrap transition', s.id === current ? 'bg-surface text-ink shadow-sm' : 'text-gray-500 hover:text-ink')"
           @click="pick(s.id)"
         >
           <span class="inline-flex items-center gap-1.5"><component :is="iconFor(s.icon)" v-if="iconFor(s.icon)" class="size-4" aria-hidden="true" />{{ s.label }}</span>

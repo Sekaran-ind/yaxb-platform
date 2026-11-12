@@ -13,7 +13,7 @@ const choose = (t: ThemeChoice) => updateSettings({ theme: t });
   <label v-if="compact" class="flex items-center gap-1.5 rounded-full bg-mist py-1 pr-1 pl-3 text-xs text-gray-600">
     <Palette class="size-4" aria-hidden="true" />
     <span class="sr-only">Theme</span>
-    <select class="rounded-full border-0 bg-surface py-1 pr-7 pl-2 text-xs font-medium text-ink shadow-sm" :value="settings.theme" aria-label="Theme" @change="choose(($event.target as HTMLSelectElement).value as ThemeChoice)">
+    <select class="max-w-36 rounded-full border-0 bg-surface py-1 pr-7 pl-2 text-xs font-medium text-ink shadow-sm" :value="settings.theme" aria-label="Theme" @change="choose(($event.target as HTMLSelectElement).value as ThemeChoice)">
       <option value="system">Device</option>
       <option v-for="t in THEMES" :key="t.id" :value="t.id">{{ t.label }}</option>
     </select>

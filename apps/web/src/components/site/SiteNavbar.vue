@@ -17,28 +17,28 @@ const contactOpen = ref(false);
 </script>
 
 <template>
-  <nav id="top" class="border-b border-gray-100 bg-mist" aria-label="Main">
-    <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between px-4 py-3 sm:px-6">
-      <RouterLink to="/" class="flex items-center gap-3">
-        <img src="/icons8-artificial-64.png" alt="" width="40" height="40" />
-        <span class="text-2xl font-semibold text-ink">YAXB.AI</span>
+  <nav id="top" class="sticky top-0 z-30 border-b border-gray-200/60 bg-canvas/80 backdrop-blur-xl" aria-label="Main">
+    <div class="mx-auto flex h-14 max-w-6xl flex-wrap items-center justify-between px-4 sm:px-6">
+      <RouterLink to="/" class="flex items-center gap-2.5">
+        <span class="grid size-7 place-items-center rounded-lg bg-brand-dark text-[11px] font-bold tracking-tight text-on-brand" aria-hidden="true">Y</span>
+        <span class="text-[15px] font-semibold tracking-tight text-ink">YAXB<span class="text-gray-400">.ai</span></span>
       </RouterLink>
-      <button type="button" class="rounded p-2 md:hidden" :aria-expanded="menuOpen" aria-controls="main-menu" aria-label="Toggle menu" @click="menuOpen = !menuOpen">
-        <X v-if="menuOpen" class="size-6" />
-        <Menu v-else class="size-6" />
+      <button type="button" class="rounded-full p-2 md:hidden" :aria-expanded="menuOpen" aria-controls="main-menu" aria-label="Toggle menu" @click="menuOpen = !menuOpen">
+        <X v-if="menuOpen" class="size-5" />
+        <Menu v-else class="size-5" />
       </button>
-      <div id="main-menu" :class="cn('w-full md:flex md:w-auto md:items-center md:gap-1', menuOpen ? 'block' : 'hidden')">
+      <div id="main-menu" :class="cn('w-full pb-3 md:flex md:w-auto md:items-center md:gap-1 md:pb-0', menuOpen ? 'block' : 'hidden')">
         <RouterLink
           v-for="l in LINKS"
           :key="l.to"
           :to="l.to"
           :aria-current="route.path === l.to ? 'page' : undefined"
-          :class="cn('block rounded-md px-3 py-2 text-ink hover:bg-surface', route.path === l.to && 'font-semibold text-brand-dark')"
+          :class="cn('block rounded-full px-3 py-1.5 text-sm text-gray-600 transition hover:text-ink', route.path === l.to && 'bg-mist font-medium text-ink')"
           @click="menuOpen = false"
         >
           {{ l.label }}
         </RouterLink>
-        <button type="button" class="block w-full rounded-md px-3 py-2 text-left text-ink hover:bg-surface md:w-auto" @click="(menuOpen = false), (contactOpen = true)">Contact Us</button>
+        <button type="button" class="btn-primary mt-2 h-8 w-full px-3.5 text-[13px] md:mt-0 md:ml-2 md:w-auto" @click="(menuOpen = false), (contactOpen = true)">Contact us</button>
       </div>
     </div>
     <BaseModal :open="contactOpen" title="Hello" @close="contactOpen = false"><ContactPanel /></BaseModal>
