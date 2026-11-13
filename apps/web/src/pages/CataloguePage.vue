@@ -14,7 +14,9 @@ import { AdaptiveNav, ConfirmAction, type NavScreen } from "@sekaran-ind/yaxb-jo
 import { Archive, ArchiveRestore, ExternalLink, FolderPlus, Pencil, Plus, Trash2 } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import CatalogueInfo from "@/components/catalogue/CatalogueInfo.vue";
+import { resolveLayout } from "@sekaran-ind/yaxb-core/screens";
+import CataloguePlayer from "@/components/catalogue/CataloguePlayer.vue";
+import KioskFrame from "@/components/site/KioskFrame.vue";
 import EntryStatus from "@/components/catalogue/EntryStatus.vue";
 import { useWidth } from "@/composables/width";
 import ServiceWorkspace from "@/components/catalogue/ServiceWorkspace.vue";
@@ -127,7 +129,14 @@ async function libCall(fn: () => Promise<unknown>) {
 }
 
 // ---- the frame ------------------------------------------------------------------------------
-const { el: pane, width: paneWidth } = useWidth(900);
+// The kiosk's frame and layouts (Full, Pod, Mini by the width), always chosen by the width here:
+// the kiosk's own layout choice is a kiosk preference.
+const { el: root, width } = useWidth(1280);
+const layout = computed(() => resolveLayout(width.value, "auto"));
+/** Where the designer is, for the player's "now playing" line. */
+const designStep = ref<{ index: number; total: number; label: string } | null>(null);
+watch(service, () => (designStep.value = null));
+const infoVariant = computed(() => (layout.value === "full" ? "full" : layout.value === "pod" ? "strip" : "mini"));
 const navScreens = computed<NavScreen[]>(() => [
   { id: "catalogue", label: "Catalogue", icon: "library", badge: String(catalogue.value.length) },
   { id: "mine", label: me.value?.can.view ? "All services" : "My services", icon: "clipboard-list", badge: String(overview.value?.services.length ?? 0) },
@@ -152,20 +161,24 @@ watch(signingIn, (v) => !v && void load());
 </script>
 
 <template>
-  <!-- The catalogue as a kiosk: one frame, an information panel where the kiosk has its player, and the catalogue's screens. -->
-  <div class="mx-auto max-w-7xl px-3 py-5 sm:px-5 sm:py-6">
-    <div class="grid gap-2 rounded-[2rem] border border-gray-200/70 bg-surface p-2 shadow-[var(--shadow-lift)] lg:grid-cols-[minmax(0,1fr)_minmax(0,2.5fr)]">
-      <CatalogueInfo
-        class="lg:sticky lg:top-20 lg:min-h-[640px] lg:self-start"
-        :who="who"
-        :counts="counts"
-        :current="current"
-        :compact="Boolean(service)"
-        @new-service="go({ service: 'new' })"
-        @sign-in="signingIn = true"
-        @sign-out="signOut"
-      />
-      <div ref="pane" class="min-w-0 px-2 pt-3 pb-3 sm:px-3">
+  <!-- The catalogue as a kiosk: the same frame, with an information panel where the kiosk has its player, and the catalogue's screens. -->
+  <div ref="root" class="w-full">
+    <KioskFrame :layout="layout" :narrow-panel="Boolean(service)">
+      <template #panel>
+        <CataloguePlayer
+          :variant="infoVariant"
+          :who="who"
+          :counts="counts"
+          :current="current"
+          :step="service ? designStep : null"
+          :loading="!overview && !error"
+          :signing-in="signingIn"
+          @new-service="go({ service: 'new' })"
+          @sign-in="signingIn = !signingIn"
+          @sign-out="signOut"
+        />
+      </template>
+      <template #default="{ width: paneWidth }">
         <ModeratorSignIn v-if="signingIn" class="mb-4" why="Sign in with your moderator key to see every service, review and manage roles." @signed-in="signingIn = false" />
         <p v-if="error" role="alert" class="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-red-800">{{ error }}</p>
 
@@ -181,8 +194,9 @@ watch(signingIn, (v) => !v && void load());
             @close="go({ service: null })"
             @created="(id) => (changed(), go({ service: id }))"
             @changed="changed"
+            @step="(st) => (designStep = st)"
           />
-          <AdaptiveNav v-else :screens="navScreens" storage-key="catalogue" :active="view" :width="paneWidth" @update:active="(v) => go({ view: v === 'catalogue' ? null : v })">
+          <AdaptiveNav v-else :screens="navScreens" storage-key="catalogue" label="Catalogue screens" :active="view" :width="paneWidth" :fill="layout === 'full'" @update:active="(v) => go({ view: v === 'catalogue' ? null : v })">
             <template #catalogue>
               <section aria-label="Published services">
             <p v-if="!catalogue.length" class="rounded-lg bg-mist px-4 py-3 text-sm text-gray-600">Nothing is published yet. Design a service and send it for review.</p>
@@ -341,7 +355,7 @@ watch(signingIn, (v) => !v && void load());
             </template>
           </AdaptiveNav>
         </template>
-      </div>
-    </div>
+      </template>
+    </KioskFrame>
   </div>
 </template>

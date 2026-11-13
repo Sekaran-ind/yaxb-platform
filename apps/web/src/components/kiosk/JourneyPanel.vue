@@ -5,7 +5,7 @@
 // form's fields as suggestions to check (lib/browser/slots), never as answers given for them.
 import { createRunner, type Journey, type RunState, type ServiceHandler, type SlotConfirm, type SlotVia } from "@sekaran-ind/yaxb-core/journeys";
 import { summarizeJourney, summarizeRun } from "@sekaran-ind/yaxb-core/journeys";
-import { CheckCircle2, Circle, Copy, Loader2, Mic, MicOff, NotebookPen, RotateCcw, Sparkles, Square, Volume2, Wand2, XCircle } from "@lucide/vue";
+import { ArrowLeft, CheckCircle2, Circle, Copy, Loader2, Mic, MicOff, NotebookPen, RotateCcw, Sparkles, Square, Volume2, Wand2, XCircle } from "@lucide/vue";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { effectiveSelection, settings, useProviders } from "@/composables/settings";
 import { useSpeechInput } from "@/composables/speech";
@@ -170,13 +170,11 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="space-y-4">
-    <div class="flex items-start justify-between gap-3">
-      <div>
-        <h3 class="text-lg font-semibold text-ink">{{ journey.title }}</h3>
-        <p v-if="journey.summary" class="text-sm text-gray-600">{{ journey.summary }}</p>
-        <p class="mt-1 text-xs text-gray-500">{{ about.privacy }}</p>
-      </div>
-      <button type="button" class="btn-light" @click="emit('close')">Close</button>
+    <div>
+      <button type="button" class="btn-ghost -ml-2 h-9 px-2 text-sm" @click="emit('close')"><ArrowLeft class="size-4" aria-hidden="true" /> Services</button>
+      <h3 class="mt-1 text-lg font-semibold text-ink">{{ journey.title }}</h3>
+      <p v-if="journey.summary" class="text-sm text-gray-600">{{ journey.summary }}</p>
+      <p class="mt-1 text-xs text-gray-500">{{ about.privacy }}</p>
     </div>
 
     <ol v-if="state && (state.trail.length || state.status === 'running' || state.status === 'asking')" class="flex flex-wrap gap-2 text-xs" aria-label="Progress">
@@ -239,6 +237,7 @@ onBeforeUnmount(() => {
         <button type="button" class="btn-light" @click="copy"><Copy class="size-4" aria-hidden="true" /> {{ copied ? "Copied" : "Copy" }}</button>
         <button type="button" class="btn-light" @click="restart"><RotateCcw class="size-4" aria-hidden="true" /> Start again</button>
         <button v-if="run && services['notebook.add']" type="button" class="btn-light" @click="saveRun"><NotebookPen class="size-4" aria-hidden="true" /> Save to notebook</button>
+        <button type="button" class="btn-primary ml-auto" @click="emit('close')">Done</button>
       </div>
       <p v-if="saved" role="status" class="text-sm text-ink">{{ saved }}</p>
       <details v-if="run && (run.answers.length || run.steps.length)" class="rounded-lg bg-mist px-3 py-2 text-sm">

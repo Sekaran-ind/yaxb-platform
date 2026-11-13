@@ -16,7 +16,6 @@ import {
   roleLabel,
   serviceTemplate,
   toYaml,
-  type BundleProblem,
   type Role,
   type ServiceDesign,
 } from "@sekaran-ind/yaxb-journeys";
@@ -40,7 +39,7 @@ const props = defineProps<{
   /** The published service, when this viewer can't open the entry itself (read-only). */
   published?: CatalogueService | null;
 }>();
-const emit = defineEmits<{ close: []; created: [id: string]; changed: [] }>();
+const emit = defineEmits<{ close: []; created: [id: string]; changed: []; step: [step: { index: number; total: number; label: string } | null] }>();
 
 const { el, width } = useWidth(900);
 const entry = shallowRef<LibraryEntry | null>(null);
@@ -94,11 +93,6 @@ async function load() {
 // ---- checking -------------------------------------------------------------------------------
 const check = computed(() => checkDocument(yaml.value, [], { services: JOURNEY_SERVICES, roles: props.roles.map((r) => r.id) }));
 const errors = computed(() => check.value.problems.filter((p) => p.level === "error"));
-const marks = computed(() => {
-  const m = new Map<number, BundleProblem["level"]>();
-  for (const p of check.value.problems) if (m.get(p.line) !== "error") m.set(p.line, p.level);
-  return m;
-});
 const editor = ref<InstanceType<typeof YamlEditor> | null>(null);
 function goToLine(line: number) {
   openView("yaml");
@@ -129,6 +123,7 @@ function openView(v: View) {
   if (v === "design" && !designFromYaml()) v = "yaml";
   if ((v === "audit" || v === "history") && !entry.value) v = "summary";
   view.value = v;
+  if (v !== "design") emit("step", null);
 }
 function onDesign(d: ServiceDesign) {
   design.value = d;
@@ -281,7 +276,7 @@ watch(
     <p v-if="designNote" class="rounded-lg bg-mist px-3 py-2 text-sm text-ink">{{ designNote }}</p>
 
     <template v-if="view === 'design'">
-      <ServiceDesigner :model-value="design" :service-names="JOURNEY_SERVICES" :readonly="!editable" @update:model-value="onDesign" @last="(v) => (designerAtEnd = v)">
+      <ServiceDesigner :model-value="design" :service-names="JOURNEY_SERVICES" :readonly="!editable" @update:model-value="onDesign" @last="(v) => (designerAtEnd = v)" @step="(st) => emit('step', st)">
         <!-- The last step offers the real next action: create or save, then submit for review. -->
         <template #finish="{ ok }">
           <template v-if="editable">
@@ -297,7 +292,7 @@ watch(
     </template>
     <div v-else-if="view === 'yaml'" class="space-y-2">
       <p class="text-xs text-gray-500">A service with its journeys and their screens. Changing the design rewrites this YAML, and comments are dropped.</p>
-      <YamlEditor ref="editor" v-model="yaml" :marks="marks" label="Service YAML" :readonly="!editable" height="32rem" />
+      <YamlEditor ref="editor" v-model="yaml" :problems="check.problems" label="Service YAML" :readonly="!editable" height="32rem" />
     </div>
     <div v-else-if="view === 'preview'" class="rounded-2xl bg-canvas p-3 ring-1 ring-gray-200">
       <FlowPreview :bundle="check.bundle" :layout="resolveLayout(width - 24)" :width="width - 24" storage-key="catalogue.preview" />

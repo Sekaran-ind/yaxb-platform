@@ -14,8 +14,13 @@ const props = defineProps<{
   services?: Record<string, ServiceHandler>;
   context?: Scope;
   width: number;
+  /** Offer a way out: a back link at the top, and Done at the result. */
   closable?: boolean;
+  /** Where the back link goes, e.g. "Services" ("← Services"). */
+  backLabel?: string;
   navMode?: NavMode;
+  switchable?: boolean;
+  /** @deprecated The default now. */
   lockMode?: boolean;
   sources?: SourceOption[];
   languages?: LanguageOption[];
@@ -95,12 +100,10 @@ async function copy() {
 
 <template>
   <div class="yj yj-stack yj-runner">
-    <div class="yj-head">
-      <div>
-        <h3 class="yj-title">{{ journey.title }}</h3>
-        <p v-if="journey.summary" class="yj-small yj-muted">{{ journey.summary }}</p>
-      </div>
-      <button v-if="closable" type="button" class="yj-btn" @click="emit('close')">Close</button>
+    <button v-if="closable" type="button" class="yj-back" @click="emit('close')"><Glyph name="back" />{{ backLabel ?? "Back" }}</button>
+    <div>
+      <h3 class="yj-title">{{ journey.title }}</h3>
+      <p v-if="journey.summary" class="yj-small yj-muted">{{ journey.summary }}</p>
     </div>
 
     <ol v-if="state && (state.trail.length || state.status === 'running' || state.status === 'asking')" class="yj-row" aria-label="Progress">
@@ -120,7 +123,7 @@ async function copy() {
         :width="width"
         :storage-key="`questionnaire.${journey.id}.${state.prompt.step}`"
         :nav-mode="navMode"
-        :lock-mode="lockMode"
+        :switchable="switchable"
         :sources="sources"
         :languages="languages"
         :invalid="invalid"
@@ -140,6 +143,7 @@ async function copy() {
       <div class="yj-row">
         <button type="button" class="yj-btn" @click="copy">{{ copied ? "Copied" : "Copy" }}</button>
         <button type="button" class="yj-btn" @click="start">Start again</button>
+        <button v-if="closable" type="button" class="yj-btn yj-btn-primary yj-push" @click="emit('close')">Done</button>
       </div>
       <slot name="result" :state="state" />
     </div>

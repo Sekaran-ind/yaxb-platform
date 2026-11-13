@@ -53,8 +53,8 @@ describe.each(stores)("moderator keys: %s", (_name, makeStore) => {
     const svc = createModeratorService(store);
     const { moderator } = await svc.issue({ name: "Elizabeth Kelly" });
     expect((await svc.profile(moderator)).display_name).toBe("Elizabeth Kelly");
-    await svc.saveProfile(moderator, { display_name: "Liz", languages: ["eng_Latn", "tam_Taml"], sources: ["policies", "pharmacy"], preferences: { queue: "open" } });
-    expect(await svc.profile(moderator)).toMatchObject({ display_name: "Liz", languages: ["eng_Latn", "tam_Taml"], sources: ["policies", "pharmacy"], preferences: { queue: "open" } });
+    await svc.saveProfile(moderator, { display_name: "Liz", languages: ["eng_Latn", "tam_Taml"], sources: ["work", "health"], preferences: { queue: "open" } });
+    expect(await svc.profile(moderator)).toMatchObject({ display_name: "Liz", languages: ["eng_Latn", "tam_Taml"], sources: ["work", "health"], preferences: { queue: "open" } });
     await expect(svc.saveProfile(moderator, { display_name: "Liz", sources: ["made-up"] })).rejects.toThrow();
     expect(moderatorProfileSchema.safeParse({ display_name: "x", extra: 1 }).success).toBe(false);
   });

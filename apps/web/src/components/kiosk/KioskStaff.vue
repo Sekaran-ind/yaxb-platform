@@ -7,6 +7,7 @@
 // the old /kiosk/curate, /kiosk/admin… addresses open it.
 import { kioskContent } from "@sekaran-ind/yaxb-core/content";
 import { AdaptiveNav, type NavScreen } from "@sekaran-ind/yaxb-journeys/vue";
+import { ArrowLeft } from "@lucide/vue";
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import CurateTimeline from "./CurateTimeline.vue";
@@ -31,11 +32,16 @@ const screens = computed<NavScreen[]>(() =>
 // Another section starts afresh: only the kiosk's screen is kept from the address.
 const open = (id: string) => void router.push({ path: "/kiosk", query: { screen: "services", staff: id } });
 const { el, width } = useWidth(900);
+const emit = defineEmits<{ back: [] }>();
 </script>
 
 <template>
   <section ref="el" aria-label="For staff">
-    <AdaptiveNav :screens="screens" mode="tabs" lock-mode storage-key="staff" :active="section" :width="width" @update:active="open">
+    <AdaptiveNav :screens="screens" mode="tabs" storage-key="staff" label="Staff sections" :active="section" :width="width" @update:active="open">
+      <!-- The way back to Services sits on the same row as the sections (one header, not two). -->
+      <template #lead>
+        <button type="button" class="btn-ghost -ml-2 h-10 shrink-0 px-2 text-sm" @click="emit('back')"><ArrowLeft class="size-4" aria-hidden="true" /> Services</button>
+      </template>
       <template v-for="s in screens" :key="s.id" #[s.id]>
         <component :is="COMPONENTS[s.id as Section]" />
       </template>

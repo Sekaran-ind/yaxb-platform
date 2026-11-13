@@ -19,6 +19,9 @@ const props = defineProps<{
   layout: Layout;
   width: number;
   mode?: NavMode;
+  /** Let the visitor change the nav display (remembered). */
+  switchable?: boolean;
+  /** @deprecated The default now. */
   lockMode?: boolean;
   /** Real handlers; every other service a journey calls gets a stand-in. */
   handlers?: Record<string, ServiceHandler>;
@@ -75,7 +78,7 @@ watch(journeyIds, (ids) => {
 <template>
   <div class="yj yj-preview">
     <p v-if="!screens.length" class="yj-note">Nothing to show yet. Add a service, a journey or a questionnaire.</p>
-    <AdaptiveNav v-else v-model:active="active" :screens="screens" :width="width" :mode="mode" :lock-mode="lockMode" :storage-key="storageKey ?? 'journeys.preview'">
+    <AdaptiveNav v-else v-model:active="active" :screens="screens" :width="width" :mode="mode" :switchable="switchable" :storage-key="storageKey ?? 'journeys.preview'">
       <template v-for="s in offered" :key="s.id" #[screenId(s.id)]>
         <JourneyRunner
           v-if="journeyOf(screenId(s.id))"
@@ -83,6 +86,7 @@ watch(journeyIds, (ids) => {
           :services="handlers"
           :width="width"
           closable
+          :back-label="s.title"
           :sources="sources"
           :languages="languages"
           @close="open[screenId(s.id)] = undefined"
@@ -94,7 +98,7 @@ watch(journeyIds, (ids) => {
       </template>
 
       <template #[JOURNEYS]>
-        <JourneyRunner v-if="journeyOf(JOURNEYS)" :journey="journeyOf(JOURNEYS)!" :services="handlers" :width="width" closable :sources="sources" :languages="languages" @close="open[JOURNEYS] = undefined" />
+        <JourneyRunner v-if="journeyOf(JOURNEYS)" :journey="journeyOf(JOURNEYS)!" :services="handlers" :width="width" closable back-label="Journeys" :sources="sources" :languages="languages" @close="open[JOURNEYS] = undefined" />
         <ul v-else class="yj-items">
           <li v-for="j in bundle.journeys" :key="j.id">
             <button type="button" class="yj-item" @click="startJourney(j)">

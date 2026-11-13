@@ -1,23 +1,35 @@
 <script setup lang="ts">
-// Design a whole service as a sequence of steps, with a breadcrumb and Previous / Next:
-//   Service → Roles → Journeys → (each journey: Details → Screens) → Review
-// The breadcrumb shows where the step sits (Service › Journeys › Check in › Screens); the step list
-// jumps anywhere. Bind with v-model to a ServiceDesign (forms.ts); designToDoc and toYaml give the
-// nested YAML (nested.ts). The Review step compiles the design and lists what to fix.
-// The last step offers the host's next action in place of Next: fill the `finish` slot (props: ok,
-// errors) with it, e.g. "Create service" or "Submit for review". Without it the step says it is the end.
+// Design a whole service in four steps, with Previous / Next named after the neighbouring steps:
+//   1 Service   its name and what it is for
+//   2 Roles     who delivers it, and who starts and finishes each journey
+//   3 Journeys  list, add, reorder and remove journeys, and edit the chosen one (its details, its
+//               screens and their questions) in the same place: master/detail when there is room;
+//               narrow, the list, then into one journey and back ("← Journeys")
+//   4 Review    the compiled service: what to fix, and the summary; the host's `finish` slot
+//               (props: ok, errors) offers the real next action, e.g. "Create service"
+// The live preview (FlowPreview of the compiled design) sits beside the steps when there is room, or
+// takes their place while it is on when there isn't. Bind with v-model to a ServiceDesign (forms.ts);
+// designToDoc and toYaml give the nested YAML (nested.ts).
 import { compileBundle } from "@sekaran-ind/yaxb-journeys/bundle";
-import { designToDoc, newJourneyDesign, toYaml, type JourneyDesign, type ServiceDesign } from "@sekaran-ind/yaxb-journeys/forms";
+import { designToDoc, idFromName, newJourneyDesign, toYaml, type JourneyDesign, type ServiceDesign } from "@sekaran-ind/yaxb-journeys/forms";
 import { roleLabel, type Role } from "@sekaran-ind/yaxb-journeys/journeys";
-import { computed, nextTick, ref, useId, watch } from "vue";
+import { resolveLayout } from "@sekaran-ind/yaxb-journeys/screens";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
 import ConfirmAction from "./ConfirmAction.vue";
+import FlowPreview from "./FlowPreview.vue";
 import Glyph from "./Glyph.vue";
 import JourneyDesigner from "./JourneyDesigner.vue";
 import RolesPanel from "./RolesPanel.vue";
 import ServiceSummary from "./ServiceSummary.vue";
 
 const props = defineProps<{ modelValue: ServiceDesign; serviceNames?: readonly string[]; readonly?: boolean }>();
-const emit = defineEmits<{ "update:modelValue": [design: ServiceDesign]; /** Whether the last step (Review) is showing, so a host can drop its own copy of the finish action. */ last: [atEnd: boolean] }>();
+const emit = defineEmits<{
+  "update:modelValue": [design: ServiceDesign];
+  /** Whether the last step (Review) is showing, so a host can drop its own copy of the finish action. */
+  last: [atEnd: boolean];
+  /** The step showing, so a host can say where the designer is (the catalogue's player). */
+  step: [step: { index: number; total: number; label: string }];
+}>();
 defineSlots<{ finish?: (props: { ok: boolean; errors: number }) => unknown }>();
 const uid = useId();
 const id = (name: string) => `${uid}-${name}`;
@@ -32,59 +44,114 @@ watch(
   { deep: true },
 );
 watch(d, (v) => emit("update:modelValue", clone(v)), { deep: true });
-
-// ---- the steps ------------------------------------------------------------------------------
-type Step = { key: string; label: string; kind: "service" | "roles" | "journeys" | "journey" | "screens" | "review"; journey?: number; hint: string };
-const titleOf = (j: JourneyDesign, i: number) => j.title || j.id || `Journey ${i + 1}`;
-const steps = computed<Step[]>(() => [
-  { key: "service", kind: "service", label: "Service", hint: "Name the service and say what it is for." },
-  { key: "roles", kind: "roles", label: "Roles", hint: "Who delivers it, and who starts and finishes each journey." },
-  { key: "journeys", kind: "journeys", label: "Journeys", hint: "The journeys people can take in this service." },
-  ...d.value.journeys.flatMap((j, i): Step[] => [
-    { key: `journey-${i}`, kind: "journey", journey: i, label: titleOf(j, i), hint: "This journey's name, and who may start and finish it." },
-    { key: `screens-${i}`, kind: "screens", journey: i, label: "Screens", hint: "The screens of this journey, in order: questions, services, decisions and the end." },
-  ]),
-  { key: "review", kind: "review", label: "Review", hint: "The service at a glance, and anything still to fix." },
-]);
-const at = ref(0);
+// A new service's id follows its name until someone sets it (under "More").
+const fresh = props.modelValue.id === "new-service";
 watch(
-  () => steps.value.length,
-  (n) => (at.value = Math.min(at.value, n - 1)),
+  () => d.value.title,
+  (title, before) => {
+    if (!fresh || props.readonly) return;
+    if (d.value.id === "new-service" || d.value.id === idFromName(before ?? "")) d.value.id = idFromName(title) || "new-service";
+  },
 );
-const step = computed(() => steps.value[at.value]!);
-const go = (i: number) => (at.value = Math.max(0, Math.min(steps.value.length - 1, i)));
-const goKey = (key: string) => go(steps.value.findIndex((s) => s.key === key));
 
-/** Service › [Journeys › <journey> ›] step: where this step sits. */
-const crumbs = computed(() => {
-  const s = step.value;
-  const service = { label: d.value.title || d.value.id || "Service", key: "service" };
-  if (s.kind === "service") return [service];
-  if (s.kind === "roles" || s.kind === "journeys" || s.kind === "review") return [service, { label: s.label, key: s.key }];
-  const j = d.value.journeys[s.journey!]!;
-  const trail = [service, { label: "Journeys", key: "journeys" }, { label: titleOf(j, s.journey!), key: `journey-${s.journey}` }];
-  return s.kind === "screens" ? [...trail, { label: "Screens", key: s.key }] : trail;
+// ---- sizes: the designer measures itself (it sits in any host) -------------------------------
+const root = ref<HTMLElement | null>(null);
+const main = ref<HTMLElement | null>(null);
+const pane = ref<HTMLElement | null>(null);
+const width = ref(800);
+const mainWidth = ref(800);
+const paneWidth = ref(380);
+let observer: ResizeObserver | null = null;
+onMounted(() => {
+  const measure = () => {
+    width.value = root.value?.getBoundingClientRect().width || width.value;
+    mainWidth.value = main.value?.getBoundingClientRect().width || mainWidth.value;
+    paneWidth.value = pane.value?.getBoundingClientRect().width || paneWidth.value;
+  };
+  measure();
+  if (typeof ResizeObserver === "undefined") return;
+  observer = new ResizeObserver(measure);
+  for (const el of [root.value, main.value, pane.value]) if (el) observer.observe(el);
+});
+onBeforeUnmount(() => observer?.disconnect());
+/** Room for the preview beside the steps (62rem). */
+const side = computed(() => width.value >= 992);
+/** Room for the journey list beside the chosen journey (44rem of the steps' column). */
+const masterDetail = computed(() => mainWidth.value >= 704);
+
+// ---- the preview ----------------------------------------------------------------------------
+// On by default when it fits beside; narrow, it is a toggle that takes the steps' place.
+const previewChoice = ref<boolean | null>(null);
+const preview = computed(() => previewChoice.value ?? side.value);
+watch(pane, (el) => {
+  if (el && observer) observer.observe(el);
 });
 
-// ---- journeys and roles --------------------------------------------------------------------
+// ---- the steps ------------------------------------------------------------------------------
+type StepKey = "service" | "roles" | "journeys" | "review";
+const STEPS: { key: StepKey; label: string; hint: string }[] = [
+  { key: "service", label: "Service", hint: "Name the service and say what it is for." },
+  { key: "roles", label: "Roles", hint: "Who delivers it, and who starts and finishes each journey." },
+  { key: "journeys", label: "Journeys", hint: "The journeys people take in this service: their screens and questions." },
+  { key: "review", label: "Review", hint: "The service at a glance, and anything still to fix." },
+];
+const at = ref(0);
+const step = computed(() => STEPS[at.value]!);
+async function go(i: number) {
+  at.value = Math.max(0, Math.min(STEPS.length - 1, i));
+  // Narrow, the preview took the steps' place: going to a step shows it.
+  if (!side.value) previewChoice.value = false;
+  await nextTick();
+  root.value?.querySelector<HTMLElement>(".yj-steps [aria-current='step']")?.focus();
+}
+const last = computed(() => at.value === STEPS.length - 1);
+watch(last, (v) => emit("last", v), { immediate: true });
+watch(at, (i) => emit("step", { index: i, total: STEPS.length, label: STEPS[i]!.label }), { immediate: true });
+
+// ---- journeys -------------------------------------------------------------------------------
+const titleOf = (j: JourneyDesign, i: number) => j.title || j.id || `Journey ${i + 1}`;
+/** The journey being edited; narrow, null shows the list. */
+const chosen = ref<number | null>(d.value.journeys.length ? 0 : null);
+const editing = computed(() => (chosen.value !== null && d.value.journeys[chosen.value] ? chosen.value : null));
+/** Narrow: inside one journey (a back link to the list), or the list. */
+const inside = ref(false);
+async function choose(i: number) {
+  chosen.value = i;
+  inside.value = true;
+  await nextTick();
+  document.getElementById(id("journey-title"))?.focus();
+}
+async function backToList() {
+  inside.value = false;
+  await nextTick();
+  root.value?.querySelector<HTMLButtonElement>(`[data-pick="${chosen.value}"]`)?.focus();
+}
 function addJourney() {
   let n = d.value.journeys.length + 1;
   while (d.value.journeys.some((j) => j.id === `journey-${n}`)) n++;
   d.value.journeys.push(newJourneyDesign(`journey-${n}`, `Journey ${n}`));
-  goKey(`journey-${d.value.journeys.length - 1}`);
+  void choose(d.value.journeys.length - 1);
 }
-const removeJourney = (i: number) => d.value.journeys.splice(i, 1);
-const root = ref<HTMLElement | null>(null);
+function removeJourney(i: number) {
+  d.value.journeys.splice(i, 1);
+  if (chosen.value === null) return;
+  if (chosen.value === i) {
+    chosen.value = d.value.journeys.length ? Math.min(i, d.value.journeys.length - 1) : null;
+    inside.value = false;
+  } else if (chosen.value > i) chosen.value--;
+}
 /** Move a journey, and keep focus on the moved journey's button (or its other one at the end). */
 async function moveJourney(i: number, by: number) {
   const k = i + by;
   if (k < 0 || k >= d.value.journeys.length) return;
   const list = d.value.journeys;
   [list[i], list[k]] = [list[k]!, list[i]!];
+  if (chosen.value === i) chosen.value = k;
+  else if (chosen.value === k) chosen.value = i;
   await nextTick();
-  const at = (dir: string) => root.value?.querySelector<HTMLButtonElement>(`[data-move="${k}-${dir}"]`);
-  const same = at(by < 0 ? "up" : "down");
-  (same && !same.disabled ? same : at(by < 0 ? "down" : "up"))?.focus();
+  const btn = (dir: string) => root.value?.querySelector<HTMLButtonElement>(`[data-move="${k}-${dir}"]`);
+  const same = btn(by < 0 ? "up" : "down");
+  (same && !same.disabled ? same : btn(by < 0 ? "down" : "up"))?.focus();
 }
 const setJourney = (i: number, j: JourneyDesign) => (d.value.journeys[i] = j);
 const setRoles = (roles: Role[]) => (d.value.roles = roles);
@@ -98,7 +165,7 @@ function assign(i: number, initiate: string[], complete: string[]) {
 const assignments = computed(() => d.value.journeys.map((j) => ({ id: j.id, title: j.title, initiate: j.initiate, complete: j.complete })));
 const who = (ids: string[], none: string) => (ids.length ? ids.map((r) => roleLabel(r, d.value.roles)).join(", ") : none);
 
-// ---- review ---------------------------------------------------------------------------------
+// ---- compiling: the review and the preview ---------------------------------------------------
 const compiled = computed(() => {
   const r = designToDoc(d.value);
   if (!r.ok) return { problems: r.problems.map((message) => ({ level: "error" as const, message })), bundle: null };
@@ -106,128 +173,143 @@ const compiled = computed(() => {
   return { problems: b.problems.map((p) => ({ level: p.level, message: p.message })), bundle: b };
 });
 const errorCount = computed(() => compiled.value.problems.filter((p) => p.level === "error").length);
-const last = computed(() => at.value === steps.value.length - 1);
-watch(last, (v) => emit("last", v), { immediate: true });
+const badge = (k: StepKey) => (k === "journeys" ? String(d.value.journeys.length) : k === "review" && errorCount.value ? `${errorCount.value} to fix` : "");
 </script>
 
 <template>
-  <div ref="root" class="yj yj-wizard">
-    <!-- Where you are -->
+  <div ref="root" class="yj yj-wizard yj-designer">
+    <!-- Where you are: the four steps (also the way to jump), and the preview switch. -->
     <div class="yj-wizard-head">
-      <nav aria-label="Breadcrumb">
-        <ol class="yj-crumbs">
-          <li v-for="(c, i) in crumbs" :key="c.key">
-            <button v-if="i < crumbs.length - 1" type="button" class="yj-crumb" @click="goKey(c.key)">{{ c.label }}</button>
-            <span v-else class="yj-crumb yj-crumb-current" aria-current="step">{{ c.label }}</span>
+      <nav aria-label="Steps" class="yj-grow">
+        <ol class="yj-steps">
+          <li v-for="(s, i) in STEPS" :key="s.key" :class="i < at ? 'yj-done' : i === at ? 'yj-now' : ''">
+            <button type="button" class="yj-step-btn" :aria-current="i === at ? 'step' : undefined" @click="go(i)">
+              <span class="yj-step-n" aria-hidden="true">{{ i + 1 }}</span>
+              <span class="yj-step-label">{{ s.label }}</span>
+              <span v-if="badge(s.key)" class="yj-badge" :class="s.key === 'review' && 'yj-badge-bad'">{{ badge(s.key) }}</span>
+            </button>
           </li>
         </ol>
       </nav>
-      <label class="yj-label yj-small">
-        <span class="yj-muted">Step {{ at + 1 }} of {{ steps.length }}</span>
-        <select class="yj-input yj-select-sm" :value="at" aria-label="Go to step" @change="go(Number(($event.target as HTMLSelectElement).value))">
-          <option v-for="(s, i) in steps" :key="s.key" :value="i">{{ s.kind === "screens" ? `${steps[i - 1]?.label} · Screens` : s.label }}</option>
-        </select>
-      </label>
+      <button type="button" class="yj-btn yj-select-sm" :aria-pressed="preview" @click="previewChoice = !preview">{{ preview ? "Hide preview" : "Show preview" }}</button>
     </div>
-    <ol class="yj-progress" aria-hidden="true">
-      <li v-for="(s, i) in steps" :key="s.key" :class="i < at ? 'yj-done' : i === at ? 'yj-now' : ''" />
-    </ol>
-    <p class="yj-small yj-muted yj-mt">{{ step.hint }}</p>
+    <p class="yj-small yj-muted yj-mt">
+      <span class="yj-title">Step {{ at + 1 }} of {{ STEPS.length }}: {{ step.label }}.</span> {{ step.hint }}
+    </p>
 
-    <div class="yj-wizard-body">
-      <!-- Service -->
-      <fieldset v-if="step.kind === 'service'" class="yj-fieldset" :disabled="readonly">
-        <legend class="yj-title">Service</legend>
-        <div class="yj-form-grid">
-          <div>
-            <label :for="id('id')" class="yj-field-label">Service id <span class="yj-required" aria-hidden="true">*</span></label>
-            <input :id="id('id')" v-model="d.id" class="yj-input" placeholder="clinic-visit" pattern="[a-z][a-z0-9\-]*" />
-            <p class="yj-help">Lower-case words joined by '-'.</p>
+    <div class="yj-designer-body" :class="preview && side && 'yj-designer-split'">
+      <div v-show="!preview || side" ref="main" class="yj-designer-main">
+        <!-- 1 Service -->
+        <fieldset v-if="step.key === 'service'" class="yj-fieldset" :disabled="readonly">
+          <legend class="yj-sr-only">Service</legend>
+          <div class="yj-form-grid">
+            <div class="yj-span-2">
+              <label :for="id('title')" class="yj-field-label">Service name <span class="yj-required" aria-hidden="true">*</span></label>
+              <input :id="id('title')" v-model="d.title" class="yj-input" placeholder="Clinic visit" />
+            </div>
+            <div class="yj-span-2">
+              <label :for="id('summary')" class="yj-field-label">What people can do with it</label>
+              <input :id="id('summary')" v-model="d.summary" class="yj-input" placeholder="Check in for your visit and see who you'll meet" />
+            </div>
           </div>
-          <div>
-            <label :for="id('title')" class="yj-field-label">Service title <span class="yj-required" aria-hidden="true">*</span></label>
-            <input :id="id('title')" v-model="d.title" class="yj-input" placeholder="Clinic visit" />
-          </div>
-          <div class="yj-span-2">
-            <label :for="id('summary')" class="yj-field-label">Summary</label>
-            <input :id="id('summary')" v-model="d.summary" class="yj-input" placeholder="What people can do with this service" />
-          </div>
-          <div>
-            <label :for="id('icon')" class="yj-field-label">Icon</label>
-            <input :id="id('icon')" v-model="d.icon" class="yj-input" placeholder="clipboard-list" />
-          </div>
-          <div>
-            <label :for="id('order')" class="yj-field-label">Order on the kiosk</label>
-            <input
-              :id="id('order')"
-              class="yj-input"
-              type="number"
-              :value="d.order ?? ''"
-              @input="d.order = ($event.target as HTMLInputElement).value === '' ? null : Number(($event.target as HTMLInputElement).value)"
-            />
-          </div>
-        </div>
-      </fieldset>
-
-      <!-- Roles -->
-      <RolesPanel v-else-if="step.kind === 'roles'" :roles="d.roles" :journeys="assignments" :readonly="readonly" @update:roles="setRoles" @assign="assign" />
-
-      <!-- Journeys -->
-      <section v-else-if="step.kind === 'journeys'" class="yj-stack" aria-label="Journeys">
-        <p v-if="!d.journeys.length" class="yj-note yj-small">A service needs at least one journey.</p>
-        <ol class="yj-stack">
-          <li v-for="(j, i) in d.journeys" :key="i" class="yj-card yj-step">
-            <div class="yj-head">
+          <details class="yj-details yj-mt">
+            <summary>More: the service's id, icon and order</summary>
+            <div class="yj-form-grid yj-mt">
               <div>
-                <p class="yj-item-kind">Journey {{ i + 1 }} · {{ j.screens.length }} screen{{ j.screens.length === 1 ? "" : "s" }}</p>
-                <p class="yj-title">{{ titleOf(j, i) }}</p>
-                <p class="yj-help">Started by {{ who(j.initiate, "anyone") }} · finished by {{ who(j.complete, "whoever started it") }}</p>
+                <label :for="id('id')" class="yj-field-label">Service id <span class="yj-required" aria-hidden="true">*</span></label>
+                <input :id="id('id')" v-model="d.id" class="yj-input yj-mono" placeholder="clinic-visit" pattern="[a-z][a-z0-9\-]*" :aria-describedby="id('idh')" />
+                <p :id="id('idh')" class="yj-help">Lower-case words joined by '-'. Kiosks find the service by it.</p>
               </div>
-              <div class="yj-row">
-                <button type="button" class="yj-btn yj-select-sm" @click="goKey(`journey-${i}`)">Edit</button>
-                <button type="button" class="yj-btn yj-select-sm" @click="goKey(`screens-${i}`)">Screens</button>
-                <template v-if="!readonly">
+              <div>
+                <label :for="id('icon')" class="yj-field-label">Icon</label>
+                <input :id="id('icon')" v-model="d.icon" class="yj-input" placeholder="clipboard-list" />
+              </div>
+              <div>
+                <label :for="id('order')" class="yj-field-label">Order on the kiosk</label>
+                <input
+                  :id="id('order')"
+                  class="yj-input"
+                  type="number"
+                  inputmode="numeric"
+                  min="0"
+                  :value="d.order ?? ''"
+                  @input="d.order = ($event.target as HTMLInputElement).value === '' ? null : Number(($event.target as HTMLInputElement).value)"
+                />
+              </div>
+            </div>
+          </details>
+        </fieldset>
+
+        <!-- 2 Roles -->
+        <RolesPanel v-else-if="step.key === 'roles'" :roles="d.roles" :journeys="assignments" :readonly="readonly" @update:roles="setRoles" @assign="assign" />
+
+        <!-- 3 Journeys: the list, and the chosen journey (beside it, or into it and back) -->
+        <section v-else-if="step.key === 'journeys'" class="yj-md" :class="masterDetail && 'yj-md-split'" aria-label="Journeys">
+          <div v-show="masterDetail || !inside || editing === null" class="yj-md-list">
+            <p v-if="!d.journeys.length" class="yj-note yj-small">A service needs at least one journey. Add one to start.</p>
+            <ol class="yj-stack">
+              <li v-for="(j, i) in d.journeys" :key="i" class="yj-jitem" :class="masterDetail && editing === i && 'yj-jitem-on'">
+                <button type="button" class="yj-jpick" :data-pick="i" :aria-current="masterDetail && editing === i ? 'true' : undefined" @click="choose(i)">
+                  <span class="yj-item-kind">Journey {{ i + 1 }} · {{ j.screens.length }} screen{{ j.screens.length === 1 ? "" : "s" }}</span>
+                  <span class="yj-title yj-block">{{ titleOf(j, i) }}</span>
+                  <span class="yj-help yj-block yj-m0">Started by {{ who(j.initiate, "anyone") }}</span>
+                </button>
+                <div v-if="!readonly" class="yj-row yj-nowrap">
                   <button type="button" class="yj-btn yj-btn-quiet yj-btn-icon" :data-move="`${i}-up`" :disabled="i === 0" :aria-label="`Move ${titleOf(j, i)} up`" :title="`Move ${titleOf(j, i)} up`" @click="moveJourney(i, -1)"><Glyph name="up" /></button>
                   <button type="button" class="yj-btn yj-btn-quiet yj-btn-icon" :data-move="`${i}-down`" :disabled="i === d.journeys.length - 1" :aria-label="`Move ${titleOf(j, i)} down`" :title="`Move ${titleOf(j, i)} down`" @click="moveJourney(i, 1)"><Glyph name="down" /></button>
                   <ConfirmAction label="Remove" :aria-label="`Remove ${titleOf(j, i)}`" :message="`Remove the journey “${titleOf(j, i)}” and its ${j.screens.length} screen${j.screens.length === 1 ? '' : 's'}?`" @confirm="removeJourney(i)" />
-                </template>
-              </div>
-            </div>
-          </li>
-        </ol>
-        <button v-if="!readonly" type="button" class="yj-btn" @click="addJourney">+ New journey</button>
-      </section>
+                </div>
+              </li>
+            </ol>
+            <button v-if="!readonly" type="button" class="yj-btn yj-mt" @click="addJourney">+ New journey</button>
+          </div>
 
-      <!-- One journey: its details, or its screens -->
-      <JourneyDesigner
-        v-else-if="(step.kind === 'journey' || step.kind === 'screens') && d.journeys[step.journey!]"
-        :key="step.key"
-        :model-value="d.journeys[step.journey!]!"
-        :part="step.kind === 'journey' ? 'details' : 'screens'"
-        :roles="d.roles"
-        :service-names="serviceNames"
-        :readonly="readonly"
-        @update:model-value="(v) => setJourney(step.journey!, v)"
-        @add-role="addRole"
-      />
+          <div v-if="editing !== null && (masterDetail || inside)" class="yj-md-detail">
+            <button v-if="!masterDetail" type="button" class="yj-back" @click="backToList"><Glyph name="back" />Journeys</button>
+            <h3 :id="id('journey-title')" class="yj-title yj-md-title" tabindex="-1">{{ titleOf(d.journeys[editing]!, editing) }}</h3>
+            <JourneyDesigner
+              :key="editing"
+              :model-value="d.journeys[editing]!"
+              part="all"
+              :roles="d.roles"
+              :service-names="serviceNames"
+              :readonly="readonly"
+              @update:model-value="(v) => setJourney(editing!, v)"
+              @add-role="addRole"
+            />
+          </div>
+        </section>
 
-      <!-- Review -->
-      <section v-else-if="step.kind === 'review'" class="yj-stack" aria-label="Review">
-        <div v-if="compiled.problems.length" class="yj-stack">
-          <h3 class="yj-title yj-small">To look at</h3>
-          <ul class="yj-stack">
-            <li v-for="(p, i) in compiled.problems" :key="i" :class="p.level === 'error' ? 'yj-alert' : 'yj-note'">{{ p.level === "error" ? "Error" : "Warning" }}: {{ p.message }}</li>
-          </ul>
+        <!-- 4 Review -->
+        <section v-else-if="step.key === 'review'" class="yj-stack" aria-label="Review">
+          <div v-if="compiled.problems.length" class="yj-stack">
+            <h3 class="yj-title yj-small">To look at</h3>
+            <ul class="yj-stack">
+              <li v-for="(p, i) in compiled.problems" :key="i" :class="p.level === 'error' ? 'yj-alert' : 'yj-note'">{{ p.level === "error" ? "Error" : "Warning" }}: {{ p.message }}</li>
+            </ul>
+          </div>
+          <p v-else class="yj-note">Everything checks out.<template v-if="!$slots.finish"> This is the last step.</template></p>
+          <ServiceSummary v-if="compiled.bundle" :bundle="compiled.bundle" />
+        </section>
+      </div>
+
+      <!-- The live preview: what a visitor sees, rebuilt as you type. -->
+      <aside v-if="preview" ref="pane" class="yj-designer-preview" aria-label="Preview">
+        <div class="yj-row yj-between">
+          <p class="yj-title yj-small yj-m0">Preview</p>
+          <p class="yj-help yj-m0">As a visitor sees it. Try a journey.</p>
         </div>
-        <p v-else class="yj-note">Everything checks out.<template v-if="!$slots.finish"> This is the last step.</template></p>
-        <ServiceSummary v-if="compiled.bundle" :bundle="compiled.bundle" />
-      </section>
+        <p v-if="!compiled.bundle" class="yj-note yj-small yj-mt" role="status">Nothing to show until the design compiles. Review lists what to fix.</p>
+        <div v-else class="yj-designer-frame">
+          <FlowPreview :bundle="compiled.bundle" :layout="resolveLayout(paneWidth)" :width="paneWidth - 24" storage-key="designer.preview" />
+        </div>
+      </aside>
     </div>
 
     <!-- Previous / Next -->
     <div class="yj-wizard-foot">
-      <button type="button" class="yj-btn" :disabled="at === 0" @click="go(at - 1)">← {{ at > 0 ? steps[at - 1]!.label : "Previous" }}</button>
-      <button v-if="!last" type="button" class="yj-btn yj-btn-primary" @click="go(at + 1)">{{ steps[at + 1]!.label }} →</button>
+      <button type="button" class="yj-btn" :disabled="at === 0" @click="go(at - 1)"><Glyph name="back" />{{ at > 0 ? STEPS[at - 1]!.label : "Previous" }}</button>
+      <button v-if="!last" type="button" class="yj-btn yj-btn-primary" @click="go(at + 1)">{{ STEPS[at + 1]!.label }} →</button>
       <div v-else class="yj-wizard-finish"><slot name="finish" :ok="!errorCount" :errors="errorCount" /></div>
     </div>
   </div>
