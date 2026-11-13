@@ -26,7 +26,7 @@ Chosen in Settings → Knowledge, or suggested by the visitor's profile (06).
 
 | ID | Requirement | Status |
 |---|---|---|
-| ANS-20 | An answer must state only what its sources say and attribute it ("The Code of Conduct Q&A says…"). | Built |
+| ANS-20 | An answer must state only what its sources say and attribute it ("The Work and employment Q&A says…"). | Built |
 | ANS-21 | An answer must end with its sources, in the form `(sources: curated:qa-020; notebook:abc; web:1)`. A web source must also show its site and address, added by the kiosk itself, not left to the model. | Built |
 | ANS-22 | An answer must not contain opinions, recommendations, value judgements or remarks of the kiosk's own. When a source says what to do, the answer reports it as what the source says. | Built |
 | ANS-23 | When nothing covers the question, the answer must say so plainly and must not fill the gap from the model's general knowledge. | Built |

@@ -158,7 +158,7 @@ export function createPassedRetriever(passages: readonly Passage[]): Retriever {
 // ---- option A: answers from the knowledge base alone ------------------------------------------------
 
 /** The knowledge source the curated Q&A belongs to (knowledge_sources.json). */
-export const CURATED_SOURCE_ID = "policies";
+export const CURATED_SOURCE_ID = "work";
 
 export type Reference = { id: string; label: string };
 export type CuratedHit = { id: string; score: number };

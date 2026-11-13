@@ -105,7 +105,7 @@ describe("on-device answers (option A)", () => {
     expect(a.kind).toBe("curated");
     expect(a.body).toBe(item.answer.trim());
     expect(a.references[0]!.id).toBe("curated:qa-020");
-    expect(a.text).toMatch(/\(sources: curated:qa-020 · Code of Conduct & Policies, “Gifts from suppliers”, moderated by [^)]+\)$/);
+    expect(a.text).toMatch(/\(sources: curated:qa-020 · Work and employment, “Gifts from suppliers”, moderated by [^)]+\)$/);
     expect(a.flag).toBeNull();
   });
 

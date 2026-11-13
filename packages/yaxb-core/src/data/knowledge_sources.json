@@ -1,50 +1,98 @@
 [
   {
-    "id": "ehr",
-    "title": "Electronic Healthcare Reports (EHR)",
-    "description": "Patient medical history that includes their diagnoses, medications, and treatment plans.",
-    "baseline_date": "Apr '24",
-    "moderator": "Elizabeth John",
-    "curator": "Manivannan S, Kesavan T"
-  },
-  {
-    "id": "diagnostics",
-    "title": "Diagnostic Reports",
-    "description": "Results of diagnostic tests and investigations, including text reports, images, and codes, used to help identify and understand a person's health condition.",
-    "baseline_date": "Apr '24",
-    "moderator": "Elizabeth Kelly",
-    "curator": "Manivannan S, Kesavan T"
-  },
-  {
-    "id": "health-wallet",
-    "title": "Health Wallet",
-    "description": "All of your concierge medical services consolidated into one complete health care experience.",
-    "baseline_date": "Apr '24",
-    "moderator": "Elizabeth Kelly",
-    "curator": "Manivannan S, Kesavan T"
-  },
-  {
-    "id": "pharmacy",
-    "title": "Pharmacy Medications",
-    "description": "Medical prescription of drugs that are taken by the patient.",
+    "id": "health",
+    "title": "Health and wellbeing",
+    "description": "For individuals: staying well, finding care, medicines and appointments. For organisations: hospitals, clinics, pharmacies and care services.",
     "baseline_date": null,
-    "moderator": "Elizabeth Kelly",
-    "curator": "Manivannan S, Kesavan T"
+    "moderator": "Kiosk moderators",
+    "curator": "Kiosk curators"
   },
   {
-    "id": "nutrition",
-    "title": "Nutrition Report",
-    "description": "Total dietary intake and particular aspects of the diet, with detailed information on foods, beverages and supplements consumed over a period of days.",
+    "id": "money",
+    "title": "Money and finance",
+    "description": "For individuals: banking, payments, savings, loans, insurance and pensions. For organisations: banks, insurers and financial services.",
     "baseline_date": null,
-    "moderator": "Elizabeth Kelly",
-    "curator": "Manivannan S, Kesavan T"
+    "moderator": "Kiosk moderators",
+    "curator": "Kiosk curators"
   },
   {
-    "id": "policies",
-    "title": "Code of Conduct & Policies",
-    "description": "Curated organisational policy Q&A (procedures, conflicts of interest, reporting concerns).",
+    "id": "public-services",
+    "title": "Government and public services",
+    "description": "For individuals: identity documents, certificates, benefits, taxes and civic services. For organisations: government offices and public agencies.",
+    "baseline_date": null,
+    "moderator": "Kiosk moderators",
+    "curator": "Kiosk curators"
+  },
+  {
+    "id": "education",
+    "title": "Education and learning",
+    "description": "For individuals: schools, courses, admissions, scholarships and skills. For organisations: schools, colleges, universities and training providers.",
+    "baseline_date": null,
+    "moderator": "Kiosk moderators",
+    "curator": "Kiosk curators"
+  },
+  {
+    "id": "work",
+    "title": "Work and employment",
+    "description": "For individuals: jobs, workplace rights, conduct and safety at work. For organisations: employers, HR and workplace policies. Holds the kiosk's curated workplace Q&A.",
     "baseline_date": "Apr '24",
-    "moderator": "Elizabeth John",
-    "curator": "Manivannan S, Kesavan T"
+    "moderator": "Kiosk moderators",
+    "curator": "Kiosk curators"
+  },
+  {
+    "id": "housing",
+    "title": "Housing and utilities",
+    "description": "For individuals: renting, buying, repairs, electricity, water and gas. For organisations: property, real estate and utility providers.",
+    "baseline_date": null,
+    "moderator": "Kiosk moderators",
+    "curator": "Kiosk curators"
+  },
+  {
+    "id": "travel",
+    "title": "Travel and transport",
+    "description": "For individuals: tickets, timetables, driving and travel documents. For organisations: transport, travel, tourism and hospitality.",
+    "baseline_date": null,
+    "moderator": "Kiosk moderators",
+    "curator": "Kiosk curators"
+  },
+  {
+    "id": "shopping",
+    "title": "Shopping and consumer rights",
+    "description": "For individuals: buying, returns, warranties and complaints. For organisations: retail, e-commerce and customer service.",
+    "baseline_date": null,
+    "moderator": "Kiosk moderators",
+    "curator": "Kiosk curators"
+  },
+  {
+    "id": "legal",
+    "title": "Legal help and rights",
+    "description": "For individuals: rights, contracts, disputes and where to get legal advice. For organisations: legal services and compliance.",
+    "baseline_date": null,
+    "moderator": "Kiosk moderators",
+    "curator": "Kiosk curators"
+  },
+  {
+    "id": "digital",
+    "title": "Technology and online safety",
+    "description": "For individuals: phones, internet, accounts, scams and privacy. For organisations: telecoms, IT and digital services.",
+    "baseline_date": null,
+    "moderator": "Kiosk moderators",
+    "curator": "Kiosk curators"
+  },
+  {
+    "id": "agriculture",
+    "title": "Farming and food",
+    "description": "For individuals: crops, livestock, food safety and nutrition. For organisations: agriculture, food production and supply.",
+    "baseline_date": null,
+    "moderator": "Kiosk moderators",
+    "curator": "Kiosk curators"
+  },
+  {
+    "id": "community",
+    "title": "Community and family",
+    "description": "For individuals: family support, older people, disability, faith and local events. For organisations: charities, NGOs and community groups.",
+    "baseline_date": null,
+    "moderator": "Kiosk moderators",
+    "curator": "Kiosk curators"
   }
 ]
