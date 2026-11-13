@@ -69,7 +69,7 @@ describe("suggested settings", () => {
       skills: { "notebook-research": true, "summarise-document": true },
     });
     expect(prefs.kiosk).toEqual({ speakResponses: true, layout: "mini", speechRate: 0.9 });
-    expect(prefs.highlight).toEqual(["open", "summarise", "briefing", "find", "check-in"]);
+    expect(prefs.highlight).toEqual(["open", "summarise", "briefing", "find", "visit-check-in"]);
     expect(prefs.suggestions.every((s) => s.label && s.because)).toBe(true);
   });
 
@@ -80,7 +80,8 @@ describe("suggested settings", () => {
       personality: Object.fromEntries(PERSONALITY_QUESTIONS.map((q) => [q.id, q.options[0]!.value])),
     });
     const variants = [all, ...PERSONALITY_QUESTIONS.flatMap((q) => q.options.map((o) => ({ ...all, personality: { [q.id]: o.value } })))];
-    const items = new Set(kioskContent.services.flatMap((s) => s.items.map((i) => i.key)));
+    // Built-in items, and the catalogue's seeded services' items (shown once a kiosk loads them).
+    const items = new Set([...kioskContent.services, ...kioskContent.catalogue.map((c) => c.service)].flatMap((s) => s.items.map((i) => i.key)));
     for (const v of variants) {
       const p = preferencesFrom(v);
       for (const t of Object.keys(p.agent.tools ?? {})) expect(TOOL_OPTIONS.map((o) => o.id as string)).toContain(t);

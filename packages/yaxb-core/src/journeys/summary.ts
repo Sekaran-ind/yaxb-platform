@@ -115,6 +115,8 @@ function display(field: Field, value: unknown): string {
       return LANGUAGES.find((l) => l.code === value)?.label ?? String(value);
     case "source":
       return String((value as { title?: unknown } | null)?.title ?? "");
+    case "password":
+      return "••••••";
     default:
       return String(value).trim();
   }

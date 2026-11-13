@@ -51,7 +51,8 @@ const ring = computed(() => (props.suggested ? "ring-2 ring-info/40" : ""));
       v-else
       :id="id"
       :class="cn('input', ring)"
-      :type="field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : field.entity === 'email' ? 'email' : field.entity === 'phone' ? 'tel' : 'text'"
+      :type="field.type === 'password' ? 'password' : field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : field.entity === 'email' ? 'email' : field.entity === 'phone' ? 'tel' : 'text'"
+      :autocomplete="field.type === 'password' ? 'off' : undefined"
       :inputmode="field.type === 'number' ? 'decimal' : undefined"
       step="any"
       :placeholder="field.placeholder"

@@ -166,8 +166,8 @@ For editing, there's a design model with converters both ways: `ServiceDesign`, 
 
 The Vue components are:
 
-- `ServiceDesigner`: the service's journeys, plus a `RolesPanel` side panel to add roles and assign who starts and finishes each journey.
-- `JourneyDesigner`: one journey's screens.
+- `ServiceDesigner`: the whole service as steps, with a breadcrumb and Previous/Next. The steps run Service → Roles → Journeys → each journey's details and screens → Review. The `RolesPanel` adds roles and assigns who starts and finishes each journey.
+- `JourneyDesigner`: one journey. `part` shows its details, its screens, or both.
 - `ServiceSummary`: the service at a glance.
 
 ## Roles

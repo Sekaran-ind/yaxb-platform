@@ -45,7 +45,9 @@ const journey = computed(() => (props.openJourney ? kioskJourneys.value.find((j)
 // The native app is for visitors: staff work in the web kiosk, where their sign-in is a cookie.
 const offered = computed(() => servicesFor(kioskContent.services, { layout: props.layout, journeys: kioskJourneys.value.map((j) => j.id) }).filter((s) => !(NATIVE && s.id === "staff")));
 const forYou = computed(() => {
-  const items = offered.value.flatMap((s) => s.items);
+  // Built-in items, and the items of loaded catalogue services this viewer may start.
+  const fromCatalogue = loadedServices.value.flatMap((s) => s.service.items.filter((i) => s.meta.journeys.find((j) => j.id === i.journey)?.allowed));
+  const items = [...offered.value.flatMap((s) => s.items), ...fromCatalogue];
   return (props.highlight ?? []).map((key) => items.find((i) => i.key === key)).filter((i): i is ServiceItem => Boolean(i));
 });
 const journeyOf = (item: ServiceItem) => (item.journey ? kioskJourneys.value.find((j) => j.id === item.journey) : undefined);

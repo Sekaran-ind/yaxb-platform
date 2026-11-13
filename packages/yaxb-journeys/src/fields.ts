@@ -1,7 +1,7 @@
 // Fields: one question on a form. Journey ask steps and questionnaires use the same fields.
 //
 //   - id: severity
-//     type: select                  text, textarea, select, boolean, number, date, source, language
+//     type: select                  text, textarea, password, select, boolean, number, date, source, language
 //     label: How bad is it
 //     required: true
 //     options: [{ value: mild, label: Mild }, …]      a select needs options
@@ -12,9 +12,12 @@
 // `when` uses the journeys' safe condition language. It can read `values.<field>` (this form),
 // `answers.<step>.<field>` (earlier steps) and `context.*`. A hidden field is never required and
 // its answer is kept as null.
+//
+// A `password` field is a masked input. Slot filling never fills it (from speech or the model), and
+// run summaries show it masked; it is still in `answers`, so a result template could show it.
 import { conditionPaths, conditionProblem, holds, type Scope } from "./expressions.js";
 
-export const FIELD_TYPES = ["text", "textarea", "select", "boolean", "number", "date", "source", "language"] as const;
+export const FIELD_TYPES = ["text", "textarea", "password", "select", "boolean", "number", "date", "source", "language"] as const;
 export const FIELD_ENTITIES = ["person", "location", "organization", "email", "phone"] as const;
 export type FieldEntity = (typeof FIELD_ENTITIES)[number];
 export type FieldType = (typeof FIELD_TYPES)[number];
@@ -95,7 +98,7 @@ export function fieldProblem(field: Field, value: unknown): string | null {
   const empty = value === undefined || value === null || value === "";
   if (empty) return field.required ? `${field.label} is required.` : null;
   if (field.type === "select" && !field.options?.some((o) => o.value === value)) return `Choose one of the options for ${field.label}.`;
-  if ((field.type === "text" || field.type === "textarea") && typeof value !== "string") return `${field.label} must be text.`;
+  if ((field.type === "text" || field.type === "textarea" || field.type === "password") && typeof value !== "string") return `${field.label} must be text.`;
   if (field.type === "boolean" && typeof value !== "boolean") return `${field.label} must be yes or no.`;
   if (field.type === "number" && !Number.isFinite(typeof value === "string" ? Number(value) : value)) return `${field.label} must be a number.`;
   if (field.type === "date" && !(typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value))) return `${field.label} must be a date.`;

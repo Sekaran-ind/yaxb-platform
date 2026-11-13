@@ -12,15 +12,17 @@ import type { Library, LibraryEntry, LibraryPermissions } from "@sekaran-ind/yax
 import { roleLabel, type Role } from "@sekaran-ind/yaxb-journeys";
 import { provideIcons } from "@sekaran-ind/yaxb-journeys/vue";
 import "@sekaran-ind/yaxb-journeys/style.css";
-import { Archive, ArchiveRestore, ExternalLink, FolderPlus, LogOut, Pencil, Plus, Trash2 } from "@lucide/vue";
+import { Archive, ArchiveRestore, ExternalLink, FolderPlus, Pencil, Plus, Trash2 } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import CatalogueInfo from "@/components/catalogue/CatalogueInfo.vue";
 import EntryStatus from "@/components/catalogue/EntryStatus.vue";
+import AdaptiveNav, { type NavScreen } from "@/components/kiosk/AdaptiveNav.vue";
+import { useWidth } from "@/composables/width";
 import ServiceWorkspace from "@/components/catalogue/ServiceWorkspace.vue";
 import ModeratorSignIn from "@/components/moderation/ModeratorSignIn.vue";
 import { catalogue, loadCatalogue, roleCatalogue, type CatalogueService } from "@/composables/library";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/cn";
 import { iconFor } from "@/lib/icons";
 
 provideIcons(iconFor);
@@ -80,13 +82,6 @@ const libraryName = (id: string) => overview.value?.libraries.find((l) => l.id =
 const published = (entryId: string) => catalogue.value.find((s) => s.entry_id === entryId) ?? null;
 const kioskLink = (s: CatalogueService) => `/kiosk?screen=services&load=${encodeURIComponent(s.entry_id)}`;
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString() : "");
-const tabs = computed(() => [
-  { id: "catalogue", label: `Catalogue (${catalogue.value.length})` },
-  { id: "mine", label: me.value?.can.view ? "All services" : "My services" },
-  ...(can.value?.view ? [{ id: "review", label: `Review${overview.value?.queue.length ? ` (${overview.value.queue.length})` : ""}` }] : []),
-  { id: "roles", label: "Roles" },
-  ...(can.value?.view ? [{ id: "libraries", label: "Libraries" }] : []),
-]);
 
 // ---- roles ----------------------------------------------------------------------------------
 /** Every role: built in, the organisation's, and those services define (from the catalogue). */
@@ -136,71 +131,67 @@ async function libCall(fn: () => Promise<unknown>) {
   }
 }
 
+// ---- the frame ------------------------------------------------------------------------------
+const { el: pane, width: paneWidth } = useWidth(900);
+const navScreens = computed<NavScreen[]>(() => [
+  { id: "catalogue", label: "Catalogue", icon: "library", badge: String(catalogue.value.length) },
+  { id: "mine", label: me.value?.can.view ? "All services" : "My services", icon: "clipboard-list", badge: String(overview.value?.services.length ?? 0) },
+  ...(can.value?.view ? [{ id: "review", label: "Review", icon: "message-square", badge: overview.value?.queue.length ? String(overview.value.queue.length) : undefined }] : []),
+  { id: "roles", label: "Roles", icon: "user-round" },
+  ...(can.value?.view ? [{ id: "libraries", label: "Libraries", icon: "notebook" }] : []),
+]);
+const who = computed(() => (me.value ? { name: me.value.name, guest: me.value.guest, roles: me.value.roles.map((r) => roleLabel(r, allRoles.value)).join(", ") } : null));
+const counts = computed(() => ({ published: catalogue.value.length, mine: overview.value?.services.length ?? 0, review: can.value?.view ? (overview.value?.queue.length ?? 0) : null }));
+const STATUS: Record<string, string> = { draft: "Draft", in_review: "In review", accepted: "Published", rejected: "Rejected", archived: "Archived" };
+const current = computed(() => {
+  if (!service.value) return null;
+  if (service.value === "new") return { title: "A new service", status: "Not saved yet" };
+  const e = overview.value?.services.find((x) => x.id === service.value);
+  if (e) return { title: e.title, status: `${STATUS[e.status]} · revision ${e.revision}` };
+  const p = published(service.value);
+  return p ? { title: p.title, status: "Published · read-only" } : null;
+});
+
 // After signing in, the overview changes (who you are, what you see).
 watch(signingIn, (v) => !v && void load());
 </script>
 
 <template>
-  <section class="bg-canvas py-8 md:py-12">
-    <div class="mx-auto max-w-[1440px] px-4 sm:px-6">
-      <header class="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div class="max-w-3xl">
-          <h1 class="text-2xl font-semibold tracking-[-0.03em] text-ink md:text-3xl">Service catalogue</h1>
-          <p class="mt-2 text-pretty">Design a service: its journeys, the screens of each journey, and the roles that start and finish them. A reviewer publishes it, and any kiosk can load it.</p>
-        </div>
-        <div v-if="me" class="text-right text-sm">
-          <template v-if="me.guest">
-            <p class="text-gray-600">Designing as a guest</p>
-            <button type="button" class="font-medium text-ink hover:underline" @click="signingIn = !signingIn">Staff? Sign in</button>
-          </template>
-          <template v-else>
-            <p class="text-ink">{{ me.name }}</p>
-            <p class="text-xs text-gray-500">
-              {{ me.roles.map((r) => roleLabel(r, allRoles)).join(", ") }}
-              <button v-if="!me.admin" type="button" class="ml-1 inline-flex items-center gap-1 align-middle text-gray-500 hover:text-ink" @click="signOut"><LogOut class="size-3.5" aria-hidden="true" /> Sign out</button>
-            </p>
-          </template>
-        </div>
-      </header>
-      <ModeratorSignIn v-if="signingIn" class="mb-4" why="Sign in with your moderator key to see every service, review and manage roles." @signed-in="signingIn = false" />
-      <p v-if="error" role="alert" class="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-red-800">{{ error }}</p>
+  <!-- The catalogue as a kiosk: one frame, an information panel where the kiosk has its player, and the catalogue's screens. -->
+  <div class="mx-auto max-w-7xl px-3 py-5 sm:px-5 sm:py-6">
+    <div class="grid gap-2 rounded-[2rem] border border-gray-200/70 bg-surface p-2 shadow-[var(--shadow-lift)] lg:grid-cols-[minmax(0,1fr)_minmax(0,2.5fr)]">
+      <CatalogueInfo
+        class="lg:sticky lg:top-20 lg:min-h-[640px] lg:self-start"
+        :who="who"
+        :counts="counts"
+        :current="current"
+        :compact="Boolean(service)"
+        @new-service="go({ service: 'new' })"
+        @sign-in="signingIn = true"
+        @sign-out="signOut"
+      />
+      <div ref="pane" class="min-w-0 px-2 pt-3 pb-3 sm:px-3">
+        <ModeratorSignIn v-if="signingIn" class="mb-4" why="Sign in with your moderator key to see every service, review and manage roles." @signed-in="signingIn = false" />
+        <p v-if="error" role="alert" class="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-red-800">{{ error }}</p>
 
-      <template v-if="overview && me && can">
-        <ServiceWorkspace
-          v-if="service"
-          :key="service"
-          :entry-id="service === 'new' ? null : service"
-          :me="me"
-          :roles="overview.roles"
-          :libraries="overview.libraries"
-          :published="service === 'new' ? null : published(service)"
-          @close="go({ service: null })"
-          @created="(id) => (changed(), go({ service: id }))"
-          @changed="changed"
-        />
-
-        <template v-else>
-          <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
-            <div class="flex flex-wrap gap-0.5 rounded-full bg-mist p-0.5" role="tablist" aria-label="Service catalogue">
-              <button
-                v-for="t in tabs"
-                :key="t.id"
-                type="button"
-                role="tab"
-                :aria-selected="view === t.id"
-                :class="cn('rounded-full px-3.5 py-1.5 text-sm font-medium', view === t.id ? 'bg-surface text-ink shadow-sm' : 'text-gray-500 hover:text-ink')"
-                @click="go({ view: t.id === 'catalogue' ? null : t.id })"
-              >
-                {{ t.label }}
-              </button>
-            </div>
-            <button type="button" class="btn-primary" @click="go({ service: 'new' })"><Plus class="size-4" aria-hidden="true" /> New service</button>
-          </div>
-
-          <!-- Published services -->
-          <section v-if="view === 'catalogue'" aria-label="Published services">
+        <template v-if="overview && me && can">
+          <ServiceWorkspace
+            v-if="service"
+            :key="service"
+            :entry-id="service === 'new' ? null : service"
+            :me="me"
+            :roles="overview.roles"
+            :libraries="overview.libraries"
+            :published="service === 'new' ? null : published(service)"
+            @close="go({ service: null })"
+            @created="(id) => (changed(), go({ service: id }))"
+            @changed="changed"
+          />
+          <AdaptiveNav v-else :screens="navScreens" storage-key="catalogue" :active="view" :width="paneWidth" @update:active="(v) => go({ view: v === 'catalogue' ? null : v })">
+            <template #catalogue>
+              <section aria-label="Published services">
             <p v-if="!catalogue.length" class="rounded-lg bg-mist px-4 py-3 text-sm text-gray-600">Nothing is published yet. Design a service and send it for review.</p>
-            <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <ul class="grid gap-3 @lg:grid-cols-2 @4xl:grid-cols-3">
               <li v-for="s in catalogue" :key="s.entry_id" class="card flex flex-col gap-2 p-4">
                 <div class="flex items-start gap-3">
                   <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-mist text-ink"><component :is="iconFor(s.icon ?? undefined)" v-if="iconFor(s.icon ?? undefined)" class="size-5" aria-hidden="true" /></span>
@@ -221,9 +212,9 @@ watch(signingIn, (v) => !v && void load());
               </li>
             </ul>
           </section>
-
-          <!-- My services / all services -->
-          <section v-else-if="view === 'mine'" aria-label="Services" class="space-y-3">
+            </template>
+            <template #mine>
+              <section aria-label="Services" class="space-y-3">
             <p v-if="me.guest" class="text-sm text-gray-600">The services you designed in this browser. Sign in as a team member to keep them with your key instead.</p>
             <div class="flex flex-wrap gap-2">
               <select v-if="can.view" v-model="libraryFilter" class="input w-auto" aria-label="Library">
@@ -240,7 +231,7 @@ watch(signingIn, (v) => !v && void load());
               </select>
             </div>
             <p v-if="!services.length" class="rounded-lg bg-mist px-4 py-3 text-sm text-gray-600">No services here yet.</p>
-            <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <ul class="grid gap-3 @lg:grid-cols-2 @4xl:grid-cols-3">
               <li v-for="s in services" :key="s.id">
                 <button type="button" class="card flex w-full flex-col items-start gap-1 p-4 text-left hover:border-gray-300" @click="go({ service: s.id })">
                   <span class="flex w-full items-start justify-between gap-2"><span class="font-semibold text-ink">{{ s.title }}</span><EntryStatus :status="s.status" /></span>
@@ -250,12 +241,12 @@ watch(signingIn, (v) => !v && void load());
               </li>
             </ul>
           </section>
-
-          <!-- Review queue -->
-          <section v-else-if="view === 'review'" aria-label="Waiting for review" class="space-y-3">
+            </template>
+            <template #review>
+              <section aria-label="Waiting for review" class="space-y-3">
             <p class="text-sm text-gray-600">Open each service, read its summary and try it in the preview, then accept it (kiosks can load it) or reject it with a note. Nobody reviews their own.</p>
             <p v-if="!overview.queue.length" class="rounded-lg bg-mist px-4 py-3 text-sm text-gray-600">Nothing is waiting for review.</p>
-            <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <ul class="grid gap-3 @lg:grid-cols-2 @4xl:grid-cols-3">
               <li v-for="s in overview.queue" :key="s.id">
                 <button type="button" class="card flex w-full flex-col items-start gap-1 p-4 text-left hover:border-gray-300" @click="go({ service: s.id })">
                   <span class="font-semibold text-ink">{{ s.title }}</span>
@@ -264,9 +255,9 @@ watch(signingIn, (v) => !v && void load());
               </li>
             </ul>
           </section>
-
-          <!-- Roles -->
-          <section v-else-if="view === 'roles'" aria-label="Roles" class="max-w-4xl space-y-3">
+            </template>
+            <template #roles>
+              <section aria-label="Roles" class="max-w-4xl space-y-3">
             <p class="text-sm text-gray-600">
               Each service defines the roles that deliver it, in the designer's side panel. Admin, Moderator and Reviewer are built in; administrators can add roles for the whole organisation. Team members get roles under
               Administration in the kiosk, and a kiosk offers a journey to the roles that start it.
@@ -283,10 +274,10 @@ watch(signingIn, (v) => !v && void load());
               </li>
             </ul>
             <template v-if="can.manage">
-              <form v-if="newRole" class="card grid gap-2 p-3 sm:grid-cols-2" @submit.prevent="addRole">
+              <form v-if="newRole" class="card grid gap-2 p-3 @lg:grid-cols-2" @submit.prevent="addRole">
                 <label class="text-sm"><span class="mb-1 block text-gray-600">Name</span><input v-model="newRole.label" class="input" required maxlength="40" placeholder="Front desk" /></label>
                 <label class="text-sm"><span class="mb-1 block text-gray-600">What they do</span><input v-model="newRole.description" class="input" maxlength="200" /></label>
-                <div class="flex gap-2 sm:col-span-2">
+                <div class="flex gap-2 @lg:col-span-2">
                   <button type="submit" class="btn-primary">Add role</button>
                   <button type="button" class="btn-ghost" @click="newRole = null">Cancel</button>
                 </div>
@@ -294,9 +285,9 @@ watch(signingIn, (v) => !v && void load());
               <button v-else type="button" class="btn-light" @click="newRole = { label: '', description: '' }"><Plus class="size-4" aria-hidden="true" /> Add an organisation role</button>
             </template>
           </section>
-
-          <!-- Libraries -->
-          <section v-else-if="view === 'libraries'" aria-label="Libraries" class="max-w-4xl space-y-3">
+            </template>
+            <template #libraries>
+              <section aria-label="Libraries" class="max-w-4xl space-y-3">
             <p class="text-sm text-gray-600">Libraries group services. A guest's services go to the default library; members choose one when they create a service.</p>
             <p v-if="libError" role="alert" class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-red-800">{{ libError }}</p>
             <ul class="divide-y divide-gray-100 rounded-xl bg-surface ring-1 ring-gray-100">
@@ -321,10 +312,10 @@ watch(signingIn, (v) => !v && void load());
               </li>
             </ul>
             <template v-if="can.edit">
-              <form v-if="newLib" class="card grid gap-2 p-3 sm:grid-cols-2" @submit.prevent="libCall(() => api('/api/library/libraries', { name: newLib!.name, ...(newLib!.description.trim() ? { description: newLib!.description } : {}) }))">
+              <form v-if="newLib" class="card grid gap-2 p-3 @lg:grid-cols-2" @submit.prevent="libCall(() => api('/api/library/libraries', { name: newLib!.name, ...(newLib!.description.trim() ? { description: newLib!.description } : {}) }))">
                 <label class="text-sm"><span class="mb-1 block text-gray-600">Name</span><input v-model="newLib.name" class="input" required maxlength="80" /></label>
                 <label class="text-sm"><span class="mb-1 block text-gray-600">Description</span><input v-model="newLib.description" class="input" maxlength="400" /></label>
-                <div class="flex gap-2 sm:col-span-2">
+                <div class="flex gap-2 @lg:col-span-2">
                   <button type="submit" class="btn-primary">Create library</button>
                   <button type="button" class="btn-ghost" @click="newLib = null">Cancel</button>
                 </div>
@@ -332,8 +323,10 @@ watch(signingIn, (v) => !v && void load());
               <button v-else type="button" class="btn-light" @click="newLib = { name: '', description: '' }"><FolderPlus class="size-4" aria-hidden="true" /> New library</button>
             </template>
           </section>
+            </template>
+          </AdaptiveNav>
         </template>
-      </template>
+      </div>
     </div>
-  </section>
+  </div>
 </template>

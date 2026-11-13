@@ -1,11 +1,11 @@
 // Journey summaries (JRN-20..22): built from the definitions, so they never go stale.
 import { describe, expect, it } from "vitest";
 import { planTurn } from "../src/agent/index.js";
-import { JOURNEY_SERVICES, kioskContent } from "../src/content/index.js";
-import { createRunner, journeysText, SERVICE_INFO, summarizeJourney, summarizeRun, type Journey } from "../src/journeys/index.js";
+import { journeyById, JOURNEY_SERVICES, kioskContent } from "../src/content/index.js";
+import { compileJourney, createRunner, journeysText, SERVICE_INFO, summarizeJourney, summarizeRun, type Journey } from "../src/journeys/index.js";
 import { DEFAULT_AGENT_SETTINGS } from "../src/settings/index.js";
 
-const journey = (id: string) => kioskContent.journeys.find((j) => j.id === id)!;
+const journey = (id: string) => journeyById(id)!;
 
 describe("journey summaries", () => {
   it("describe every service a journey may use", () => {
@@ -39,7 +39,7 @@ describe("journey summaries", () => {
     expect(journeysText(kioskContent.journeys).split("\n")).toHaveLength(kioskContent.journeys.length);
     const prompt = planTurn({ ...DEFAULT_AGENT_SETTINGS, harness: "deep" }, { hasNotebook: false }).options.promptAddendum;
     expect(prompt).toContain("Guided services, from their definitions:");
-    expect(prompt).toContain("Check in for your visit");
+    expect(prompt).toContain("Translate text");
   });
 });
 
@@ -60,5 +60,18 @@ describe("a finished run", () => {
     expect(run.result?.title).toBe("Check-in: Ravi");
     expect(run.markdown).toContain("## Your answers\n- **Your name**: Ravi");
     expect(run.markdown).toContain("- ✓ Your visit");
+  });
+});
+
+describe("masked answers", () => {
+  it("show a password as dots in the run summary", async () => {
+    const r = compileJourney("kind: journey\nid: pin\ntitle: PIN\nstart: ask\nsteps:\n  ask: { ask: Your PIN, fields: [{ id: pin, type: password, label: PIN }], next: done }\n  done: { final: true }\n");
+    if (!r.ok) throw new Error(r.problems.join("; "));
+    const runner = createRunner(r.journey);
+    await runner.start();
+    await runner.answer({ pin: "4321" });
+    const s = summarizeRun(r.journey, runner.state);
+    expect(s.answers).toEqual([{ step: "ask", field: "PIN", value: "••••••" }]);
+    expect(s.markdown).not.toContain("4321");
   });
 });

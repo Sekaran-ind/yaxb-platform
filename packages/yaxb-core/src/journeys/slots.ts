@@ -57,8 +57,8 @@ const fold = (s: unknown) =>
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
 const TODAY = () => new Date().toISOString().slice(0, 10);
 
-/** Fields slot filling can fill: notebook-source pickers are chosen on screen. */
-const fillable = (fields: readonly Field[]) => fields.filter((f) => f.type !== "source");
+/** Fields slot filling can fill: notebook-source pickers are chosen on screen, and passwords are only ever typed. */
+const fillable = (fields: readonly Field[]) => fields.filter((f) => f.type !== "source" && f.type !== "password");
 
 function dateFrom(text: string): string | null {
   const t = text.toLowerCase();

@@ -88,7 +88,7 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
 - **Notebook** (`notebook/`): sent by the browser each turn and laid out in the deep agent's virtual filesystem: `/notebook/README.md`, `/notebook/sources/<id>.md`, `/memories/AGENTS.md` (Deep Agents `memory`), `/skills/<name>/SKILL.md` (Deep Agents `skills`, from `content/skills`, never from the client). Paths under those roots are rebuilt every turn; a client can't supply them. `search_knowledge_base` also searches the notebook via `config.configurable.notebook`.
 - **Storage**: `indexeddb` / `session` keep the conversation in the browser; the core returns it in a `state` event (with updated memory) instead of saving it. `server` saves to the ThreadStore (D1). Client-held threads are validated (`clientThreadSchema`: no system messages, size cap).
 - **MCP** (`mcp/`): Streamable HTTP only, servers from the `MCP_SERVERS` env (JSON), tools optionally allowlisted, results wrapped as untrusted data. Never a URL from the visitor.
-- **Content** (`packages/yaxb-core/content/`): skills (SKILL.md), journeys (`*.journey.yaml`), services (`*.service.yaml`), `screens.yaml`. `tools/build-content.mjs` bundles them into `src/data/content.json` (run by `build` and `test`); `src/content` compiles and validates; `content.test.ts` fails on any problem. Journey service names must be in `JOURNEY_SERVICES`; screen components in `SCREEN_COMPONENTS`.
+- **Content** (`packages/yaxb-core/content/`): skills (SKILL.md), journeys (`*.journey.yaml`), services (`*.service.yaml`), `screens.yaml`, and `catalogue/*.service.yaml` (nested services seeded into the Service Catalogue, not built in; `kioskContent.catalogue`, and `journeyById` finds their journeys too). `tools/build-content.mjs` bundles them into `src/data/content.json` (run by `build` and `test`); `src/content` compiles and validates; `content.test.ts` fails on any problem. Journey service names must be in `JOURNEY_SERVICES`; screen components in `SCREEN_COMPONENTS`.
 - **Journeys** use clinux-core's step keys (ask/fields, service/with, decide, next, final/result). Conditions and `{{answers.x.y}}` templates are a small safe language (`journeys/expressions.ts`, no eval). The web registers handlers in `KioskShell.tsx`: `agent.ask`, `offline.*` (Transformers.js workers via `lib/browser/offline.ts`), `notebook.add|remember`, `speech.speak`.
 - **Screens/layouts** (`screens/`): mini / pod / full chosen by width (`resolveLayout`) or by the visitor; `AdaptiveNav.vue` is the Vue port of clinux-core's AdaptiveSectionNav (tabs, sidebar, accordion, panes; compact menu under 768px).
 - Web browser storage is `lib/browser/store.ts` (IndexedDB or in-memory); documents are read in the browser (`lib/browser/documents.ts`, pdf.js for PDFs).
@@ -118,7 +118,9 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
   - Fields may carry `description`, `keywords` and `entity`; types now include `number` and `date`.
   - The browser runs it in `lib/browser/slots.ts` (NER: `Xenova/bert-base-multilingual-cased-ner-hrl` in `embed.worker.ts`).
   - The model pass is `kiosk.extract()` / `POST /api/agent/extract`. The server looks the fields up from journey content, `fieldsJsonSchema` is sent as `response_format: json_schema` (Ollama and llama.cpp compile it to a GBNF grammar), and `checkExtracted` validates the result again.
-  - UI: the "Say or type it" box in `JourneyPanel.vue`. Example: `visit-check-in.journey.yaml`.
+  - UI: the "Say or type it" box in `JourneyPanel.vue`. Example: the check-in journey in `content/catalogue/visits.service.yaml`.
+  - `password` fields are never filled (`fillable` skips them), never sent to the model, and are masked in `summarizeRun`.
+  - Catalogue journeys: `KioskDeps.journeyFields` (the Worker's `catalogueFields`) looks their fields up in the published catalogue.
 
 ## Profiles and the activity log
 
@@ -219,7 +221,10 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
 - **Package**:
   - `roles.ts`: `DEFAULT_ROLES` (administrator shown as Admin, moderator, reviewer), `VISITOR_ROLE`, `canInitiate`, `roleLabel`.
   - `forms.ts`: `ServiceDesign`/`JourneyDesign` with `designFromDoc`/`designToDoc` (screens are `StepForm`s, questions as YAML text). New journeys have no starters, which means anyone. Also `idFromName`, `serviceTemplate`, and the older flat converters.
-  - Vue: `ServiceDesigner` (details, journeys, and the `RolesPanel` side panel: add roles, a role × journey matrix of starts/finishes), `JourneyDesigner` (screens), `ServiceSummary`, `RolePicker`, `YamlEditor`.
+  - Vue:
+    - `ServiceDesigner` is a sequence of steps with a breadcrumb, a step picker, a progress bar and Previous/Next: Service → Roles (`RolesPanel`: add roles, the role × journey matrix) → Journeys (list, reorder, add) → each journey's Details then Screens (`JourneyDesigner part="details"|"screens"`, which can also add a role) → Review (compiles the design: problems and `ServiceSummary`).
+    - Also `RolePicker` and `YamlEditor`.
+  - Field types include `password` (a masked input).
   - `checkDocument(yaml, others, options)` checks one service alone.
 - **Core** `library/` (export `./library`):
   - Entries are nested services (kind `service`) with an owner (`owner_id`: a member id, `admin`, or `guest:<clientId>`), revisions, `published_yaml`, and status draft → in_review → accepted/rejected, plus archived.
@@ -228,6 +233,7 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
     - Anyone may design. A guest sees and changes only their own services, and at most `MAX_GUEST_SERVICES` (20).
     - view = any member; edit = administrator/moderator/curator; review = reviewer/administrator, never your own; manage = administrator.
   - Service ids are unique across the catalogue. A service without a library goes to the "Service catalogue" library, which is created on first use.
+  - `seed(yamls)` publishes the kiosk's own services (`content/catalogue`, owner `system`) once each. A service id the catalogue already has, even archived, is left alone. The Worker's `catalogue(env)` seeds once per isolate before every catalogue route.
   - `published(viewerRoles)` returns `{ roles, services: [{ entry_id, library, roles, journeys: [{ initiate, complete, allowed }], yaml }] }`. `roles` combines the built-in, organisation and service-defined roles. `auditTrail(actor, id)` reads the audit log by target.
   - Stores: memory and D1 (migrations 0006 and 0007: owner columns, audit by target). Tests run on both.
   - Audit actor type `guest`.
@@ -236,7 +242,9 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
   - `GET /api/library/published` is public. `/api/library` (overview: me, roles, libraries, services, queue), `POST /api/library/services` (rate-limited for guests), `/api/library/entries/:id[/audit|/submit|/review|/archive|/restore]`, plus roles and libraries routes.
   - A member's roles may be built in, organisation roles or published services' roles.
 - **Web**:
-  - `/catalogue` (`pages/CataloguePage.vue`, linked from the navbar and the home page; `/studio` redirects to it). Its tabs are catalogue, mine/all, review, roles and libraries. `?service=<id>|new` opens `components/catalogue/ServiceWorkspace.vue` (Design, YAML, Preview, Summary, Audit, History).
+  - `/catalogue` (`pages/CataloguePage.vue`, linked from the navbar and the home page; `/studio` redirects to it) is framed like the kiosk:
+    - The kiosk's frame holds `CatalogueInfo` (dark, where the kiosk has its player: what the catalogue is, the steps, counts, who you are, New service, Open the kiosk, sign in or out).
+    - The kiosk's `AdaptiveNav` holds the screens: catalogue, mine/all, review, roles and libraries. `?service=<id>|new` opens `components/catalogue/ServiceWorkspace.vue` (Design, YAML, Preview, Summary, Audit, History).
   - The kiosk keeps its built-in services. Services → "From the Service Catalogue" loads published services (`composables/library.ts`, the choice kept in localStorage `yaxb.kiosk.catalogue`; `/kiosk?load=<entry id>` loads one). Journeys a viewer can't start show locked with the roles that start them.
   - JourneyPanel says "Next: <role> will complete this".
   - Not built: the handover queue to the finishing role (LIB-12); server-side slot filling for catalogue journeys.

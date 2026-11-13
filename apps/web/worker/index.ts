@@ -9,7 +9,7 @@ import { createMemoryRateLimiter } from "@sekaran-ind/yaxb-core/stores";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { settings, stringEnv, type Bindings } from "./env";
-import { kiosk, library, moderators, reviews } from "./kiosk";
+import { catalogue, kiosk, library, moderators, reviews } from "./kiosk";
 import { ADMIN_ACTOR_ID, LibraryError, MAX_ENTRY_BYTES, type LibraryActor } from "@sekaran-ind/yaxb-core/library";
 import { proposalEntry, ReviewError, type Reviewer } from "@sekaran-ind/yaxb-core/reviews";
 import { auditEvent, looksLikeKey, MODERATOR_ROLES, statusOf, TeamRuleError } from "@sekaran-ind/yaxb-core/moderators";
@@ -516,6 +516,7 @@ async function libraryActor(c: Context<AppEnv>): Promise<LibraryActor> {
 
 /** Run a catalogue action, turning its refusals into JSON errors. Guests' creating and submitting are rate limited. */
 async function libraryCall(c: Context<AppEnv>, fn: (a: LibraryActor, body: unknown) => Promise<unknown>, { limited = false } = {}) {
+  await catalogue(c.env);
   const actor = await libraryActor(c);
   if (limited && actor.guest && !(await withinLimit("form", c.env.FORM_LIMITER, `catalogue:${actor.id}`))) return jsonError(c, 429, "Too many requests. Please wait a minute.");
   const body = c.req.method === "GET" || c.req.method === "DELETE" ? null : (await readJson(c, MAX_ENTRY_BYTES * 2 + 4096)).body;
@@ -533,7 +534,7 @@ async function libraryCall(c: Context<AppEnv>, fn: (a: LibraryActor, body: unkno
  */
 app.get("/api/library/published", async (c) => {
   const actor = await libraryActor(c);
-  return c.json(await library(c.env).published(actor.roles, { all: actor.admin }));
+  return c.json(await (await catalogue(c.env)).published(actor.roles, { all: actor.admin }));
 });
 
 /** Every other catalogue route: same origin for changes. Who may do what is the core's decision. */

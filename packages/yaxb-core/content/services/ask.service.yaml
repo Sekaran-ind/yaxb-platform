@@ -6,5 +6,4 @@ icon: message-circle
 order: 10
 items:
   - { key: ask, label: Ask a question, summary: By voice or text, icon: message-circle, screen: transcript }
-  - { key: check-in, label: Check in for your visit, summary: Say it in your own words, icon: clipboard-list, journey: visit-check-in }
   - { key: sources, label: What the kiosk knows, summary: The knowledge sources behind its answers, icon: library, screen: records, layouts: [pod, full] }
