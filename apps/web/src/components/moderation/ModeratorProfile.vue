@@ -101,8 +101,6 @@ onMounted(load);
           </p>
         </div>
         <div class="flex gap-2">
-          <RouterLink to="/kiosk/curate" class="btn-light">Moderation queue</RouterLink>
-          <RouterLink to="/kiosk/team" class="btn-light">Team</RouterLink>
           <button type="button" class="btn-light" @click="signOut"><LogOut class="size-4" aria-hidden="true" /> Sign out</button>
         </div>
       </section>

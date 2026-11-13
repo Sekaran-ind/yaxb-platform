@@ -7,7 +7,7 @@ import type { AgentSettings, LanguageCode } from "@sekaran-ind/yaxb-core/setting
 import { Check, Lock, ServerCrash } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
-import AdaptiveNav from "@/components/kiosk/AdaptiveNav.vue";
+import { AdaptiveNav, ConfirmAction } from "@sekaran-ind/yaxb-journeys/vue";
 import ThemePicker from "./ThemePicker.vue";
 import AccountScreen from "@/components/account/AccountScreen.vue";
 import { NATIVE } from "@/lib/platform";
@@ -68,7 +68,6 @@ const languageVoices = computed(() => voice.voices.value.filter((v) => v.lang.to
 const setKnowledge = (patch: Partial<AgentSettings["knowledge"]>) => setAgent({ knowledge: { ...knowledge.value, ...patch } });
 
 async function clearBrowser() {
-  if (!confirm("Delete every notebook, source, memory and conversation kept in this browser?")) return;
   await storeFor("indexeddb").clear();
   await storeFor("session").clear();
   cleared.value = "Cleared everything this browser kept.";
@@ -275,7 +274,13 @@ async function clearBrowser() {
           <ChoiceGrid name="storage" :options="caps.storage" :value="agent.storage" @change="(storage) => setAgent({ storage })" />
           <BoxConnection v-if="agent.storage === 'box'" />
           <div class="mt-4 flex flex-wrap items-center gap-3">
-            <button type="button" class="btn-light text-red-800" @click="clearBrowser">Clear this browser's kiosk data</button>
+            <ConfirmAction
+              label="Clear this browser's kiosk data"
+              confirm-label="Clear everything"
+              message="Delete every notebook, source, memory and conversation kept in this browser? This can't be undone."
+              trigger-class="btn-light text-red-800"
+              @confirm="clearBrowser"
+            />
             <span v-if="cleared" role="status" class="text-sm text-gray-600">{{ cleared }}</span>
           </div>
         </section>

@@ -10,22 +10,18 @@
 // Place in the page is in the address: ?view=…&service=<id>|new.
 import type { Library, LibraryEntry, LibraryPermissions } from "@sekaran-ind/yaxb-core/library";
 import { roleLabel, type Role } from "@sekaran-ind/yaxb-journeys";
-import { provideIcons } from "@sekaran-ind/yaxb-journeys/vue";
-import "@sekaran-ind/yaxb-journeys/style.css";
+import { AdaptiveNav, ConfirmAction, type NavScreen } from "@sekaran-ind/yaxb-journeys/vue";
 import { Archive, ArchiveRestore, ExternalLink, FolderPlus, Pencil, Plus, Trash2 } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import CatalogueInfo from "@/components/catalogue/CatalogueInfo.vue";
 import EntryStatus from "@/components/catalogue/EntryStatus.vue";
-import AdaptiveNav, { type NavScreen } from "@/components/kiosk/AdaptiveNav.vue";
 import { useWidth } from "@/composables/width";
 import ServiceWorkspace from "@/components/catalogue/ServiceWorkspace.vue";
 import ModeratorSignIn from "@/components/moderation/ModeratorSignIn.vue";
 import { catalogue, loadCatalogue, roleCatalogue, type CatalogueService } from "@/composables/library";
 import { api } from "@/lib/api";
 import { iconFor } from "@/lib/icons";
-
-provideIcons(iconFor);
 
 type LibraryRow = Library & { counts: Record<"total" | "draft" | "in_review" | "accepted" | "rejected" | "archived", number> };
 type Overview = {
@@ -106,7 +102,6 @@ async function addRole() {
   }
 }
 async function removeRole(id: string) {
-  if (!window.confirm(`Remove the role "${roleLabel(id, allRoles.value)}"?`)) return;
   roleError.value = null;
   try {
     await api(`/api/library/roles/${id}`, undefined, "DELETE");
@@ -270,7 +265,15 @@ watch(signingIn, (v) => !v && void load());
                   <span v-if="r.description" class="block text-xs text-gray-500">{{ r.description }}</span>
                   <span v-if="usedBy(r.id).length" class="block text-xs text-gray-500">Used by {{ usedBy(r.id).join(", ") }}</span>
                 </span>
-                <button v-if="can.manage && r.source === 'Organisation'" type="button" class="btn-ghost h-8 px-2 text-red-800" :aria-label="`Remove ${r.label}`" @click="removeRole(r.id)"><Trash2 class="size-4" aria-hidden="true" /></button>
+                <ConfirmAction
+                  v-if="can.manage && r.source === 'Organisation'"
+                  label="Remove"
+                  :aria-label="`Remove ${r.label}`"
+                  :message="`Remove the role “${r.label}” from the organisation?`"
+                  trigger-class="btn-ghost h-8 px-2 text-red-800"
+                  @confirm="removeRole(r.id)"
+                  ><Trash2 class="size-4" aria-hidden="true"
+                /></ConfirmAction>
               </li>
             </ul>
             <template v-if="can.manage">
@@ -284,6 +287,7 @@ watch(signingIn, (v) => !v && void load());
               </form>
               <button v-else type="button" class="btn-light" @click="newRole = { label: '', description: '' }"><Plus class="size-4" aria-hidden="true" /> Add an organisation role</button>
             </template>
+            <p v-else class="text-xs text-gray-500">Only an administrator adds or removes organisation roles.</p>
           </section>
             </template>
             <template #libraries>
@@ -305,7 +309,16 @@ watch(signingIn, (v) => !v && void load());
                   </span>
                   <button v-if="can.edit" type="button" class="btn-ghost h-8 px-2" :aria-label="`Rename ${l.name}`" @click="editLib = { id: l.id, name: l.name, description: l.description ?? '' }"><Pencil class="size-4" aria-hidden="true" /></button>
                   <template v-if="can.manage">
-                    <button v-if="l.status === 'active'" type="button" class="btn-ghost h-8 px-2" :aria-label="`Archive ${l.name}`" @click="libCall(() => api(`/api/library/libraries/${l.id}/archive`, {}))"><Archive class="size-4" aria-hidden="true" /></button>
+                    <ConfirmAction
+                      v-if="l.status === 'active'"
+                      label="Archive"
+                      confirm-label="Archive it"
+                      :aria-label="`Archive ${l.name}`"
+                      :message="`Archive the library “${l.name}”? Its services leave the catalogue and every kiosk until it is restored.`"
+                      trigger-class="btn-ghost h-8 px-2"
+                      @confirm="libCall(() => api(`/api/library/libraries/${l.id}/archive`, {}))"
+                      ><Archive class="size-4" aria-hidden="true"
+                    /></ConfirmAction>
                     <button v-else type="button" class="btn-ghost h-8 px-2" :aria-label="`Restore ${l.name}`" @click="libCall(() => api(`/api/library/libraries/${l.id}/restore`, {}))"><ArchiveRestore class="size-4" aria-hidden="true" /></button>
                   </template>
                 </template>
@@ -322,6 +335,8 @@ watch(signingIn, (v) => !v && void load());
               </form>
               <button v-else type="button" class="btn-light" @click="newLib = { name: '', description: '' }"><FolderPlus class="size-4" aria-hidden="true" /> New library</button>
             </template>
+            <p v-else class="text-xs text-gray-500">Moderators, curators and administrators create and rename libraries.</p>
+            <p v-if="can.edit && !can.manage" class="text-xs text-gray-500">Only an administrator archives or restores a library.</p>
           </section>
             </template>
           </AdaptiveNav>

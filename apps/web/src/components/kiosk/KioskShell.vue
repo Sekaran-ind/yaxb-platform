@@ -27,7 +27,7 @@ import { cn } from "@/lib/cn";
 import { languageLabel, speechLangFor } from "@/lib/languages";
 import type { CommandCard, KioskStatus } from "@/lib/types";
 import AccountScreen from "@/components/account/AccountScreen.vue";
-import AdaptiveNav, { type NavScreen } from "./AdaptiveNav.vue";
+import { AdaptiveNav, type NavScreen } from "@sekaran-ind/yaxb-journeys/vue";
 import FeedbackPrompt from "./FeedbackPrompt.vue";
 import KnowledgeSources from "./KnowledgeSources.vue";
 import NotebookScreen from "./NotebookScreen.vue";

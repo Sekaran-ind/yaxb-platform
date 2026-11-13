@@ -5,6 +5,7 @@
 import { AUDIT_ACTIONS, MODERATOR_ROLES, type AuditEvent, type Moderator, type ModeratorStatus } from "@sekaran-ind/yaxb-core/moderators";
 import { memberStatus, type MemberStatus } from "@sekaran-ind/yaxb-core/team";
 import { Copy, KeyRound, Lock, LogOut, Pencil, RefreshCw, RotateCw, ShieldAlert, Trash2, UserPlus } from "@lucide/vue";
+import { ConfirmAction } from "@sekaran-ind/yaxb-journeys/vue";
 import { computed, onMounted, ref } from "vue";
 import { roleCatalogue, roleName, loadLibraryContent } from "@/composables/library";
 import { cn } from "@/lib/cn";
@@ -68,8 +69,8 @@ const issue = () =>
     shownKey.value = { name: r.moderator.name, key: r.key };
     form.value = null;
   });
-const revoke = (m: Row) => confirm(`Suspend ${m.name}? Their key stops working and they are signed out at once.`) && act(() => api(`/api/admin/moderators/${m.id}/revoke`, { method: "POST" }));
-const remove = (m: Row) => confirm(`Remove ${m.name} from the team? Their key and profile are deleted; the audit log keeps the history.`) && act(() => api(`/api/admin/moderators/${m.id}`, { method: "DELETE" }));
+const revoke = (m: Row) => act(() => api(`/api/admin/moderators/${m.id}/revoke`, { method: "POST" }));
+const remove = (m: Row) => act(() => api(`/api/admin/moderators/${m.id}`, { method: "DELETE" }));
 /** Editing a member's roles inline. */
 const editing = ref<{ id: string; roles: string[] } | null>(null);
 const saveRoles = () =>
@@ -79,7 +80,6 @@ const saveRoles = () =>
     editing.value = null;
   });
 const rotate = (m: Row) =>
-  confirm(`Give ${m.name} a new key? The old one stops working at once.`) &&
   act(async () => {
     const r = await api<{ moderator: Row; key: string }>(`/api/admin/moderators/${m.id}/rotate`, { method: "POST" });
     shownKey.value = { name: r.moderator.name, key: r.key };
@@ -183,9 +183,34 @@ onMounted(load);
                 <td class="pr-3 text-xs text-gray-600">{{ when(m.last_seen_at) }}</td>
                 <td class="pr-3">{{ m.reviews }}</td>
                 <td class="text-right whitespace-nowrap">
-                  <button type="button" class="rounded p-1.5 text-gray-600 hover:bg-mist" :aria-label="m.status === 'revoked' ? `Reinstate ${m.name} with a new key` : `Rotate ${m.name}'s key`" :title="m.status === 'revoked' ? 'Reinstate (new key)' : 'Rotate key'" :disabled="busy" @click="rotate(m)"><RotateCw class="size-4" /></button>
-                  <button v-if="m.status !== 'revoked'" type="button" class="rounded p-1.5 text-red-700 hover:bg-danger/10" :aria-label="`Suspend ${m.name}`" title="Suspend" :disabled="busy" @click="revoke(m)"><ShieldAlert class="size-4" /></button>
-                  <button type="button" class="rounded p-1.5 text-red-700 hover:bg-danger/10" :aria-label="`Remove ${m.name}`" title="Remove from the team" :disabled="busy" @click="remove(m)"><Trash2 class="size-4" /></button>
+                  <ConfirmAction
+                    :label="m.status === 'revoked' ? 'Reinstate' : 'Give a new key'"
+                    :aria-label="m.status === 'revoked' ? `Reinstate ${m.name} with a new key` : `Rotate ${m.name}'s key`"
+                    :message="m.status === 'revoked' ? `Reinstate ${m.name} with a new key?` : `Give ${m.name} a new key? The old one stops working at once.`"
+                    trigger-class="rounded p-1.5 text-gray-600 hover:bg-mist"
+                    :busy="busy"
+                    @confirm="rotate(m)"
+                    ><RotateCw class="size-4" aria-hidden="true"
+                  /></ConfirmAction>
+                  <ConfirmAction
+                    v-if="m.status !== 'revoked'"
+                    label="Suspend"
+                    :aria-label="`Suspend ${m.name}`"
+                    :message="`Suspend ${m.name}? Their key stops working and they are signed out at once.`"
+                    trigger-class="rounded p-1.5 text-red-700 hover:bg-danger/10"
+                    :busy="busy"
+                    @confirm="revoke(m)"
+                    ><ShieldAlert class="size-4" aria-hidden="true"
+                  /></ConfirmAction>
+                  <ConfirmAction
+                    label="Remove"
+                    :aria-label="`Remove ${m.name}`"
+                    :message="`Remove ${m.name} from the team? Their key and profile are deleted; the audit log keeps the history.`"
+                    trigger-class="rounded p-1.5 text-red-700 hover:bg-danger/10"
+                    :busy="busy"
+                    @confirm="remove(m)"
+                    ><Trash2 class="size-4" aria-hidden="true"
+                  /></ConfirmAction>
                 </td>
               </tr>
             </tbody>

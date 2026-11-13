@@ -4,6 +4,7 @@
 import { idFromName } from "@sekaran-ind/yaxb-journeys/forms";
 import { DEFAULT_ROLES, VISITOR_ROLE, type Role } from "@sekaran-ind/yaxb-journeys/journeys";
 import { computed, ref, useId } from "vue";
+import ConfirmAction from "./ConfirmAction.vue";
 
 type Assign = { id: string; title: string; initiate: string[]; complete: string[] };
 const props = defineProps<{ roles: Role[]; journeys: Assign[]; readonly?: boolean }>();
@@ -65,7 +66,7 @@ const rows = computed(() => [{ id: VISITOR_ROLE, label: "Visitor (anyone)" }, ..
           <span class="yj-title yj-small">{{ r.label }}</span> <code class="yj-code">{{ r.id }}</code>
           <span v-if="r.description" class="yj-help yj-block">{{ r.description }}</span>
         </span>
-        <button v-if="!readonly" type="button" class="yj-btn yj-btn-quiet" :aria-label="`Remove the role ${r.label}`" @click="remove(r.id)">×</button>
+        <ConfirmAction v-if="!readonly" label="Remove" :aria-label="`Remove the role ${r.label}`" :message="`Remove the role “${r.label}”? Journeys it starts or finishes lose it.`" @confirm="remove(r.id)" />
       </li>
     </ul>
     <p v-else class="yj-note yj-small">No roles yet: every journey is open to visitors.</p>

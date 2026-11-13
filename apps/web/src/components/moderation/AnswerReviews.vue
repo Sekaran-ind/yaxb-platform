@@ -7,6 +7,7 @@ import { ArrowLeft, Check, History, Plus, RefreshCw, Share2, X } from "@lucide/v
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import ModeratorSignIn from "./ModeratorSignIn.vue";
+import SegmentedControl from "@/components/site/SegmentedControl.vue";
 import { api, ApiError } from "@/lib/api";
 import { LANGUAGES } from "@/lib/languages";
 
@@ -18,6 +19,11 @@ const router = useRouter();
 const signedOut = ref(false);
 const error = ref<string | null>(null);
 const state = ref<"open" | "reviewed" | "">("open");
+const SHOW = [
+  { value: "open", label: "To review" },
+  { value: "reviewed", label: "Reviewed" },
+  { value: "", label: "All" },
+] as const;
 const items = ref<Item[] | null>(null);
 const detail = ref<Detail | null>(null);
 const saved = ref<string | null>(null);
@@ -208,11 +214,8 @@ watch(state, loadList);
     <!-- the list -->
     <template v-else-if="!signedOut && !answerId">
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="flex gap-1" role="group" aria-label="Show">
-          <button v-for="s in [{ v: 'open', l: 'To review' }, { v: 'reviewed', l: 'Reviewed' }, { v: '', l: 'All' }] as const" :key="s.v" type="button" :aria-pressed="state === s.v" :class="['rounded-full px-3 py-1 text-sm', state === s.v ? 'bg-brand-dark text-on-brand' : 'bg-mist text-ink']" @click="state = s.v">{{ s.l }}</button>
-        </div>
+        <SegmentedControl v-model="state" :options="SHOW" label="Show" />
         <div class="flex items-center gap-3 text-xs">
-          <RouterLink to="/kiosk/quality" class="font-medium text-brand-dark hover:underline">Quality (F1)</RouterLink>
           <button type="button" class="inline-flex items-center gap-1 hover:text-ink" @click="loadList"><RefreshCw class="size-3.5" aria-hidden="true" /> Refresh</button>
         </div>
       </div>

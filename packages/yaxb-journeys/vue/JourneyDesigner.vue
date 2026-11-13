@@ -6,7 +6,9 @@
 import { idFromName, newScreen, type JourneyDesign, type StepKind } from "@sekaran-ind/yaxb-journeys/forms";
 import type { Role } from "@sekaran-ind/yaxb-journeys/journeys";
 import { load } from "js-yaml";
-import { computed, ref, useId, watch } from "vue";
+import { computed, nextTick, ref, useId, watch } from "vue";
+import ConfirmAction from "./ConfirmAction.vue";
+import Glyph from "./Glyph.vue";
 import RolePicker from "./RolePicker.vue";
 
 // part: the journey's details and roles, its screens, or both (the service designer's steps show one at a time).
@@ -81,17 +83,30 @@ function setThen(i: number, then: "step" | "branches") {
   s.then = then;
   if (then === "branches" && !s.branches.length) s.branches = [{ if: "", to: s.next }, { to: "" }];
 }
-const move = (i: number, by: number) => {
+const root = ref<HTMLElement | null>(null);
+/** Move a screen, and keep focus on the moved screen's button (or its other one at the end). */
+async function move(i: number, by: number) {
   const list = j.value.screens;
   const k = i + by;
   if (k < 0 || k >= list.length) return;
   [list[i], list[k]] = [list[k]!, list[i]!];
-};
+  if (open.value === i) open.value = k;
+  else if (open.value === k) open.value = i;
+  await nextTick();
+  const at = (dir: string) => root.value?.querySelector<HTMLButtonElement>(`[data-move="${k}-${dir}"]`);
+  const same = at(by < 0 ? "up" : "down");
+  (same && !same.disabled ? same : at(by < 0 ? "down" : "up"))?.focus();
+}
+function removeScreen(i: number) {
+  j.value.screens.splice(i, 1);
+  if (open.value === i) open.value = null;
+  else if (open.value !== null && open.value > i) open.value--;
+}
 const open = ref<number | null>(0);
 </script>
 
 <template>
-  <div class="yj yj-stack yj-form">
+  <div ref="root" class="yj yj-stack yj-form">
     <fieldset v-if="part !== 'screens'" class="yj-fieldset" :disabled="readonly">
       <div class="yj-form-grid">
         <div>
@@ -140,9 +155,9 @@ const open = ref<number | null>(0);
               <span v-if="s.kind === 'ask'" class="yj-help yj-block">{{ questionsNote(s.fieldsYaml).text }}</span>
             </button>
             <div v-if="!readonly" class="yj-row">
-              <button type="button" class="yj-btn yj-btn-quiet" :disabled="i === 0" :aria-label="`Move screen ${s.id} up`" @click="move(i, -1)">↑</button>
-              <button type="button" class="yj-btn yj-btn-quiet" :disabled="i === j.screens.length - 1" :aria-label="`Move screen ${s.id} down`" @click="move(i, 1)">↓</button>
-              <button type="button" class="yj-btn yj-btn-quiet" :aria-label="`Remove screen ${s.id}`" @click="j.screens.splice(i, 1)">Remove</button>
+              <button type="button" class="yj-btn yj-btn-quiet yj-btn-icon" :data-move="`${i}-up`" :disabled="i === 0" :aria-label="`Move screen ${s.label || s.id} up`" :title="`Move screen ${s.label || s.id} up`" @click="move(i, -1)"><Glyph name="up" /></button>
+              <button type="button" class="yj-btn yj-btn-quiet yj-btn-icon" :data-move="`${i}-down`" :disabled="i === j.screens.length - 1" :aria-label="`Move screen ${s.label || s.id} down`" :title="`Move screen ${s.label || s.id} down`" @click="move(i, 1)"><Glyph name="down" /></button>
+              <ConfirmAction label="Remove" :aria-label="`Remove screen ${s.label || s.id}`" :message="`Remove screen ${i + 1}, “${s.label || s.id}”, and its questions?`" @confirm="removeScreen(i)" />
             </div>
           </div>
 

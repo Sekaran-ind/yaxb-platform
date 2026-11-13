@@ -4,16 +4,21 @@
 // The breadcrumb shows where the step sits (Service › Journeys › Check in › Screens); the step list
 // jumps anywhere. Bind with v-model to a ServiceDesign (forms.ts); designToDoc and toYaml give the
 // nested YAML (nested.ts). The Review step compiles the design and lists what to fix.
+// The last step offers the host's next action in place of Next: fill the `finish` slot (props: ok,
+// errors) with it, e.g. "Create service" or "Submit for review". Without it the step says it is the end.
 import { compileBundle } from "@sekaran-ind/yaxb-journeys/bundle";
 import { designToDoc, newJourneyDesign, toYaml, type JourneyDesign, type ServiceDesign } from "@sekaran-ind/yaxb-journeys/forms";
 import { roleLabel, type Role } from "@sekaran-ind/yaxb-journeys/journeys";
-import { computed, ref, useId, watch } from "vue";
+import { computed, nextTick, ref, useId, watch } from "vue";
+import ConfirmAction from "./ConfirmAction.vue";
+import Glyph from "./Glyph.vue";
 import JourneyDesigner from "./JourneyDesigner.vue";
 import RolesPanel from "./RolesPanel.vue";
 import ServiceSummary from "./ServiceSummary.vue";
 
 const props = defineProps<{ modelValue: ServiceDesign; serviceNames?: readonly string[]; readonly?: boolean }>();
-const emit = defineEmits<{ "update:modelValue": [design: ServiceDesign] }>();
+const emit = defineEmits<{ "update:modelValue": [design: ServiceDesign]; /** Whether the last step (Review) is showing, so a host can drop its own copy of the finish action. */ last: [atEnd: boolean] }>();
+defineSlots<{ finish?: (props: { ok: boolean; errors: number }) => unknown }>();
 const uid = useId();
 const id = (name: string) => `${uid}-${name}`;
 
@@ -68,15 +73,18 @@ function addJourney() {
   d.value.journeys.push(newJourneyDesign(`journey-${n}`, `Journey ${n}`));
   goKey(`journey-${d.value.journeys.length - 1}`);
 }
-function removeJourney(i: number) {
-  if (!window.confirm(`Remove the journey "${titleOf(d.value.journeys[i]!, i)}" and its screens?`)) return;
-  d.value.journeys.splice(i, 1);
-}
-function moveJourney(i: number, by: number) {
+const removeJourney = (i: number) => d.value.journeys.splice(i, 1);
+const root = ref<HTMLElement | null>(null);
+/** Move a journey, and keep focus on the moved journey's button (or its other one at the end). */
+async function moveJourney(i: number, by: number) {
   const k = i + by;
   if (k < 0 || k >= d.value.journeys.length) return;
   const list = d.value.journeys;
   [list[i], list[k]] = [list[k]!, list[i]!];
+  await nextTick();
+  const at = (dir: string) => root.value?.querySelector<HTMLButtonElement>(`[data-move="${k}-${dir}"]`);
+  const same = at(by < 0 ? "up" : "down");
+  (same && !same.disabled ? same : at(by < 0 ? "down" : "up"))?.focus();
 }
 const setJourney = (i: number, j: JourneyDesign) => (d.value.journeys[i] = j);
 const setRoles = (roles: Role[]) => (d.value.roles = roles);
@@ -97,10 +105,13 @@ const compiled = computed(() => {
   const b = compileBundle(toYaml(r.doc), { services: props.serviceNames });
   return { problems: b.problems.map((p) => ({ level: p.level, message: p.message })), bundle: b };
 });
+const errorCount = computed(() => compiled.value.problems.filter((p) => p.level === "error").length);
+const last = computed(() => at.value === steps.value.length - 1);
+watch(last, (v) => emit("last", v), { immediate: true });
 </script>
 
 <template>
-  <div class="yj yj-wizard">
+  <div ref="root" class="yj yj-wizard">
     <!-- Where you are -->
     <div class="yj-wizard-head">
       <nav aria-label="Breadcrumb">
@@ -176,9 +187,9 @@ const compiled = computed(() => {
                 <button type="button" class="yj-btn yj-select-sm" @click="goKey(`journey-${i}`)">Edit</button>
                 <button type="button" class="yj-btn yj-select-sm" @click="goKey(`screens-${i}`)">Screens</button>
                 <template v-if="!readonly">
-                  <button type="button" class="yj-btn yj-btn-quiet" :disabled="i === 0" :aria-label="`Move ${titleOf(j, i)} up`" @click="moveJourney(i, -1)">↑</button>
-                  <button type="button" class="yj-btn yj-btn-quiet" :disabled="i === d.journeys.length - 1" :aria-label="`Move ${titleOf(j, i)} down`" @click="moveJourney(i, 1)">↓</button>
-                  <button type="button" class="yj-btn yj-btn-quiet" :aria-label="`Remove ${titleOf(j, i)}`" @click="removeJourney(i)">Remove</button>
+                  <button type="button" class="yj-btn yj-btn-quiet yj-btn-icon" :data-move="`${i}-up`" :disabled="i === 0" :aria-label="`Move ${titleOf(j, i)} up`" :title="`Move ${titleOf(j, i)} up`" @click="moveJourney(i, -1)"><Glyph name="up" /></button>
+                  <button type="button" class="yj-btn yj-btn-quiet yj-btn-icon" :data-move="`${i}-down`" :disabled="i === d.journeys.length - 1" :aria-label="`Move ${titleOf(j, i)} down`" :title="`Move ${titleOf(j, i)} down`" @click="moveJourney(i, 1)"><Glyph name="down" /></button>
+                  <ConfirmAction label="Remove" :aria-label="`Remove ${titleOf(j, i)}`" :message="`Remove the journey “${titleOf(j, i)}” and its ${j.screens.length} screen${j.screens.length === 1 ? '' : 's'}?`" @confirm="removeJourney(i)" />
                 </template>
               </div>
             </div>
@@ -208,7 +219,7 @@ const compiled = computed(() => {
             <li v-for="(p, i) in compiled.problems" :key="i" :class="p.level === 'error' ? 'yj-alert' : 'yj-note'">{{ p.level === "error" ? "Error" : "Warning" }}: {{ p.message }}</li>
           </ul>
         </div>
-        <p v-else class="yj-note">Everything checks out. Save it, then submit it for review.</p>
+        <p v-else class="yj-note">Everything checks out.<template v-if="!$slots.finish"> This is the last step.</template></p>
         <ServiceSummary v-if="compiled.bundle" :bundle="compiled.bundle" />
       </section>
     </div>
@@ -216,7 +227,8 @@ const compiled = computed(() => {
     <!-- Previous / Next -->
     <div class="yj-wizard-foot">
       <button type="button" class="yj-btn" :disabled="at === 0" @click="go(at - 1)">← {{ at > 0 ? steps[at - 1]!.label : "Previous" }}</button>
-      <button type="button" class="yj-btn yj-btn-primary" :disabled="at === steps.length - 1" @click="go(at + 1)">{{ at < steps.length - 1 ? steps[at + 1]!.label : "Next" }} →</button>
+      <button v-if="!last" type="button" class="yj-btn yj-btn-primary" @click="go(at + 1)">{{ steps[at + 1]!.label }} →</button>
+      <div v-else class="yj-wizard-finish"><slot name="finish" :ok="!errorCount" :errors="errorCount" /></div>
     </div>
   </div>
 </template>

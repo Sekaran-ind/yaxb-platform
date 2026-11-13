@@ -47,21 +47,25 @@
   --yj-warning: #fcd34d;
   color-scheme: dark;
 }
-:where(.yj) *,
-:where(.yj) *::before,
-:where(.yj) *::after {
-  box-sizing: border-box;
-}
-:where(.yj) :is(h2, h3, h4, p, ol, ul, dl, dd, pre) {
-  margin: 0;
-}
-:where(.yj) :is(ol, ul) {
-  padding: 0;
-  list-style: none;
-}
-:where(.yj) :focus-visible {
-  outline: 2px solid var(--yj-accent);
-  outline-offset: 2px;
+/* Element resets, in a layer so they never beat a host's own rules: the host's content inside a
+   component (the adaptive nav's screens) keeps its margins, padding and focus styles. */
+@layer yj-base {
+  :where(.yj) *,
+  :where(.yj) *::before,
+  :where(.yj) *::after {
+    box-sizing: border-box;
+  }
+  :where(.yj) :is(h2, h3, h4, p, ol, ul, dl, dd, pre) {
+    margin: 0;
+  }
+  :where(.yj) :is(ol, ul) {
+    padding: 0;
+    list-style: none;
+  }
+  :where(.yj) :focus-visible {
+    outline: 2px solid var(--yj-accent);
+    outline-offset: 2px;
+  }
 }
 
 /* ---- shared ---------------------------------------------------------------------------------- */
@@ -159,6 +163,56 @@
   background: transparent;
   color: var(--yj-muted);
   padding: 0 0.5rem;
+}
+.yj-btn-danger {
+  background: var(--yj-danger);
+  border-color: var(--yj-danger);
+  color: var(--yj-surface);
+}
+.yj-btn-danger:hover {
+  background: var(--yj-danger);
+  opacity: 0.9;
+}
+.yj-btn-quiet.yj-btn-danger {
+  background: transparent;
+  border-color: transparent;
+  color: var(--yj-danger);
+}
+.yj-btn-quiet.yj-btn-danger:hover {
+  background: color-mix(in oklab, var(--yj-danger) 10%, transparent);
+  opacity: 1;
+}
+/* An icon-only button (move up/down): square, with the label in aria-label and title. */
+.yj-btn-icon {
+  width: 2.25rem;
+  padding: 0;
+}
+
+/* ---- confirm: a destructive action asks first, inline ----------------------------------------- */
+.yj-confirm {
+  display: inline-flex;
+  max-width: 100%;
+  vertical-align: top;
+}
+.yj-confirm-panel {
+  display: flex;
+  max-width: 24rem;
+  flex-direction: column;
+  gap: 0.5rem;
+  border: 1px solid color-mix(in oklab, var(--yj-danger) 55%, transparent);
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--yj-danger) 8%, var(--yj-surface));
+  padding: 0.6rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--yj-ink);
+  text-align: start;
+  white-space: normal;
+}
+.yj-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 .yj-input {
   display: block;
@@ -281,6 +335,7 @@ textarea.yj-input {
   text-align: left;
   font: inherit;
   font-size: 0.875rem;
+  line-height: 1.25rem;
   color: var(--yj-body);
   cursor: pointer;
 }
@@ -293,6 +348,12 @@ textarea.yj-input {
 }
 
 /* ---- adaptive nav ---------------------------------------------------------------------------- */
+/* The nav frames the host's content, so it takes the host's type and colour, not the package's. */
+.yj-nav {
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+}
 .yj-nav-fill {
   display: flex;
   height: 100%;
@@ -317,6 +378,7 @@ textarea.yj-input {
   align-items: center;
   gap: 0.4rem;
   font-size: 0.875rem;
+  line-height: 1.25rem;
   font-weight: 700;
   color: var(--yj-ink);
 }
@@ -369,12 +431,14 @@ textarea.yj-input {
   justify-content: space-between;
   gap: 0.4rem;
   border: 0;
-  border-radius: 10px;
+  border-radius: 8px;
   background: transparent;
   padding: 0.5rem 0.75rem;
   text-align: left;
   font: inherit;
   font-size: 0.875rem;
+  line-height: 1.25rem;
+  min-height: 2.5rem;
   color: var(--yj-body);
   cursor: pointer;
 }
@@ -411,6 +475,7 @@ textarea.yj-input {
   padding: 0.65rem 0.75rem;
   font: inherit;
   font-size: 0.875rem;
+  line-height: 1.25rem;
   font-weight: 650;
   color: var(--yj-ink);
   cursor: pointer;
@@ -451,10 +516,10 @@ textarea.yj-input {
   border: 0;
   border-radius: 999px;
   background: transparent;
-  padding: 0.35rem 0.75rem;
+  padding: 0.375rem 0.75rem;
   font: inherit;
   font-size: 0.8125rem;
-  font-weight: 550;
+  font-weight: 500;
   white-space: nowrap;
   color: var(--yj-muted);
   cursor: pointer;
@@ -512,9 +577,15 @@ textarea.yj-input {
 /* ---- journeys and services ------------------------------------------------------------------- */
 .yj-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
+}
+/* The title takes the room; the actions wrap below it when the card is narrow (a phone). */
+.yj-head > :first-child {
+  min-width: 0;
+  flex: 1 1 12rem;
 }
 .yj-items {
   display: grid;
@@ -1030,9 +1101,19 @@ button.yj-crumb:hover {
 }
 .yj-wizard-foot {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
   margin-top: 1.25rem;
   border-top: 1px solid var(--yj-line);
   padding-top: 0.85rem;
+}
+.yj-wizard-finish {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-left: auto;
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The few glyphs the components need themselves, so the package has no icon dependency.
-defineProps<{ name: "chevron" | "more" | "check" | "cross" | "spinner" | "circle" }>();
+defineProps<{ name: "chevron" | "more" | "check" | "cross" | "spinner" | "circle" | "up" | "down" }>();
 </script>
 
 <template>
@@ -9,6 +9,8 @@ defineProps<{ name: "chevron" | "more" | "check" | "cross" | "spinner" | "circle
     <template v-else-if="name === 'more'"><circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" /></template>
     <template v-else-if="name === 'check'"><circle cx="12" cy="12" r="10" /><path d="m9 12 2 2 4-4" /></template>
     <template v-else-if="name === 'cross'"><circle cx="12" cy="12" r="10" /><path d="m15 9-6 6M9 9l6 6" /></template>
+    <path v-else-if="name === 'up'" d="M12 19V5m-7 7 7-7 7 7" />
+    <path v-else-if="name === 'down'" d="M12 5v14m7-7-7 7-7-7" />
     <path v-else-if="name === 'spinner'" d="M21 12a9 9 0 1 1-6.22-8.56" />
     <circle v-else cx="12" cy="12" r="10" />
   </svg>
