@@ -40,16 +40,16 @@ Guided services: a sequence of steps that ask the visitor something, run an on-d
 | JRN-30 | Content has three levels: a service lists items, an item opens a journey, and a journey's question step may use a questionnaire (`questionnaire: <id>`) instead of listing its own fields. A questionnaire is its own YAML document with sections of fields, so several journeys can share one. | Built |
 | JRN-31 | A question may be asked only when a condition holds (`when`), in the same safe language as journeys. It can read the same form's answers, earlier steps' answers and the context. A hidden question is never required, and its answer is kept empty. | Built |
 | JRN-32 | Services, journeys and questionnaires must compile together from one YAML file of several documents, with references checked across them (an unknown journey, questionnaire, handler or screen is an error), and each problem pointing at the line it is about. Content nobody reaches is a warning. | Built |
-| JRN-33 | The portal must offer a journey studio (`/studio`): an editor for that YAML, its problems, and a live preview that runs the journeys in the adaptive navigation at the kiosk's sizes (Mini, Pod, Full) and in each navigation mode, plus a tree from service to questionnaire. The draft stays in the browser. Services such as the assistant run as labelled stand-ins. | Built |
+| JRN-33 | The portal must offer a journey studio (now the Service Catalogue, LIB-14): an editor for that YAML, its problems, and a live preview that runs the journeys in the adaptive navigation at the kiosk's sizes (Mini, Pod, Full) and in each navigation mode, plus a tree from service to questionnaire. The draft stays in the browser. Services such as the assistant run as labelled stand-ins. | Built |
 | JRN-34 | The journey engine and its components must be a package other projects can install (`@sekaran-ind/yaxb-journeys`): a headless core with no DOM, and Vue components with their own plain CSS that the host themes through variables. The kiosk uses the same engine. | Built |
 | JRN-35 | The kiosk's own journey panel should show a questionnaire's sections as pages, as the studio does. It currently lists every question on one page. | Planned |
 
-## The journey library and roles
+## The Service Catalogue, the library and roles
 
 | ID | Requirement | Status |
 |---|---|---|
 | LIB-1 | Staff must be able to keep several libraries, each holding services, journeys and questionnaires (one YAML document per entry). Libraries can be created, renamed, archived and restored; an archived library's content leaves the kiosk. | Built |
-| LIB-2 | A service and a journey must be editable as a form, which writes the YAML, or as YAML directly; a questionnaire is written as YAML. Steps the form can't represent (one step that both asks and runs a service) stay editable as YAML. | Built |
+| LIB-2 | A service must be editable in a designer, which writes the YAML, or as YAML directly. The questions on a screen are written as YAML. Screens the designer can't represent (one that both asks and runs a service) stay editable as YAML. | Built |
 | LIB-3 | Every save keeps a revision (who, when, an optional note); an earlier revision can be loaded and saved again. | Built |
 | LIB-4 | An entry is checked against the rest of its library as it is edited (unknown questionnaires, journeys, roles, handlers or screens), and can't be submitted for review with errors. | Built |
 | LIB-5 | An entry goes draft → in review → accepted or rejected (rejecting needs a note for the author). Saving takes it back to draft. | Built |
@@ -61,4 +61,11 @@ Guided services: a sequence of steps that ask the visitor something, run an on-d
 | LIB-11 | The kiosk offers a journey only to those who may start it: visitors see journeys open to anyone; a signed-in member also sees journeys their roles may start. When a journey has roles that finish it, the result tells the visitor who takes it from there. | Built |
 | LIB-12 | Handing a started journey over to the role that finishes it (a queue of runs for that role to complete, with what the visitor gave) is not built yet: it would send the visitor's answers to the server, which needs its own consent and privacy design. | Planned |
 | LIB-13 | Every library change (libraries, entries, reviews, roles) goes into the audit log: who, what, when, never the content. | Built |
+| LIB-14 | The Service Catalogue must be its own page of the portal (`/catalogue`), outside the kiosk, linked from the home page and the navigation. | Built |
+| LIB-15 | Services are nested: a service holds several journeys, and each journey holds its screens (questions, a service call, a decision, or an end). A service is one entry in the catalogue, standalone. | Built |
+| LIB-16 | While designing, roles are added in a side panel and assigned to journeys (who starts, who finishes), as a role × journey matrix. A journey nobody is set to start is open to visitors. | Built |
+| LIB-17 | Each service has a summary screen (journeys, screens, questions, who starts and finishes each, services called) and an audit screen (who did what, when, without content). | Built |
+| LIB-18 | Anyone can design services without signing in. A guest's services belong to their browser session; only they (or editors) change them, and the number they may keep is capped. Publishing still needs a reviewer. | Built |
+| LIB-19 | A kiosk keeps its built-in services and features (chat, notebook, sources, settings, the team), and can load published services from the catalogue. Journeys the viewer can't start show which role starts them; a member with that role who signs in can start them. | Built |
+| LIB-20 | The roles a published service defines can be given to team members. | Built |
 

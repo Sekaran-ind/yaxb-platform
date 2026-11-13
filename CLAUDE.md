@@ -207,28 +207,39 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
   - Components: `AdaptiveNav` (the kiosk's, plus `lockMode`), `QuestionnaireForm` (sections as nav screens), `JourneyRunner`, `ServiceItems`, `FlowPreview`, `StructureTree`, `FlowStudio`.
   - Plain CSS with `.yj` and `--yj-*` tokens. The defaults are in `:where()`, and `apps/web/src/styles.css` maps them to the site's theme tokens.
   - Icons come from the host via `provideIcons`.
-- **Portal**: `/studio` (`pages/StudioPage.vue`, navbar "Journey studio") checks against `JOURNEY_SERVICES` and the kiosk's screen ids.
+- `FlowStudio` (a free YAML editor with preview) stays in the package; the portal uses the Service Catalogue instead.
 - The kiosk still has its own `components/kiosk/AdaptiveNav.vue` (Tailwind). Moving it to the package's is open, and needs a visual check.
 
-## The journey library and roles (LIB-1..13)
+## The Service Catalogue (LIB-1..20)
 
+- **Nested services** (`packages/yaxb-journeys/src/nested.ts`): `kind: service` with `roles: [{ id, label, description }]` and `journeys: [{ id, title, roles: { initiate, complete }, screens: [...] }]`.
+  - A screen has `questions` (fields), or `service`/`with`, or `decide`, or `result` (which ends the journey). Screens follow one another unless `next` says otherwise; a last screen that doesn't end the journey gets an `end` step.
+  - `expandService` turns it into a flat service (items = journeys) and flat journeys (steps = screens). `compileBundle` does this automatically, rewords "step" as "screen" in problems, and returns `bundle.roles`.
+  - A journey may name the service's roles, the built-in ones, and `visitor`.
 - **Package**:
-  - `roles.ts`: `DEFAULT_ROLES` (administrator shown as Admin, moderator, reviewer), `VISITOR_ROLE`, `canInitiate`, `roleLabel`. Services have `roles: [...]`; journeys have `roles: { initiate, complete }`. `compileBundle(..., { roles })` checks role ids, and warns when a journey's roles don't take part in a service that opens it.
-  - `forms.ts`: `serviceToForm`/`formToService` and `journeyToForm`/`formToJourney` (steps as a list, fields and `with` as YAML text; `unsupported` names steps that combine kinds). Also `toYaml`, `parseDocument` and `questionnaireTemplate`.
-  - `checkDocument(yaml, others, options)` checks one document in its library's context.
-  - Vue: `ServiceForm`, `JourneyForm`, `RolePicker`, `YamlEditor` (FlowStudio uses it too).
+  - `roles.ts`: `DEFAULT_ROLES` (administrator shown as Admin, moderator, reviewer), `VISITOR_ROLE`, `canInitiate`, `roleLabel`.
+  - `forms.ts`: `ServiceDesign`/`JourneyDesign` with `designFromDoc`/`designToDoc` (screens are `StepForm`s, questions as YAML text). New journeys have no starters, which means anyone. Also `idFromName`, `serviceTemplate`, and the older flat converters.
+  - Vue: `ServiceDesigner` (details, journeys, and the `RolesPanel` side panel: add roles, a role × journey matrix of starts/finishes), `JourneyDesigner` (screens), `ServiceSummary`, `RolePicker`, `YamlEditor`.
+  - `checkDocument(yaml, others, options)` checks one service alone.
 - **Core** `library/` (export `./library`):
-  - `createLibraryService(store, { services, screens, audit })` takes a `LibraryActor` ({ id, name, roles, admin }) on every call, and refuses with `LibraryError(message, status)`.
-  - Permissions: view = any member; edit = administrator/moderator/curator; review = reviewer/administrator, never your own submission (except `ADMIN_ACTOR_ID`); manage (roles, archiving libraries) = administrator.
-  - Entries: `yaml` is the latest revision; `published_yaml` is the accepted one the kiosk serves. Submit needs no errors in the library's context; accept needs no errors against what is already published. Archive clears `published_yaml`.
-  - `published(viewerRoles)` returns `{ roles, libraries: [{ sources, allowed }] }`. The kiosk compiles every source and offers only the `allowed` journeys.
-  - Stores: memory, and D1 `createD1LibraryStore` (migration 0006). Tests run on both.
-  - Member roles are now any role id; `MODERATOR_ROLES` adds reviewer. The Worker checks that custom ids exist in the catalogue.
-- **Worker**: `GET /api/library/published` (public, filtered by the caller's roles). The rest of `/api/library/*` needs a member or the administrator: overview, roles, libraries (`archive`/`restore`), entries (`submit`, `review`, `archive`, `restore`).
+  - Entries are nested services (kind `service`) with an owner (`owner_id`: a member id, `admin`, or `guest:<clientId>`), revisions, `published_yaml`, and status draft → in_review → accepted/rejected, plus archived.
+  - `createLibraryService(store, { services, audit, auditTrail })` takes a `LibraryActor` ({ id, name, roles, admin, guest? }) and refuses with `LibraryError(message, status)`.
+  - Permissions:
+    - Anyone may design. A guest sees and changes only their own services, and at most `MAX_GUEST_SERVICES` (20).
+    - view = any member; edit = administrator/moderator/curator; review = reviewer/administrator, never your own; manage = administrator.
+  - Service ids are unique across the catalogue. A service without a library goes to the "Service catalogue" library, which is created on first use.
+  - `published(viewerRoles)` returns `{ roles, services: [{ entry_id, library, roles, journeys: [{ initiate, complete, allowed }], yaml }] }`. `roles` combines the built-in, organisation and service-defined roles. `auditTrail(actor, id)` reads the audit log by target.
+  - Stores: memory and D1 (migrations 0006 and 0007: owner columns, audit by target). Tests run on both.
+  - Audit actor type `guest`.
+- **Worker**:
+  - `libraryActor` always returns an actor; a guest is identified by their session.
+  - `GET /api/library/published` is public. `/api/library` (overview: me, roles, libraries, services, queue), `POST /api/library/services` (rate-limited for guests), `/api/library/entries/:id[/audit|/submit|/review|/archive|/restore]`, plus roles and libraries routes.
+  - A member's roles may be built in, organisation roles or published services' roles.
 - **Web**:
-  - Staff → Journey library (`components/library/`: `LibraryPanel`, `LibraryEntryEditor`, `EntryStatus`; `STAFF_SECTIONS` has `library`). Query keys: `tab`, `lib`, `entry` (or `new-<kind>`).
-  - `composables/library.ts` (`loadLibraryContent`, `kioskServices`, `kioskJourneys`, `roleName`) feeds ServicesScreen, AdminPanel's role checkboxes, and JourneyPanel's "Next: <role> will complete this".
-  - Server-side slot filling (`/api/agent/extract`) still looks up only built-in journeys.
+  - `/catalogue` (`pages/CataloguePage.vue`, linked from the navbar and the home page; `/studio` redirects to it). Its tabs are catalogue, mine/all, review, roles and libraries. `?service=<id>|new` opens `components/catalogue/ServiceWorkspace.vue` (Design, YAML, Preview, Summary, Audit, History).
+  - The kiosk keeps its built-in services. Services → "From the Service Catalogue" loads published services (`composables/library.ts`, the choice kept in localStorage `yaxb.kiosk.catalogue`; `/kiosk?load=<entry id>` loads one). Journeys a viewer can't start show locked with the roles that start them.
+  - JourneyPanel says "Next: <role> will complete this".
+  - Not built: the handover queue to the finishing role (LIB-12); server-side slot filling for catalogue journeys.
 
 ## Journey summaries
 

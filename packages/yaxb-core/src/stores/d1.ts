@@ -277,10 +277,11 @@ export function createD1ModeratorStore(db: D1Like): ModeratorStore {
         .bind(e.id, e.at, e.actor_type, e.actor_id, e.actor_name, e.action, e.target_id, e.details ? JSON.stringify(e.details) : null)
         .run();
     },
-    async auditLog({ limit = 100, actorId, before } = {}) {
+    async auditLog({ limit = 100, actorId, targetId, before } = {}) {
       const where: string[] = [];
       const values: unknown[] = [];
       if (actorId) where.push(`actor_id = ?${values.push(actorId)}`);
+      if (targetId) where.push(`target_id = ?${values.push(targetId)}`);
       if (before) where.push(`at < ?${values.push(before)}`);
       values.push(Math.min(Math.max(limit, 1), 500));
       const { results } = await db
@@ -295,7 +296,7 @@ export function createD1ModeratorStore(db: D1Like): ModeratorStore {
 /** The journey library on D1 (migrations/0006_library.sql). */
 export function createD1LibraryStore(db: D1Like): LibraryStore {
   const ENTRY_COLS =
-    "id, library_id, kind, doc_id, title, yaml, status, revision, published_yaml, published_revision, submitted_by, submitted_by_name, submitted_at, reviewed_by, reviewed_by_name, reviewed_at, review_note, created_at, updated_at, updated_by_name";
+    "id, library_id, kind, doc_id, title, yaml, status, revision, published_yaml, published_revision, owner_id, owner_name, submitted_by, submitted_by_name, submitted_at, reviewed_by, reviewed_by_name, reviewed_at, review_note, created_at, updated_at, updated_by_name";
   const role = (r: { id: string; label: string; description: string | null; created_at: string }): CustomRole => ({ id: r.id, label: r.label, created_at: r.created_at, ...(r.description ? { description: r.description } : {}) });
   return {
     async roles() {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // A staff section inside Services (For staff): answer quality, reviewing answers, the moderation
-// queue, the journey library, the team (chat and calls), your moderator profile, or administration. Each needs a
+// queue, the team (chat and calls), your moderator profile, or administration. Each needs a
 // moderator key (administration: the administrator); visitors see a sign-in. The Services list is
 // the menu: this shows the one section in the kiosk's address (/kiosk?screen=services&staff=team),
 // so links and the old /kiosk/curate, /kiosk/admin… addresses open it.
@@ -10,13 +10,12 @@ import { useRoute } from "vue-router";
 import CurateTimeline from "./CurateTimeline.vue";
 import AdminPanel from "@/components/moderation/AdminPanel.vue";
 import AnswerReviews from "@/components/moderation/AnswerReviews.vue";
-import LibraryPanel from "@/components/library/LibraryPanel.vue";
 import ModeratorProfile from "@/components/moderation/ModeratorProfile.vue";
 import QualityDashboard from "@/components/moderation/QualityDashboard.vue";
 import TeamPanel from "@/components/team/TeamPanel.vue";
 import { iconFor } from "@/lib/icons";
 
-const COMPONENTS = { quality: QualityDashboard, review: AnswerReviews, moderation: CurateTimeline, library: LibraryPanel, team: TeamPanel, profile: ModeratorProfile, admin: AdminPanel } as const;
+const COMPONENTS = { quality: QualityDashboard, review: AnswerReviews, moderation: CurateTimeline, team: TeamPanel, profile: ModeratorProfile, admin: AdminPanel } as const;
 type Section = keyof typeof COMPONENTS;
 
 const route = useRoute();

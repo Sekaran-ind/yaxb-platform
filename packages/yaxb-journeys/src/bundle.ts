@@ -13,7 +13,8 @@
 import { load } from "js-yaml";
 import { compileJourney, type Journey, type ServiceHandler } from "./journeys.js";
 import { compileQuestionnaire, type Questionnaire } from "./questionnaires.js";
-import { VISITOR_ROLE } from "./roles.js";
+import { expandService, isNestedService } from "./nested.js";
+import { DEFAULT_ROLES, VISITOR_ROLE, type Role } from "./roles.js";
 import { compileService, type Service } from "./services.js";
 
 export const BUNDLE_KINDS = ["service", "journey", "questionnaire"] as const;
@@ -39,6 +40,8 @@ export type Bundle = {
   questionnaires: Questionnaire[];
   documents: BundleDocument[];
   problems: BundleProblem[];
+  /** Roles the bundle's services define (nested services, nested.ts). */
+  roles: Role[];
   /** No errors (warnings allowed). */
   ok: boolean;
 };
@@ -93,13 +96,15 @@ export function splitDocuments(source: string): Chunk[] {
 
 export function compileBundle(source: string | string[], options: BundleOptions = {}): Bundle {
   const text = Array.isArray(source) ? source.join("\n---\n") : source;
-  const empty = (problem: BundleProblem): Bundle => ({ services: [], journeys: [], questionnaires: [], documents: [], problems: [problem], ok: false });
+  const empty = (problem: BundleProblem): Bundle => ({ services: [], journeys: [], questionnaires: [], documents: [], problems: [problem], roles: [], ok: false });
   if (new TextEncoder().encode(text).length > MAX_BUNDLE_BYTES) {
     return empty({ level: "error", line: 1, message: `The YAML is larger than ${MAX_BUNDLE_BYTES / 1024} KB. Split it into smaller files.` });
   }
 
   const problems: BundleProblem[] = [];
-  const parsed: { doc: Record<string, unknown>; line: number; chunk: Chunk; meta: BundleDocument }[] = [];
+  // `known`: for documents from a nested service, the role ids its journeys may use.
+  const parsed: { doc: Record<string, unknown>; line: number; chunk: Chunk; meta: BundleDocument; known?: string[]; nested?: boolean }[] = [];
+  const roles: Role[] = [];
   const documents: BundleDocument[] = [];
   for (const chunk of splitDocuments(text)) {
     let doc: unknown;
@@ -125,12 +130,33 @@ export function compileBundle(source: string | string[], options: BundleOptions 
       meta.ok = false;
       continue;
     }
+    if (isNestedService(d)) {
+      // A service with its journeys inside: expand it, and check the parts as flat documents.
+      const x = expandService(d);
+      roles.push(...x.roles.filter((r) => !roles.some((o) => o.id === r.id)));
+      const known = [...new Set([...DEFAULT_ROLES.map((r) => r.id), ...x.roles.map((r) => r.id), ...(options.roles ?? [])])];
+      const service = { doc: x.service, line: chunk.line, chunk, meta, known, nested: true };
+      parsed.push(service);
+      for (const j of x.journeys) {
+        const jm: BundleDocument = { kind: "journey", id: String(j.id), line: chunk.line, ok: true };
+        documents.push(jm);
+        parsed.push({ doc: j, line: chunk.line, chunk, meta: jm, known, nested: true });
+      }
+      if (x.problems.length) {
+        meta.ok = false;
+        for (const message of x.problems) problems.push({ level: "error", line: problemLine(chunk, message), kind: "service", id: meta.id, message });
+      }
+      continue;
+    }
     parsed.push({ doc: d, line: chunk.line, chunk, meta });
   }
   if (!documents.length) problems.push({ level: "error", line: 1, message: "Nothing to compile yet: add a service, a journey or a questionnaire." });
 
-  const fail = (p: (typeof parsed)[number], messages: string[]) => {
+  const fail = (p: (typeof parsed)[number], list: string[]) => {
     p.meta.ok = false;
+    // In a nested service, a journey's steps are its screens.
+    // The expansion already explains unknown roles, so the compiler's own message for them is dropped.
+    const messages = p.nested ? list.filter((m) => !/^roles\.(initiate|complete): no role /.test(m)).map((m) => m.replace(/\bstep '/g, "screen '")) : list;
     for (const message of messages) problems.push({ level: "error", line: problemLine(p.chunk, message), kind: p.meta.kind, id: p.meta.id, message });
   };
   const ofKind = (kind: BundleKind) => parsed.filter((p) => p.doc.kind === kind);
@@ -157,7 +183,7 @@ export function compileBundle(source: string | string[], options: BundleOptions 
   const journeys: Journey[] = [];
   const journeyDocs = unique("journey");
   for (const p of journeyDocs) {
-    const r = compileJourney(p.doc, { services: options.services, questionnaires, roles: options.roles });
+    const r = compileJourney(p.doc, { services: options.services, questionnaires, roles: p.known ?? options.roles });
     if (r.ok) journeys.push(r.journey);
     else fail(p, r.problems);
   }
@@ -166,7 +192,7 @@ export function compileBundle(source: string | string[], options: BundleOptions 
   const journeyIds = journeyDocs.flatMap((p) => (p.meta.id ? [p.meta.id] : []));
   const services: Service[] = [];
   for (const p of unique("service")) {
-    const r = compileService(p.doc, { journeys: journeyIds, screens: options.screens, roles: options.roles });
+    const r = compileService(p.doc, { journeys: journeyIds, screens: options.screens, roles: p.known ?? options.roles });
     if (r.ok) services.push(r.service);
     else fail(p, r.problems);
   }
@@ -197,7 +223,7 @@ export function compileBundle(source: string | string[], options: BundleOptions 
   }
 
   problems.sort((a, b) => a.line - b.line || (a.level === b.level ? 0 : a.level === "error" ? -1 : 1));
-  return { services, journeys, questionnaires, documents, problems, ok: !problems.some((p) => p.level === "error") };
+  return { services, journeys, questionnaires, documents, problems, roles, ok: !problems.some((p) => p.level === "error") };
 }
 
 /** Every handler name the bundle's journeys call. */
