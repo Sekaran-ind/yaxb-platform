@@ -23,7 +23,13 @@ import RolesPanel from "./RolesPanel.vue";
 import ServiceSummary from "./ServiceSummary.vue";
 
 const props = defineProps<{ modelValue: ServiceDesign; serviceNames?: readonly string[]; readonly?: boolean }>();
-const emit = defineEmits<{ "update:modelValue": [design: ServiceDesign]; /** Whether the last step (Review) is showing, so a host can drop its own copy of the finish action. */ last: [atEnd: boolean] }>();
+const emit = defineEmits<{
+  "update:modelValue": [design: ServiceDesign];
+  /** Whether the last step (Review) is showing, so a host can drop its own copy of the finish action. */
+  last: [atEnd: boolean];
+  /** The step showing, so a host can say where the designer is (the catalogue's player). */
+  step: [step: { index: number; total: number; label: string }];
+}>();
 defineSlots<{ finish?: (props: { ok: boolean; errors: number }) => unknown }>();
 const uid = useId();
 const id = (name: string) => `${uid}-${name}`;
@@ -100,6 +106,7 @@ async function go(i: number) {
 }
 const last = computed(() => at.value === STEPS.length - 1);
 watch(last, (v) => emit("last", v), { immediate: true });
+watch(at, (i) => emit("step", { index: i, total: STEPS.length, label: STEPS[i]!.label }), { immediate: true });
 
 // ---- journeys -------------------------------------------------------------------------------
 const titleOf = (j: JourneyDesign, i: number) => j.title || j.id || `Journey ${i + 1}`;

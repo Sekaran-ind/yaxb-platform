@@ -39,7 +39,7 @@ const props = defineProps<{
   /** The published service, when this viewer can't open the entry itself (read-only). */
   published?: CatalogueService | null;
 }>();
-const emit = defineEmits<{ close: []; created: [id: string]; changed: [] }>();
+const emit = defineEmits<{ close: []; created: [id: string]; changed: []; step: [step: { index: number; total: number; label: string } | null] }>();
 
 const { el, width } = useWidth(900);
 const entry = shallowRef<LibraryEntry | null>(null);
@@ -123,6 +123,7 @@ function openView(v: View) {
   if (v === "design" && !designFromYaml()) v = "yaml";
   if ((v === "audit" || v === "history") && !entry.value) v = "summary";
   view.value = v;
+  if (v !== "design") emit("step", null);
 }
 function onDesign(d: ServiceDesign) {
   design.value = d;
@@ -275,7 +276,7 @@ watch(
     <p v-if="designNote" class="rounded-lg bg-mist px-3 py-2 text-sm text-ink">{{ designNote }}</p>
 
     <template v-if="view === 'design'">
-      <ServiceDesigner :model-value="design" :service-names="JOURNEY_SERVICES" :readonly="!editable" @update:model-value="onDesign" @last="(v) => (designerAtEnd = v)">
+      <ServiceDesigner :model-value="design" :service-names="JOURNEY_SERVICES" :readonly="!editable" @update:model-value="onDesign" @last="(v) => (designerAtEnd = v)" @step="(st) => emit('step', st)">
         <!-- The last step offers the real next action: create or save, then submit for review. -->
         <template #finish="{ ok }">
           <template v-if="editable">

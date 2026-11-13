@@ -73,5 +73,5 @@ Guided services: a sequence of steps that ask the visitor something, run an on-d
 | LIB-24 | Questions are edited as a list in plain words (the question, the answer type, needed or not, the choices), with YAML only behind "Edit as YAML". Ids follow names until someone sets them. | Built |
 | LIB-25 | A live preview of the design (as a visitor sees it, journeys runnable) sits beside the steps when there is room, or replaces them while shown when there isn't. | Built |
 | LIB-26 | The YAML editor highlights YAML, numbers lines, marks problems on their lines with the message, works by touch, and loads only when opened (CodeMirror 6). | Built |
-| LIB-23 | The Service Catalogue looks like a kiosk: the kiosk's frame and layouts (Full, Pod, Mini), with an information panel where the kiosk has its player, and the catalogue's sections as kiosk screens. It stays a separate surface from the kiosk (docs/ux/kiosk-and-catalogue.md). | Built |
+| LIB-23 | The Service Catalogue looks like a kiosk: the kiosk's frame and layouts (Full, Pod, Mini), with its own player where the kiosk has its player (the same component and anatomy: the open service as "now playing", the counts, sign-in, New service and Open the kiosk), and the catalogue's sections as kiosk screens. It stays a separate surface from the kiosk (docs/ux/kiosk-and-catalogue.md). | Built |
 

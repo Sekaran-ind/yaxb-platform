@@ -245,7 +245,7 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
   - A member's roles may be built in, organisation roles or published services' roles.
 - **Web**:
   - `/catalogue` (`pages/CataloguePage.vue`, linked from the navbar and the home page; `/studio` redirects to it) uses the kiosk's `KioskFrame` and layouts (by width); it stays a separate surface (`docs/ux/kiosk-and-catalogue.md`):
-    - The kiosk's frame holds `CatalogueInfo` (dark, where the kiosk has its player: what the catalogue is, the steps, counts, who you are, New service, Open the kiosk, sign in or out).
+    - The frame holds `CataloguePlayer`, the catalogue's player on the shared `components/site/ConsolePlayer.vue` (the kiosk's `PlayerPanel` uses it too): the open service and the designer's step (`ServiceDesigner` emits `step`) as "now playing", the counts as meta, Staff sign in or sign out as the personal button, Open the kiosk and New service as the actions.
     - The `AdaptiveNav` holds the screens: catalogue, mine/all, review, roles and libraries. `?service=<id>|new` opens `components/catalogue/ServiceWorkspace.vue` (Design, YAML, Preview, Summary, Audit, History).
   - The kiosk keeps its built-in services. Services → "From the Service Catalogue" loads published services (`composables/library.ts`, the choice kept in localStorage `yaxb.kiosk.catalogue`; `/kiosk?load=<entry id>` loads one). Journeys a viewer can't start show locked with the roles that start them.
   - JourneyPanel says "Next: <role> will complete this".

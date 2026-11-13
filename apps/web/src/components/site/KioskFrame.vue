@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The kiosk frame (SET-14, LAY-1): one rounded frame holding a dark side panel and the screens. The
-// kiosk (its player) and the Service Catalogue (CatalogueInfo) both use it, so both have the same
+// kiosk (PlayerPanel) and the Service Catalogue (CataloguePlayer) both use it, so both have the same
 // three layouts (docs/ux/patterns.md, Frames):
 //   full  a wide screen: the panel is a column beside the screens, and the frame fills the window,
 //         wide and tall; the screens scroll inside it and the panel stays put

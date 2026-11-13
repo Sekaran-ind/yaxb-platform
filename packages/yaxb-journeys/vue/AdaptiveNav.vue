@@ -105,6 +105,7 @@ function onTabKey(e: KeyboardEvent) {
           :aria-selected="s.id === current"
           :tabindex="s.id === current ? 0 : -1"
           :aria-controls="`${uid}-panel`"
+          :title="s.label"
           @click="pick(s.id)"
         >
           <span class="yj-label"><component :is="icon(s.icon)" v-if="icon(s.icon)" class="yj-icon" aria-hidden="true" /><span class="yj-tab-text">{{ s.label }}</span><span v-if="s.badge" class="yj-badge">{{ s.badge }}</span></span>

@@ -15,7 +15,7 @@ import { Archive, ArchiveRestore, ExternalLink, FolderPlus, Pencil, Plus, Trash2
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { resolveLayout } from "@sekaran-ind/yaxb-core/screens";
-import CatalogueInfo from "@/components/catalogue/CatalogueInfo.vue";
+import CataloguePlayer from "@/components/catalogue/CataloguePlayer.vue";
 import KioskFrame from "@/components/site/KioskFrame.vue";
 import EntryStatus from "@/components/catalogue/EntryStatus.vue";
 import { useWidth } from "@/composables/width";
@@ -133,6 +133,9 @@ async function libCall(fn: () => Promise<unknown>) {
 // the kiosk's own layout choice is a kiosk preference.
 const { el: root, width } = useWidth(1280);
 const layout = computed(() => resolveLayout(width.value, "auto"));
+/** Where the designer is, for the player's "now playing" line. */
+const designStep = ref<{ index: number; total: number; label: string } | null>(null);
+watch(service, () => (designStep.value = null));
 const infoVariant = computed(() => (layout.value === "full" ? "full" : layout.value === "pod" ? "strip" : "mini"));
 const navScreens = computed<NavScreen[]>(() => [
   { id: "catalogue", label: "Catalogue", icon: "library", badge: String(catalogue.value.length) },
@@ -162,7 +165,18 @@ watch(signingIn, (v) => !v && void load());
   <div ref="root" class="w-full">
     <KioskFrame :layout="layout" :narrow-panel="Boolean(service)">
       <template #panel>
-        <CatalogueInfo :variant="infoVariant" :who="who" :counts="counts" :current="current" @new-service="go({ service: 'new' })" @sign-in="signingIn = true" @sign-out="signOut" />
+        <CataloguePlayer
+          :variant="infoVariant"
+          :who="who"
+          :counts="counts"
+          :current="current"
+          :step="service ? designStep : null"
+          :loading="!overview && !error"
+          :signing-in="signingIn"
+          @new-service="go({ service: 'new' })"
+          @sign-in="signingIn = !signingIn"
+          @sign-out="signOut"
+        />
       </template>
       <template #default="{ width: paneWidth }">
         <ModeratorSignIn v-if="signingIn" class="mb-4" why="Sign in with your moderator key to see every service, review and manage roles." @signed-in="signingIn = false" />
@@ -180,6 +194,7 @@ watch(signingIn, (v) => !v && void load());
             @close="go({ service: null })"
             @created="(id) => (changed(), go({ service: id }))"
             @changed="changed"
+            @step="(st) => (designStep = st)"
           />
           <AdaptiveNav v-else :screens="navScreens" storage-key="catalogue" label="Catalogue screens" :active="view" :width="paneWidth" :fill="layout === 'full'" @update:active="(v) => go({ view: v === 'catalogue' ? null : v })">
             <template #catalogue>

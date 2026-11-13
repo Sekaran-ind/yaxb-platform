@@ -545,6 +545,15 @@ textarea.yj-input {
   justify-content: center;
   max-width: 100%;
 }
+/* Very narrow, with counts: the icons go, so the names and counts fit. */
+.yj-tabs-row:has(.yj-tablist-fit) {
+  container-type: inline-size;
+}
+@container (max-width: 26rem) {
+  .yj-tablist-fit:has(.yj-badge) .yj-icon {
+    display: none;
+  }
+}
 .yj-tab-text {
   overflow: hidden;
   text-overflow: ellipsis;

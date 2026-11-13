@@ -27,7 +27,7 @@ then **staff**.
 
 | Frame | Use | Where |
 |---|---|---|
-| Kiosk frame | The rounded frame: a dark side panel and the screens | One component, `components/site/KioskFrame.vue`, for the kiosk (`KioskShell.vue`: the player) and the Service Catalogue (`CataloguePage.vue`: `CatalogueInfo`) |
+| Kiosk frame | The rounded frame: a dark side panel and the screens | One component, `components/site/KioskFrame.vue`, for the kiosk (`KioskShell.vue`: the player) and the Service Catalogue (`CataloguePage.vue`: `CataloguePlayer`) |
 | Page section | Portal pages: a title, a subtitle and content | `components/site/PageSection.vue` |
 
 The kiosk frame has three layouts, picked by `resolveLayout` from the width around the frame (the kiosk also lets the visitor choose one in Preferences; the catalogue always picks by width):
@@ -38,7 +38,27 @@ The kiosk frame has three layouts, picked by `resolveLayout` from the width arou
 | Pod | 640 to 1100px | A strip above the screens | Up to 64rem | The page scrolls |
 | Mini | under 640px | A small card above the screens | A phone's width (28rem) | The kiosk: one fixed height, scrolling inside (SET-18). The catalogue: the page scrolls |
 
-- The side panel is always `bg-console` (dark in every theme). It holds orientation (what this is, where you are, who you are) and the main actions, never forms. Its variants match the layouts: `full`, `strip`, `mini` (`PlayerPanel`, `CatalogueInfo`).
+- The side panel is always a player (below), `bg-console`, dark in every theme. It holds orientation (what this is, what is happening, who you are) and the main actions, never forms.
+
+## Players
+
+The panel of every kiosk frame is a player: one component, `components/site/ConsolePlayer.vue`, with one anatomy. The kiosk (`PlayerPanel`) and the catalogue (`CataloguePlayer`) fill its slots; a new surface in the frame does the same, never a card of its own.
+
+| Part | What it is | Kiosk | Service Catalogue |
+|---|---|---|---|
+| `controls` | The one personal button, top right (in a strip or card: before the actions) | Profile and preferences (`ProfileButton`) | Staff sign in (a guest), or your initials to sign out (a member) |
+| `orb` | The surface's mark, glowing | Sparkles (pulses while thinking) | Library while browsing; a pencil and ruler while designing |
+| eyebrow | The surface's name | Yaxb AI Kiosk | YAXB Service Catalogue |
+| status | "Now playing", live (`role="status"`), with a spinner while busy; short, so it fits the strip and the card | Ready when you are, Listening, Thinking… | Ready to design; the open service's name while designing; "Loading the catalogue" |
+| `under-status` | Full only: a detail of the status | What the visitor is saying | The service's state and the designer's step ("Step 3 of 4: Journeys") |
+| `body` | Full only: what fills the column | The voice bars | "Design once. Run on any kiosk." and how a service gets there (Design, Review, Load), or a hint while designing |
+| `meta` | One quiet line that scrolls sideways only when it doesn't fit | The notebook and its sources | The counts ("2 published · 0 yours · 1 in review"); while designing, the state and step |
+| `actions` | Round controls at the foot; the primary is the large brand circle, at most one | Pause, Ask by voice (primary), Stop | Open the kiosk, New service (primary) |
+| `foot` | Full only: a note in words | Voice needs Chrome or Edge | Who you are (guest, or name and roles) |
+
+- Variants follow the frame's layouts: `full` (a column), `strip` (Pod: a bar), `mini` (a small card). The strip and the card keep the orb, eyebrow, status, meta, controls and actions; the body and foot are full only.
+- Round actions are icon buttons with an `aria-label` and `title`. A symbol everyone knows (microphone, pause, stop) needs no caption; any other gets a visible caption under it in the full player ("New service", "Open the kiosk").
+- Counts are the player's meta line, not stat tiles.
 - While someone is working (designing a service), the panel keeps only the essentials: the open item, the actions, who you are.
 - Inside the frame, everything sizes by its container (`@container`, `@lg:`/`@2xl:`), never the window. Long reading (the conversation) keeps a reading width (`max-w-4xl`, centred) however wide the frame is.
 
@@ -93,7 +113,7 @@ What each kiosk layout means for its screens: Full and Mini give the nav a fixed
 | Facts about one thing | A definition list (`dl`): label, then value |
 | Records over time | A table, newest first (Audit), or a list of disclosures (History) |
 | State | A status chip with one word and one colour per state everywhere: Draft (mist), In review (info), Published (success), Rejected (danger), Archived (mist, muted). Component: `components/catalogue/EntryStatus.vue`. |
-| Counts | Badges on nav items and stat tiles on summaries (`ServiceSummary`, `CatalogueInfo`) |
+| Counts | Badges on nav items, stat tiles on summaries (`ServiceSummary`), and the player's meta line |
 | Who does what | Role chips. For assignments, a role × journey table (`RolesPanel`). |
 | Nothing yet | An empty state in `bg-mist` that says what to do next ("Nothing is published yet. Design a service and send it for review.") |
 
@@ -154,3 +174,4 @@ What each kiosk layout means for its screens: Full and Mini give the nav a fixed
   - The designer has four fixed steps; journeys, screens and questions are each edited in one place (master/detail, open-in-place lists); the preview is a pane beside the steps, not a step.
   - The YAML editor is CodeMirror 6, lazy-loaded (not Ace: see `docs/ux/kiosk-and-catalogue.md`).
   - The kiosk and the catalogue stay two surfaces (see `docs/ux/kiosk-and-catalogue.md`).
+  - Both frame panels are players (`ConsolePlayer`): the catalogue's information card became `CataloguePlayer`, with the open service as "now playing", the counts as meta, and New service / Open the kiosk as the player's controls.
