@@ -69,6 +69,9 @@ Guided services: a sequence of steps that ask the visitor something, run an on-d
 | LIB-19 | A kiosk keeps its built-in services and features (chat, notebook, sources, settings, the team), and can load published services from the catalogue. Journeys the viewer can't start show which role starts them; a member with that role who signs in can start them. | Built |
 | LIB-20 | The roles a published service defines can be given to team members. | Built |
 | LIB-21 | The kiosk's own guided services (such as Visits, with its check-in journey) live in the Service Catalogue, seeded once and published; they are not built-in services. Editing or archiving a seeded service sticks. | Built |
-| LIB-22 | Designing a service is a sequence of steps (service, roles, journeys, each journey's details and screens, review) with a breadcrumb, a step list and Previous / Next. | Built |
-| LIB-23 | The Service Catalogue looks like a kiosk: one frame, with an information panel where the kiosk has its player, and the catalogue's sections as kiosk screens. | Built |
+| LIB-22 | Designing a service is four steps (Service, Roles, Journeys, Review) with a numbered step list and Previous / Next. Each object is edited in one place: journeys as a list beside the chosen journey (narrow: the list, then into one and back), its screens and their questions as lists that open in place, with add, reorder and remove. Review compiles the design and offers the real next action. | Built |
+| LIB-24 | Questions are edited as a list in plain words (the question, the answer type, needed or not, the choices), with YAML only behind "Edit as YAML". Ids follow names until someone sets them. | Built |
+| LIB-25 | A live preview of the design (as a visitor sees it, journeys runnable) sits beside the steps when there is room, or replaces them while shown when there isn't. | Built |
+| LIB-26 | The YAML editor highlights YAML, numbers lines, marks problems on their lines with the message, works by touch, and loads only when opened (CodeMirror 6). | Built |
+| LIB-23 | The Service Catalogue looks like a kiosk: the kiosk's frame and layouts (Full, Pod, Mini), with an information panel where the kiosk has its player, and the catalogue's sections as kiosk screens. It stays a separate surface from the kiosk (docs/ux/kiosk-and-catalogue.md). | Built |
 
