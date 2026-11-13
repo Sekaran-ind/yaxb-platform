@@ -16,7 +16,6 @@ import {
   roleLabel,
   serviceTemplate,
   toYaml,
-  type BundleProblem,
   type Role,
   type ServiceDesign,
 } from "@sekaran-ind/yaxb-journeys";
@@ -94,11 +93,6 @@ async function load() {
 // ---- checking -------------------------------------------------------------------------------
 const check = computed(() => checkDocument(yaml.value, [], { services: JOURNEY_SERVICES, roles: props.roles.map((r) => r.id) }));
 const errors = computed(() => check.value.problems.filter((p) => p.level === "error"));
-const marks = computed(() => {
-  const m = new Map<number, BundleProblem["level"]>();
-  for (const p of check.value.problems) if (m.get(p.line) !== "error") m.set(p.line, p.level);
-  return m;
-});
 const editor = ref<InstanceType<typeof YamlEditor> | null>(null);
 function goToLine(line: number) {
   openView("yaml");
@@ -297,7 +291,7 @@ watch(
     </template>
     <div v-else-if="view === 'yaml'" class="space-y-2">
       <p class="text-xs text-gray-500">A service with its journeys and their screens. Changing the design rewrites this YAML, and comments are dropped.</p>
-      <YamlEditor ref="editor" v-model="yaml" :marks="marks" label="Service YAML" :readonly="!editable" height="32rem" />
+      <YamlEditor ref="editor" v-model="yaml" :problems="check.problems" label="Service YAML" :readonly="!editable" height="32rem" />
     </div>
     <div v-else-if="view === 'preview'" class="rounded-2xl bg-canvas p-3 ring-1 ring-gray-200">
       <FlowPreview :bundle="check.bundle" :layout="resolveLayout(width - 24)" :width="width - 24" storage-key="catalogue.preview" />

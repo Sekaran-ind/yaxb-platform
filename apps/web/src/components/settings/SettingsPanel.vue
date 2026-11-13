@@ -35,6 +35,8 @@ const SECTIONS = [
 ];
 
 // The section comes from the kiosk's address (/kiosk?prefs=model), so a kiosk command can open one (CMD-1).
+// fill: take the parent's height (the Full and Mini kiosks), so the section list stays put.
+defineProps<{ fill?: boolean }>();
 const route = useRoute();
 const sectionFrom = (q: unknown) => (typeof q === "string" && SECTIONS.some((x) => x.id === q) ? q : "profile");
 const section = ref(sectionFrom(route.query.prefs));
@@ -75,8 +77,8 @@ async function clearBrowser() {
 </script>
 
 <template>
-  <div ref="el" class="mx-auto max-w-5xl space-y-6">
-    <AdaptiveNav v-model:active="section" :screens="SECTIONS" mode="sidebar" storage-key="settings" :width="width">
+  <div ref="el" :class="fill ? 'mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col gap-4' : 'mx-auto max-w-5xl space-y-6'">
+    <AdaptiveNav v-model:active="section" :screens="SECTIONS" mode="sidebar" storage-key="settings" label="Preferences" :width="width" :fill="fill" :class="fill && 'min-h-0 flex-1'" body-class="[scrollbar-width:thin]">
       <template #profile>
         <AccountScreen />
       </template>

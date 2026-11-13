@@ -8,7 +8,7 @@
 import type { ServiceHandler } from "@sekaran-ind/yaxb-core/journeys";
 import type { Layout } from "@sekaran-ind/yaxb-core/screens";
 import { servicesFor, type ServiceItem } from "@sekaran-ind/yaxb-core/services";
-import { ArrowLeft, ChevronDown, ChevronRight, Info, Library, Lock, Plus, X } from "@lucide/vue";
+import { ChevronDown, ChevronRight, Info, Library, Lock, Plus, X } from "@lucide/vue";
 import { kioskContent } from "@sekaran-ind/yaxb-core/content";
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -68,10 +68,7 @@ const backToServices = () => void router.push({ path: "/kiosk", query: { screen:
 <template>
   <JourneyPanel v-if="journey" :key="journey.id" :journey="journey" :services="services" :notebook="notebook" @close="emit('openJourney', null)" @speak="(t) => emit('speak', t)" @done="emit('journeyDone', journey.id)" />
 
-  <div v-else-if="staffSection" class="space-y-3">
-    <button type="button" class="btn-ghost h-8 px-2 text-sm" @click="backToServices"><ArrowLeft class="size-4" aria-hidden="true" /> Services</button>
-    <KioskStaff />
-  </div>
+  <KioskStaff v-else-if="staffSection" @back="backToServices" />
 
   <div v-else class="@container space-y-7">
     <section v-if="forYou.length" aria-labelledby="svc-for-you">

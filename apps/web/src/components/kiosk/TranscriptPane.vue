@@ -75,7 +75,8 @@ function submit() {
 </script>
 
 <template>
-  <div :class="cn('relative flex flex-col', heightClass ?? 'min-h-[min(62dvh,560px)]')">
+  <!-- A reading width, however wide the kiosk: the conversation and its composer stay centred. -->
+  <div :class="cn('relative mx-auto flex w-full max-w-4xl flex-col', heightClass ?? 'min-h-[min(62dvh,560px)]')">
     <div class="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
       <RouterLink :to="{ path: '/kiosk', query: { prefs: answers === 'local' ? 'knowledge' : 'model' } }" class="chip hover:text-ink">
         <Settings2 class="size-3.5" aria-hidden="true" />

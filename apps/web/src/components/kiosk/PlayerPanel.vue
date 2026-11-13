@@ -40,7 +40,7 @@ const STATUS_TEXT: Partial<Record<KioskStatus, string>> = { Ready: "Ready when y
     :class="
       cn(
         'console',
-        variant === 'full' && 'flex h-[600px] flex-col items-center justify-between px-6 py-8',
+        variant === 'full' && 'flex h-full min-h-0 flex-col items-center justify-between overflow-y-auto px-6 py-8 [scrollbar-width:none]',
         variant === 'strip' && 'flex flex-wrap items-center justify-between gap-4 px-5 py-4',
         variant === 'mini' && 'flex items-center justify-between gap-3 rounded-2xl px-4 py-3',
       )

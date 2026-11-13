@@ -23,7 +23,6 @@ import { answer, classify, onOfflineProgress, summarize, translate, type Offline
 import { recognizeCommand, yesOrNo } from "@/lib/browser/commands";
 import { modelFor, searchLocal, semanticReady, warmUp, type LocalSearch } from "@/lib/browser/semantic";
 import { extractWithModel, matchOnDevice } from "@/lib/browser/slots";
-import { cn } from "@/lib/cn";
 import { languageLabel, speechLangFor } from "@/lib/languages";
 import type { CommandCard, KioskStatus } from "@/lib/types";
 import AccountScreen from "@/components/account/AccountScreen.vue";
@@ -37,6 +36,7 @@ import TranscriptPane from "./TranscriptPane.vue";
 import KioskPreferences from "./KioskPreferences.vue";
 import ProfileButton from "./ProfileButton.vue";
 import TranslatePane from "./TranslatePane.vue";
+import KioskFrame from "@/components/site/KioskFrame.vue";
 
 
 const activeNotebook = computed({ get: () => settings.activeNotebook, set: (id) => updateSettings({ activeNotebook: id }) });
@@ -428,24 +428,20 @@ function onStop() {
 }
 
 const playerVariant = computed(() => (layout.value === "full" ? "full" : layout.value === "pod" ? "strip" : "mini"));
-const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3 : width.value));
+/** Full and Mini have a fixed height: the screen's navigation stays put and the screen scrolls inside. */
+const fixedHeight = computed(() => layout.value !== "pod");
 </script>
 
 <template>
   <!-- Measure the full available width (not the mini card), so Auto can grow back out of mini. -->
   <div ref="root" class="w-full">
-    <div :class="cn('mx-auto px-3 py-5 sm:px-5 sm:py-6', layout === 'mini' ? 'max-w-md' : 'max-w-7xl')">
-      <FeedbackPrompt class="mb-3" />
-      <h1 class="sr-only">Yaxb AI Kiosk</h1>
-      <!-- The kiosk: one frame holding the player (with the kiosk's controls) and its screens. -->
-      <div
-        :class="
-          cn(
-            'rounded-[2rem] border border-gray-200/70 bg-surface p-2 shadow-[var(--shadow-lift)]',
-            layout === 'full' ? 'grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]' : 'space-y-2',
-          )
-        "
-      >
+    <!-- The kiosk: one frame holding the player (with the kiosk's controls) and its screens. -->
+    <KioskFrame :layout="layout" :mini-height="MINI_HEIGHT">
+      <template #before>
+        <FeedbackPrompt class="mb-3" />
+        <h1 class="sr-only">Yaxb AI Kiosk</h1>
+      </template>
+      <template #panel>
         <PlayerPanel
           :variant="playerVariant"
           :status="status"
@@ -468,27 +464,21 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
             <ProfileButton :nickname="account.profile.value?.nickname ?? null" :open="prefsOpen" @toggle="prefsOpen ? closePrefs() : openPrefs()" />
           </template>
         </PlayerPanel>
-        <div
-          :class="
-            cn(
-              layout === 'full' && 'h-[600px] overflow-y-auto px-3 pt-3 [scrollbar-width:thin]',
-              layout === 'pod' && 'min-h-[520px] px-3 pt-2 pb-1',
-              layout === 'mini' && cn('px-1.5 pt-1', MINI_HEIGHT),
-            )
-          "
-        >
-          <div v-if="prefsOpen" :class="layout === 'mini' ? cn('h-full', MINI_BODY) : ''"><KioskPreferences :nickname="account.profile.value?.nickname ?? null" @close="closePrefs" /></div>
-          <AdaptiveNav
-            v-else
-            :screens="navScreens"
-            :mode="kioskContent.screens.nav?.[layout]"
-            :storage-key="`kiosk-${layout}`"
-            :active="screen"
-            :width="navWidth"
-            :fill="layout === 'mini'"
-            :body-class="layout === 'mini' ? MINI_BODY : ''"
-            @update:active="setScreen"
-          >
+      </template>
+      <template #default="{ width: screensWidth }">
+      <KioskPreferences v-if="prefsOpen" :nickname="account.profile.value?.nickname ?? null" :fill="fixedHeight" @close="closePrefs" />
+      <AdaptiveNav
+        v-else
+        :screens="navScreens"
+        :mode="kioskContent.screens.nav?.[layout]"
+        :storage-key="`kiosk-${layout}`"
+        label="Kiosk screens"
+        :active="screen"
+        :width="screensWidth"
+        :fill="fixedHeight"
+        :body-class="fixedHeight ? MINI_BODY : ''"
+        @update:active="setScreen"
+      >
             <template v-for="s in navScreens" :key="s.id" #[s.id]>
               <TranscriptPane
                 v-if="componentOf(s.id) === 'transcript'"
@@ -496,7 +486,7 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
                 :busy="chat.busy.value"
                 :listening="voiceIn.listening.value"
                 :voice-supported="voiceIn.supported.value"
-                :height-class="layout === 'full' ? 'h-[504px]' : layout === 'mini' ? 'h-full' : undefined"
+                :height-class="fixedHeight ? 'h-full' : undefined"
                 @mic="onMic"
                 :selection="selection"
                 :can-ask="canAsk"
@@ -534,9 +524,8 @@ const navWidth = computed(() => (layout.value === "full" ? (width.value * 2) / 3
               <KnowledgeSources v-else-if="componentOf(s.id) === 'records'" />
               <TranslatePane v-else-if="componentOf(s.id) === 'translate'" :initial-text="lastAnswer" @speak="(t, lang) => voiceOut.speak(t, { lang })" />
             </template>
-          </AdaptiveNav>
-        </div>
-      </div>
-    </div>
+      </AdaptiveNav>
+      </template>
+    </KioskFrame>
   </div>
 </template>
