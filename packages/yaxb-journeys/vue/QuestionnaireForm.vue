@@ -17,6 +17,8 @@ const props = defineProps<{
   width: number;
   storageKey?: string;
   navMode?: NavMode;
+  switchable?: boolean;
+  /** @deprecated The default now. */
   lockMode?: boolean;
   sources?: SourceOption[];
   languages?: LanguageOption[];
@@ -63,7 +65,7 @@ defineExpose({ reveal });
 
 <template>
   <div class="yj yj-questionnaire">
-    <AdaptiveNav v-if="paged" v-model:active="active" :screens="screens" :width="width" :storage-key="storageKey ?? 'questionnaire'" :mode="navMode ?? 'tabs'" :lock-mode="lockMode">
+    <AdaptiveNav v-if="paged" v-model:active="active" :screens="screens" :width="width" :storage-key="storageKey ?? 'questionnaire'" :mode="navMode ?? 'tabs'" :switchable="switchable">
       <template v-for="s in sections" :key="s.id" #[s.id]>
         <p v-if="s.summary" class="yj-muted yj-small yj-section-summary">{{ s.summary }}</p>
         <div class="yj-form-fields">

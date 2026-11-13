@@ -244,7 +244,7 @@ const caption = computed(() => `${layout.value[0]!.toUpperCase()}${layout.value.
                 :layout="layout"
                 :width="innerWidth"
                 :mode="nav === 'remembered' ? undefined : nav"
-                :lock-mode="nav !== 'remembered'"
+                :switchable="nav === 'remembered'"
                 :handlers="handlers"
                 :sources="sources"
                 :languages="languages"

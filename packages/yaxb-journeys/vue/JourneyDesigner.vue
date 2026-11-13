@@ -9,6 +9,7 @@ import { load } from "js-yaml";
 import { computed, nextTick, ref, useId, watch } from "vue";
 import ConfirmAction from "./ConfirmAction.vue";
 import Glyph from "./Glyph.vue";
+import QuestionsEditor from "./QuestionsEditor.vue";
 import RolePicker from "./RolePicker.vue";
 
 // part: the journey's details and roles, its screens, or both (the service designer's steps show one at a time).
@@ -48,7 +49,35 @@ const KINDS: { id: StepKind; label: string }[] = [
 ];
 const WITH_PLACEHOLDER = 'message: "Summarise {{answers.questions.name}}"';
 const screenIds = computed(() => j.value.screens.map((s) => s.id).filter(Boolean));
-const others = (sid: string) => screenIds.value.filter((x) => x !== sid);
+/** The other screens, by name (their ids are what the YAML keeps). */
+const others = (sid: string) => j.value.screens.filter((s) => s.id && s.id !== sid).map((s) => ({ id: s.id, name: s.label ? `${s.label} (${s.id})` : s.id }));
+
+// Ids follow names while they are still the made-up ones ("journey-2", "screen-3") or were made from the name.
+watch(
+  () => j.value.title,
+  (title, before) => {
+    if (props.readonly) return;
+    if (/^journey-\d+$/.test(j.value.id) || j.value.id === idFromName(before ?? "")) j.value.id = idFromName(title) || j.value.id;
+  },
+);
+function setScreenLabel(i: number, label: string) {
+  const s = j.value.screens[i]!;
+  const before = s.label;
+  s.label = label;
+  if (!/^screen-\d+$/.test(s.id) && s.id !== idFromName(before)) return;
+  const base = idFromName(label);
+  if (!base) return;
+  let n = 1;
+  let next = base;
+  while (j.value.screens.some((x, k) => k !== i && x.id === next)) next = `${base}-${++n}`;
+  // The screens that pointed at the old id point at the new one.
+  for (const x of j.value.screens) {
+    if (x.next === s.id) x.next = next;
+    for (const b of x.branches) if (b.to === s.id) b.to = next;
+  }
+  if (j.value.start === s.id) j.value.start = next;
+  s.id = next;
+}
 
 /** How the questions YAML reads: a count, or what's wrong. */
 function questionsNote(text: string): { ok: boolean; text: string } {
@@ -108,40 +137,46 @@ const open = ref<number | null>(0);
 <template>
   <div ref="root" class="yj yj-stack yj-form">
     <fieldset v-if="part !== 'screens'" class="yj-fieldset" :disabled="readonly">
+      <legend class="yj-sr-only">About this journey</legend>
       <div class="yj-form-grid">
-        <div>
-          <label :for="id('id')" class="yj-field-label">Journey id <span class="yj-required" aria-hidden="true">*</span></label>
-          <input :id="id('id')" v-model="j.id" class="yj-input" placeholder="check-in" />
-        </div>
-        <div>
-          <label :for="id('title')" class="yj-field-label">Journey title <span class="yj-required" aria-hidden="true">*</span></label>
+        <div class="yj-span-2">
+          <label :for="id('title')" class="yj-field-label">Journey name <span class="yj-required" aria-hidden="true">*</span></label>
           <input :id="id('title')" v-model="j.title" class="yj-input" placeholder="Check in for your visit" />
         </div>
         <div class="yj-span-2">
-          <label :for="id('summary')" class="yj-field-label">Summary</label>
+          <label :for="id('summary')" class="yj-field-label">What it does, in a sentence</label>
           <input :id="id('summary')" v-model="j.summary" class="yj-input" />
         </div>
-        <div>
-          <label :for="id('icon')" class="yj-field-label">Icon</label>
-          <input :id="id('icon')" v-model="j.icon" class="yj-input" />
-        </div>
-        <div>
-          <label :for="id('start')" class="yj-field-label">First screen</label>
-          <select :id="id('start')" v-model="j.start" class="yj-input">
-            <option value="">The first in the list</option>
-            <option v-for="s in screenIds" :key="s" :value="s">{{ s }}</option>
-          </select>
-        </div>
       </div>
-      <div class="yj-form-grid">
+      <div class="yj-form-grid yj-mt">
         <RolePicker v-model="j.initiate" :roles="roles" legend="Who may start it" with-visitor :disabled="readonly" hint="None ticked, or Visitor: anyone at the kiosk." />
-        <RolePicker v-model="j.complete" :roles="roles" legend="Who finishes it" :disabled="readonly" />
+        <RolePicker v-model="j.complete" :roles="roles" legend="Who finishes it" :disabled="readonly" hint="None ticked: whoever started it." />
       </div>
       <form v-if="!readonly" class="yj-row yj-mt" @submit.prevent="addRole">
         <label :for="id('newrole')" class="yj-small yj-muted">A role that isn't listed:</label>
         <input :id="id('newrole')" v-model="roleName" class="yj-input yj-select-sm" placeholder="Front desk" maxlength="40" />
         <button type="submit" class="yj-btn yj-select-sm" :disabled="!roleName.trim()">Add role</button>
       </form>
+      <details class="yj-details yj-mt">
+        <summary>More: the journey's id, icon and first screen</summary>
+        <div class="yj-form-grid yj-mt">
+          <div>
+            <label :for="id('id')" class="yj-field-label">Journey id <span class="yj-required" aria-hidden="true">*</span></label>
+            <input :id="id('id')" v-model="j.id" class="yj-input yj-mono" placeholder="check-in" />
+          </div>
+          <div>
+            <label :for="id('icon')" class="yj-field-label">Icon</label>
+            <input :id="id('icon')" v-model="j.icon" class="yj-input" />
+          </div>
+          <div>
+            <label :for="id('start')" class="yj-field-label">First screen</label>
+            <select :id="id('start')" v-model="j.start" class="yj-input">
+              <option value="">The first in the list</option>
+              <option v-for="s in j.screens.filter((x) => x.id)" :key="s.id" :value="s.id">{{ s.label || s.id }}</option>
+            </select>
+          </div>
+        </div>
+      </details>
     </fieldset>
 
     <fieldset v-if="part !== 'details'" class="yj-fieldset" :disabled="readonly">
@@ -164,31 +199,23 @@ const open = ref<number | null>(0);
           <div v-if="open === i" class="yj-stack yj-mt">
             <div class="yj-form-grid">
               <div>
-                <label :for="id(`sid${i}`)" class="yj-field-label">Screen id</label>
-                <input :id="id(`sid${i}`)" v-model="s.id" class="yj-input" />
+                <label :for="id(`label${i}`)" class="yj-field-label">Screen title</label>
+                <input :id="id(`label${i}`)" :value="s.label" class="yj-input" @input="setScreenLabel(i, ($event.target as HTMLInputElement).value)" />
               </div>
               <div>
-                <label :for="id(`kind${i}`)" class="yj-field-label">Kind</label>
+                <label :for="id(`kind${i}`)" class="yj-field-label">What it does</label>
                 <select :id="id(`kind${i}`)" :value="s.kind" class="yj-input" @change="setKind(i, ($event.target as HTMLSelectElement).value as StepKind)">
                   <option v-for="k in KINDS" :key="k.id" :value="k.id">{{ k.label }}</option>
                 </select>
               </div>
-              <div class="yj-span-2">
-                <label :for="id(`label${i}`)" class="yj-field-label">Screen title</label>
-                <input :id="id(`label${i}`)" v-model="s.label" class="yj-input" />
-              </div>
 
               <template v-if="s.kind === 'ask'">
                 <div class="yj-span-2">
-                  <label :for="id(`ask${i}`)" class="yj-field-label">Prompt</label>
+                  <label :for="id(`ask${i}`)" class="yj-field-label">What the screen says first</label>
                   <input :id="id(`ask${i}`)" v-model="s.ask" class="yj-input" placeholder="The screen title when empty" />
                 </div>
                 <div class="yj-span-2">
-                  <label :for="id(`q${i}`)" class="yj-field-label">Questions (YAML)</label>
-                  <textarea :id="id(`q${i}`)" v-model="s.fieldsYaml" class="yj-input yj-mono" rows="7" spellcheck="false" :aria-describedby="id(`qn${i}`)" />
-                  <p :id="id(`qn${i}`)" class="yj-help" :class="questionsNote(s.fieldsYaml).ok ? '' : 'yj-status-bad'">
-                    {{ questionsNote(s.fieldsYaml).text }} · types: text, textarea, password (masked), select (with options), boolean, number, date, source, language; <code v-pre class="yj-code">when: "values.x == true"</code> asks one only sometimes.
-                  </p>
+                  <QuestionsEditor v-model="s.fieldsYaml" :readonly="readonly" :label="`Questions on “${s.label || s.id}”`" />
                 </div>
                 <div>
                   <label :for="id(`sub${i}`)" class="yj-field-label">Button label</label>
@@ -239,7 +266,7 @@ const open = ref<number | null>(0);
                 </div>
                 <select v-if="s.then === 'step'" v-model="s.next" class="yj-input yj-select-sm" :aria-label="`Next screen after ${s.id}`">
                   <option value="">The next screen in the list</option>
-                  <option v-for="t in others(s.id)" :key="t" :value="t">{{ t }}</option>
+                  <option v-for="t in others(s.id)" :key="t.id" :value="t.id">{{ t.name }}</option>
                 </select>
               </div>
               <div v-if="s.kind === 'decide' || s.then === 'branches'" class="yj-stack">
@@ -249,7 +276,7 @@ const open = ref<number | null>(0);
                   <span aria-hidden="true">→</span>
                   <select v-model="b.to" class="yj-input yj-select-sm" :aria-label="`Go to, branch ${bi + 1} of screen ${s.id}`">
                     <option value="">Choose…</option>
-                    <option v-for="t in others(s.id)" :key="t" :value="t">{{ t }}</option>
+                    <option v-for="t in others(s.id)" :key="t.id" :value="t.id">{{ t.name }}</option>
                   </select>
                   <button v-if="bi < s.branches.length - 1 && !readonly" type="button" class="yj-btn yj-btn-quiet" :aria-label="`Remove branch ${bi + 1}`" @click="s.branches.splice(bi, 1)">×</button>
                 </div>
