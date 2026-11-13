@@ -37,3 +37,7 @@ The microphone permission texts are in `android/app/src/main/AndroidManifest.xml
 ## Testing without a device
 
 Build with `VITE_API_BASE=http://localhost:3000`, serve the bundle with `npx vite preview --mode native --port 4173` in `apps/web`, and add `http://localhost:4173` to `KIOSK_APP_ORIGINS` in `apps/web/.dev.vars`. In a browser the app uses the browser's speech instead of the device's.
+
+## Build the APK on GitHub
+
+`.github/workflows/android.yml` builds a debug APK on every push to `main` (and on pull requests that touch the app, or by hand from the Actions tab). Download it from the run's **Artifacts** (`yaxb-kiosk-android-debug`) and install it on a test phone. Set the kiosk server as the repository variable `VITE_API_BASE` first; without it the app has no server.

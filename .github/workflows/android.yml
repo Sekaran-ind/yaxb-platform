@@ -1,0 +1,59 @@
+name: Android
+# Builds the YAXB Kiosk Android app (apps/native, Capacitor) as a debug APK, downloadable from the run's
+# artifacts, to install on a test phone. Built here because the native toolchain (JDK, Android SDK)
+# isn't on the dev machines. Follows clinux-diary's and clinux-pro's android.yml.
+#
+# The app sends /api calls to the kiosk server at VITE_API_BASE (PLT-11). Set it as a repository
+# variable (Settings → Secrets and variables → Actions → Variables), e.g. https://yaxb-web.<account>.workers.dev.
+# Without it the APK still builds, but only the on-device features work.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'apps/native/**'
+      - 'apps/web/src/**'
+      - 'apps/web/vite.config.ts'
+      - 'apps/web/package.json'
+      - 'packages/**'
+      - 'package-lock.json'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      VITE_API_BASE: ${{ vars.VITE_API_BASE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Check the server address
+        if: env.VITE_API_BASE == ''
+        run: echo "::warning::VITE_API_BASE is not set; the app will have no kiosk server. Set it as a repository variable."
+      - name: Build the packages (yaxb-journeys, then yaxb-core)
+        run: npm run build:core
+      - name: Build the kiosk web bundle in native mode
+        run: npm run build:native -w @sekaran-ind/yaxb-web
+      - name: Copy it into the Android project
+        working-directory: apps/native
+        run: npx cap sync android
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - name: Build the debug APK
+        working-directory: apps/native/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yaxb-kiosk-android-debug
+          path: apps/native/android/app/build/outputs/apk/debug/app-debug.apk
