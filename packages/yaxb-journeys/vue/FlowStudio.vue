@@ -7,6 +7,7 @@ import { compileBundle, EXAMPLE_BUNDLE, MAX_BUNDLE_BYTES, type Bundle, type Bund
 import type { ServiceHandler } from "@sekaran-ind/yaxb-journeys/journeys";
 import { NAV_MODES, resolveLayout, type Layout, type NavMode } from "@sekaran-ind/yaxb-journeys/screens";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
+import ConfirmAction from "./ConfirmAction.vue";
 import FlowPreview from "./FlowPreview.vue";
 import type { LanguageOption, SourceOption } from "./QuestionField.vue";
 import StructureTree from "./StructureTree.vue";
@@ -133,8 +134,8 @@ async function copy() {
   copied.value = true;
   setTimeout(() => (copied.value = false), 1500);
 }
+const keepsWork = computed(() => source.value !== example.value && Boolean(source.value.trim()));
 function loadExample() {
-  if (source.value !== example.value && source.value.trim() && !window.confirm("Replace your YAML with the example?")) return;
   setSource(example.value);
   fileNote.value = null;
 }
@@ -190,7 +191,7 @@ const caption = computed(() => `${layout.value[0]!.toUpperCase()}${layout.value.
             <p class="yj-small yj-muted">{{ counts }}</p>
           </div>
           <div class="yj-row">
-            <button type="button" class="yj-btn" @click="loadExample">Example</button>
+            <ConfirmAction label="Example" confirm-label="Replace with the example" message="Replace your YAML with the example? Your changes are lost." trigger-class="yj-btn" :skip="!keepsWork" @confirm="loadExample" />
             <button type="button" class="yj-btn" @click="fileInput?.click()">Open…</button>
             <button type="button" class="yj-btn" @click="download">Download</button>
             <button type="button" class="yj-btn" @click="copy">{{ copied ? "Copied" : "Copy" }}</button>

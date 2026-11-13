@@ -13,26 +13,27 @@ import {
   newServiceDesign,
   parseDocument,
   resolveLayout,
+  roleLabel,
   serviceTemplate,
   toYaml,
   type BundleProblem,
   type Role,
   type ServiceDesign,
 } from "@sekaran-ind/yaxb-journeys";
-import { FlowPreview, ServiceDesigner, ServiceSummary, YamlEditor } from "@sekaran-ind/yaxb-journeys/vue";
+import { ConfirmAction, FlowPreview, ServiceDesigner, ServiceSummary, YamlEditor } from "@sekaran-ind/yaxb-journeys/vue";
 import { Archive, ArchiveRestore, ArrowLeft, Check, ExternalLink, History, Loader2, Save, Send, X } from "@lucide/vue";
 import { computed, ref, shallowRef, watch } from "vue";
 import EntryStatus from "./EntryStatus.vue";
 import ServiceAudit from "./ServiceAudit.vue";
+import SegmentedControl from "@/components/site/SegmentedControl.vue";
 import { useWidth } from "@/composables/width";
 import type { CatalogueService } from "@/composables/library";
 import { api, ApiError } from "@/lib/api";
-import { cn } from "@/lib/cn";
 
 const props = defineProps<{
   /** null: a new service. */
   entryId: string | null;
-  me: { id: string; name: string; guest: boolean; admin: boolean; can: LibraryPermissions };
+  me: { id: string; name: string; roles: string[]; guest: boolean; admin: boolean; can: LibraryPermissions };
   /** The organisation's roles (built in and added by administrators). */
   roles: Role[];
   libraries: Library[];
@@ -107,6 +108,8 @@ function goToLine(line: number) {
 // ---- the designer ---------------------------------------------------------------------------
 const design = ref<ServiceDesign>(newServiceDesign());
 const designNote = ref<string | null>(null);
+/** The designer is on its last step, which offers Save itself. */
+const designerAtEnd = ref(false);
 const designProblems = ref<string[]>([]);
 function designFromYaml(): boolean {
   designNote.value = null;
@@ -175,7 +178,6 @@ const review = (decision: "accept" | "reject") =>
   }, decision === "accept" ? "Published: kiosks can load this service now." : "Rejected. The author sees your note.");
 const archive = (on: boolean) =>
   act(async () => {
-    if (on && !window.confirm("Archive this service? It leaves the catalogue and every kiosk.")) return;
     await api(`/api/library/entries/${entry.value!.id}/${on ? "archive" : "restore"}`, {});
     await load();
     emit("changed");
@@ -184,6 +186,32 @@ const archive = (on: boolean) =>
 const own = computed(() => Boolean(entry.value && (entry.value.owner_id === props.me.id || entry.value.submitted_by === props.me.id) && !props.me.admin));
 const canSubmit = computed(() => mayChange.value && entry.value && (entry.value.status === "draft" || entry.value.status === "rejected") && !dirty.value && !errors.value.length);
 const canReview = computed(() => props.me.can.review && entry.value?.status === "in_review" && !own.value);
+// Say why an action isn't offered, instead of hiding it silently (docs/ux/patterns.md, Feedback).
+/** Why this viewer can't publish a service that is waiting for review. */
+const reviewBlocked = computed(() => {
+  if (entry.value?.status !== "in_review" || canReview.value) return null;
+  if (props.me.can.review) return "This is your own service: another reviewer publishes it.";
+  if (props.me.guest) return "Waiting for a reviewer: a reviewer publishes it, and you'll see the result here.";
+  const roles = props.me.roles.map((r) => roleLabel(r, props.roles)).join(", ");
+  return `Waiting for a reviewer. Your roles (${roles || "none"}) can't publish; ask an administrator for the Reviewer role.`;
+});
+/** Why Submit for review can't be pressed yet. */
+const submitBlocked = computed(() => {
+  if (!entry.value || canSubmit.value) return null;
+  if (entry.value.status === "in_review" && !dirty.value) return "it is waiting for a reviewer.";
+  if (entry.value.status === "accepted" && !dirty.value) return "it is published. Save a change to send a new revision for review.";
+  if (dirty.value) return "save first.";
+  if (errors.value.length) return "fix the problems first.";
+  return null;
+});
+/** Why the service can't be changed here. */
+const lockedBecause = computed(() => {
+  if (editable.value) return null;
+  if (readOnlyCopy.value) return "You can read this service and open it in a kiosk. Only its designer, or a moderator, curator or administrator, can change it.";
+  if (entry.value?.status === "archived") return mayChange.value ? "Archived: restore it as a draft to change it." : "Archived. Only its designer, or a moderator, curator or administrator, can restore it.";
+  if (entry.value) return "Only its designer, or a moderator, curator or administrator, can change it.";
+  return null;
+});
 function useRevision(r: EntryRevision) {
   yaml.value = r.yaml;
   openView("design");
@@ -195,12 +223,12 @@ const kioskLink = computed(() => {
   const id = entry.value?.published_revision ? entry.value.id : props.published?.entry_id;
   return id ? `/kiosk?screen=services&load=${encodeURIComponent(id)}` : null;
 });
-const VIEWS = computed<{ id: View; label: string }[]>(() => [
-  { id: "design", label: "Design" },
-  { id: "yaml", label: "YAML" },
-  { id: "preview", label: "Preview" },
-  { id: "summary", label: "Summary" },
-  ...(entry.value ? [{ id: "audit" as const, label: "Audit" }, { id: "history" as const, label: `History (${revisions.value.length})` }] : []),
+const VIEWS = computed<{ value: View; label: string }[]>(() => [
+  { value: "design", label: "Design" },
+  { value: "yaml", label: "YAML" },
+  { value: "preview", label: "Preview" },
+  { value: "summary", label: "Summary" },
+  ...(entry.value ? [{ value: "audit" as const, label: "Audit" }, { value: "history" as const, label: `History (${revisions.value.length})` }] : []),
 ]);
 
 // Last: load() fills refs declared above (an immediate watcher runs during setup).
@@ -233,7 +261,7 @@ watch(
     </div>
 
     <div v-if="entry?.status === 'in_review'" class="rounded-lg bg-info/10 px-3 py-2 text-sm text-ink">
-      Sent for review by {{ entry.submitted_by_name }}, {{ when(entry.submitted_at) }}.<span v-if="own"> Another reviewer reviews it.</span>
+      Sent for review by {{ entry.submitted_by_name }}, {{ when(entry.submitted_at) }}.
     </div>
     <div v-else-if="entry?.status === 'rejected'" class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-red-800">Rejected by {{ entry.reviewed_by_name }}, {{ when(entry.reviewed_at) }}: {{ entry.review_note }}</div>
     <div v-else-if="entry?.status === 'accepted'" class="rounded-lg bg-success/10 px-3 py-2 text-sm text-ink">
@@ -244,18 +272,7 @@ watch(
     </div>
 
     <div class="flex flex-wrap items-center justify-between gap-2">
-      <div class="flex flex-wrap gap-0.5 rounded-full bg-mist p-0.5" role="group" aria-label="View">
-        <button
-          v-for="v in VIEWS"
-          :key="v.id"
-          type="button"
-          :aria-pressed="view === v.id"
-          :class="cn('rounded-full px-3 py-1.5 text-[13px] font-medium', view === v.id ? 'bg-surface text-ink shadow-sm' : 'text-gray-500 hover:text-ink')"
-          @click="openView(v.id)"
-        >
-          {{ v.label }}
-        </button>
-      </div>
+      <SegmentedControl :model-value="view" :options="VIEWS" label="View" @update:model-value="openView" />
       <p class="text-sm" :class="errors.length ? 'text-red-800' : 'text-success'" role="status">
         {{ errors.length ? `${errors.length} problem${errors.length === 1 ? "" : "s"}` : !entry || entry.status === "draft" || entry.status === "rejected" ? "Ready to submit" : "No problems" }}<span v-if="dirty && editable" class="text-gray-500"> · unsaved changes</span>
       </p>
@@ -264,7 +281,18 @@ watch(
     <p v-if="designNote" class="rounded-lg bg-mist px-3 py-2 text-sm text-ink">{{ designNote }}</p>
 
     <template v-if="view === 'design'">
-      <ServiceDesigner :model-value="design" :service-names="JOURNEY_SERVICES" :readonly="!editable" @update:model-value="onDesign" />
+      <ServiceDesigner :model-value="design" :service-names="JOURNEY_SERVICES" :readonly="!editable" @update:model-value="onDesign" @last="(v) => (designerAtEnd = v)">
+        <!-- The last step offers the real next action: create or save, then submit for review. -->
+        <template #finish="{ ok }">
+          <template v-if="editable">
+            <span v-if="!ok && (!entry || dirty)" class="yj-small yj-muted">You can save now; fix the problems before you submit it.</span>
+            <button v-if="!entry || dirty" type="button" class="yj-btn yj-btn-primary" :disabled="busy" @click="save">{{ entry ? "Save revision" : "Create service" }}</button>
+            <button v-else-if="canSubmit" type="button" class="yj-btn yj-btn-primary" :disabled="busy" @click="submit">Submit for review</button>
+            <span v-else class="yj-small yj-muted">{{ submitBlocked ? `Submit for review: ${submitBlocked}` : "Saved." }}</span>
+          </template>
+          <span v-else class="yj-small yj-muted">{{ lockedBecause ?? "This is the last step." }}</span>
+        </template>
+      </ServiceDesigner>
       <p v-if="designProblems.length" role="alert" class="text-sm text-red-800">{{ designProblems.join(" ") }}</p>
     </template>
     <div v-else-if="view === 'yaml'" class="space-y-2">
@@ -333,18 +361,32 @@ watch(
         <span class="mb-1 block text-gray-600">What changed (optional)</span>
         <input v-model="note" class="input" maxlength="200" placeholder="e.g. Added a triage journey for nurses" />
       </label>
-      <button type="button" class="btn-primary" :disabled="busy || (!dirty && Boolean(entry))" @click="save">
+      <!-- In the designer its steps lead (the last one offers Save), so Save is secondary there. -->
+      <button v-if="!(view === 'design' && designerAtEnd)" type="button" :class="view === 'design' ? 'btn-light' : 'btn-primary'" :disabled="busy || (!dirty && Boolean(entry))" @click="save">
         <Loader2 v-if="busy" class="size-4 animate-spin" aria-hidden="true" /><Save v-else class="size-4" aria-hidden="true" /> {{ entry ? "Save revision" : "Create service" }}
       </button>
-      <button v-if="entry" type="button" class="btn-light" :disabled="busy || !canSubmit" :title="dirty ? 'Save first' : errors.length ? 'Fix the problems first' : ''" @click="submit">
+      <button v-if="entry" type="button" class="btn-light" :disabled="busy || !canSubmit" :aria-describedby="submitBlocked ? 'submit-why' : undefined" @click="submit">
         <Send class="size-4" aria-hidden="true" /> Submit for review
       </button>
-      <button v-if="entry" type="button" class="btn-ghost" :disabled="busy" @click="archive(true)"><Archive class="size-4" aria-hidden="true" /> Archive</button>
+      <ConfirmAction
+        v-if="entry"
+        label="Archive"
+        confirm-label="Archive it"
+        :message="`Archive “${title}”? It leaves the catalogue and every kiosk. You can restore it as a draft later.`"
+        trigger-class="btn-ghost"
+        :busy="busy"
+        @confirm="archive(true)"
+      >
+        <Archive class="size-4" aria-hidden="true" /> Archive
+      </ConfirmAction>
+      <p v-if="submitBlocked" id="submit-why" class="w-full text-xs text-gray-500">Submit for review: {{ submitBlocked }}</p>
       <p v-if="entry?.status === 'in_review' && dirty" class="w-full text-xs text-gray-500">Saving takes it out of review: submit it again afterwards.</p>
     </div>
     <div v-else-if="entry?.status === 'archived' && mayChange" class="border-t border-gray-100 pt-3">
       <button type="button" class="btn-light" :disabled="busy" @click="archive(false)"><ArchiveRestore class="size-4" aria-hidden="true" /> Restore as a draft</button>
     </div>
+    <p v-if="lockedBecause && !(entry?.status === 'archived' && mayChange)" class="rounded-lg bg-mist px-3 py-2 text-sm text-gray-700">{{ lockedBecause }}</p>
+    <p v-if="reviewBlocked" class="rounded-lg bg-info/10 px-3 py-2 text-sm text-ink">{{ reviewBlocked }}</p>
 
     <form v-if="canReview" class="space-y-2 rounded-xl bg-mist p-3" @submit.prevent>
       <p class="text-sm font-medium text-ink">Your review of revision {{ entry?.revision }}</p>

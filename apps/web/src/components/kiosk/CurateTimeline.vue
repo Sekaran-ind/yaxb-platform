@@ -4,6 +4,7 @@
 import { AlertTriangle, CheckCircle2, MessageCircleQuestion, RefreshCw } from "@lucide/vue";
 import { ref, watch } from "vue";
 import ModeratorSignIn from "@/components/moderation/ModeratorSignIn.vue";
+import SegmentedControl from "@/components/site/SegmentedControl.vue";
 import { useAgentResource } from "@/composables/resource";
 import { api, ApiError } from "@/lib/api";
 import type { FeedbackSummary } from "@sekaran-ind/yaxb-core/feedback";
@@ -13,6 +14,11 @@ const items = ref<ModerationItem[] | null>(null);
 const queueError = ref<string | null>(null);
 const signInNeeded = ref(false);
 const state = ref<"open" | "handled" | "">("open");
+const SHOW = [
+  { value: "open", label: "Open" },
+  { value: "handled", label: "Handled" },
+  { value: "", label: "All" },
+] as const;
 const reason = ref("");
 const reasons = ref<string[]>([]);
 const handling = ref<string | null>(null);
@@ -60,19 +66,13 @@ const pct = (n: number, total: number) => (total ? `${Math.round((n / total) * 1
       <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h3 id="mod-heading" class="font-semibold text-ink">Escalated questions</h3>
         <div v-if="!signInNeeded" class="flex flex-wrap items-center gap-3 text-xs">
-          <RouterLink to="/kiosk/review" class="font-medium text-brand-dark hover:underline">Review answers</RouterLink>
-          <RouterLink to="/kiosk/quality" class="font-medium text-brand-dark hover:underline">Quality (F1)</RouterLink>
-          <RouterLink to="/kiosk/team" class="font-medium text-brand-dark hover:underline">Team</RouterLink>
-          <RouterLink to="/kiosk/moderator" class="font-medium text-brand-dark hover:underline">My moderator profile</RouterLink>
           <button type="button" class="inline-flex items-center gap-1 hover:text-ink" @click="loadQueue"><RefreshCw class="size-3.5" aria-hidden="true" /> Refresh</button>
         </div>
       </div>
       <ModeratorSignIn v-if="signInNeeded" why="Moderators: sign in with your key to see escalated questions." @signed-in="signedIn" />
       <template v-else>
         <div class="mb-3 flex flex-wrap items-center gap-2 text-sm">
-          <div class="flex gap-1" role="group" aria-label="Show">
-            <button v-for="s in [{ v: 'open', l: 'Open' }, { v: 'handled', l: 'Handled' }, { v: '', l: 'All' }] as const" :key="s.v" type="button" :aria-pressed="state === s.v" :class="['rounded-full px-3 py-1', state === s.v ? 'bg-brand-dark text-on-brand' : 'bg-mist text-ink']" @click="state = s.v">{{ s.l }}</button>
-          </div>
+          <SegmentedControl v-model="state" :options="SHOW" label="Show" />
           <label for="mod-reason" class="sr-only">Reason</label>
           <select id="mod-reason" v-model="reason" class="input w-auto py-1 text-sm">
             <option value="">Any reason</option>
@@ -84,10 +84,10 @@ const pct = (n: number, total: number) => (total ? `${Math.round((n / total) * 1
         <ul class="space-y-2">
           <li v-for="m in items ?? []" :key="m.id" :class="['rounded-lg border-l-4 px-4 py-3 text-sm', m.state === 'handled' ? 'border-success bg-success/10' : 'border-warning bg-warning/10']">
             <p class="font-medium text-ink">{{ m.question }}</p>
-            <p class="mt-1 text-xs text-gray-600">{{ m.reason }} Â· {{ new Date(m.created_at).toLocaleString() }}</p>
+            <p class="mt-1 text-xs text-gray-600">{{ m.reason }} · {{ new Date(m.created_at).toLocaleString() }}</p>
             <p v-if="m.state === 'handled'" class="mt-2 flex items-start gap-1.5 text-xs text-ink">
               <CheckCircle2 class="mt-0.5 size-3.5 shrink-0 text-success" aria-hidden="true" />
-              <span>Handled by {{ m.handled_by }}<template v-if="m.handled_at"> Â· {{ new Date(m.handled_at).toLocaleString() }}</template><template v-if="m.note">: {{ m.note }}</template></span>
+              <span>Handled by {{ m.handled_by }}<template v-if="m.handled_at"> · {{ new Date(m.handled_at).toLocaleString() }}</template><template v-if="m.note">: {{ m.note }}</template></span>
             </p>
             <form v-else-if="handling === m.id" class="mt-2 flex flex-wrap gap-2" @submit.prevent="markHandled(m.id)">
               <label :for="`note-${m.id}`" class="sr-only">Note</label>
@@ -111,7 +111,7 @@ const pct = (n: number, total: number) => (total ? `${Math.round((n / total) * 1
         <div class="card space-y-3 p-4">
           <p class="text-sm text-ink">
             {{ feedback.data.value.total }} session{{ feedback.data.value.total === 1 ? "" : "s" }}<template v-if="feedback.data.value.score !== null">
-              Â· score {{ feedback.data.value.score > 0 ? "+" : "" }}{{ feedback.data.value.score }} <span class="text-xs text-gray-500">(good minus bad, over rated sessions, from -1 to +1)</span></template
+              · score {{ feedback.data.value.score > 0 ? "+" : "" }}{{ feedback.data.value.score }} <span class="text-xs text-gray-500">(good minus bad, over rated sessions, from -1 to +1)</span></template
             >
           </p>
           <div class="flex h-3 overflow-hidden rounded-full bg-mist" role="img" :aria-label="RATINGS.map((r) => `${r} ${feedback.data.value!.counts[r]}`).join(', ')">
@@ -140,7 +140,7 @@ const pct = (n: number, total: number) => (total ? `${Math.round((n / total) * 1
         <ul v-if="feedback.data.value.comments.length" class="mt-3 space-y-2">
           <li v-for="c in feedback.data.value.comments" :key="c.id" class="rounded-lg bg-mist px-4 py-2 text-sm">
             <p class="text-ink">{{ c.comment }}</p>
-            <p class="mt-1 text-xs text-gray-500">{{ c.rating }} Â· {{ new Date(c.created_at).toLocaleString() }}</p>
+            <p class="mt-1 text-xs text-gray-500">{{ c.rating }} · {{ new Date(c.created_at).toLocaleString() }}</p>
           </li>
         </ul>
       </template>

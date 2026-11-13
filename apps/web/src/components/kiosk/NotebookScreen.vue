@@ -5,6 +5,7 @@
 import { NOTEBOOK_LIMITS } from "@sekaran-ind/yaxb-core/notebook";
 import { STORAGE_OPTIONS } from "@sekaran-ind/yaxb-core/settings";
 import { Brain, ClipboardPaste, Eye, FileText, Globe, Loader2, MessagesSquare, Plus, RefreshCw, Trash2, Upload } from "@lucide/vue";
+import { ConfirmAction } from "@sekaran-ind/yaxb-journeys/vue";
 import { computed, ref } from "vue";
 import type { NotebookApi } from "@/composables/notebook";
 import { useCapabilities } from "@/composables/settings";
@@ -100,15 +101,15 @@ function renamePrompt() {
   if (t?.trim() && notebook.value) void props.nb.save({ ...notebook.value, title: t.trim().slice(0, 200) });
 }
 function removeNotebook() {
-  if (notebook.value && confirm(`Delete “${notebook.value.title}”, its sources, memory and conversations?`)) void props.nb.remove(notebook.value.id);
+  if (notebook.value) void props.nb.remove(notebook.value.id);
 }
 async function saveMemory() {
   if (memoryDraft.value === null) return;
   await props.nb.setMemory(memoryDraft.value);
   memoryDraft.value = null;
 }
-function removeSource(id: string, title: string) {
-  if (confirm(`Remove “${title}”?`)) void props.nb.removeSource(id);
+function removeSource(id: string) {
+  void props.nb.removeSource(id);
 }
 async function deleteThread(id: string) {
   await props.nb.store.value.deleteThread(id);
@@ -132,7 +133,13 @@ async function deleteThread(id: string) {
       </div>
       <div class="flex gap-2 text-xs">
         <button type="button" class="text-gray-500 hover:text-ink" @click="renamePrompt">Rename</button>
-        <button type="button" class="text-red-700 hover:underline" @click="removeNotebook">Delete</button>
+        <ConfirmAction
+          v-if="notebook"
+          label="Delete"
+          :message="`Delete “${notebook.title}”, with its sources, memory and conversations? This can't be undone.`"
+          trigger-class="text-red-700 hover:underline"
+          @confirm="removeNotebook"
+        />
       </div>
     </div>
     <p class="-mt-3 text-xs text-gray-500">Stored in: {{ storage?.label }}. {{ storage?.description }}</p>
@@ -196,7 +203,9 @@ async function deleteThread(id: string) {
                 <RefreshCw :class="['size-4', refreshing === s.id && 'animate-spin']" />
               </button>
               <button type="button" class="rounded p-1.5 text-gray-500 hover:bg-mist" :aria-label="`Preview ${s.title}`" @click="preview = preview === s.id ? null : s.id"><Eye class="size-4" /></button>
-              <button type="button" class="rounded p-1.5 text-red-700 hover:bg-danger/10" :aria-label="`Remove ${s.title}`" @click="removeSource(s.id, s.title)"><Trash2 class="size-4" /></button>
+              <ConfirmAction label="Remove" :aria-label="`Remove ${s.title}`" :message="`Remove “${s.title}” from this notebook?`" trigger-class="rounded p-1.5 text-red-700 hover:bg-danger/10" @confirm="removeSource(s.id)"
+                ><Trash2 class="size-4" aria-hidden="true"
+              /></ConfirmAction>
             </div>
           </div>
           <pre v-if="preview === s.id" class="mt-2 max-h-48 overflow-y-auto rounded bg-mist p-2 text-xs whitespace-pre-wrap">{{ s.text.slice(0, 4000) }}{{ s.text.length > 4000 ? "…" : "" }}</pre>
@@ -235,7 +244,9 @@ async function deleteThread(id: string) {
           <button type="button" class="min-w-0 flex-1 truncate text-left" @click="emit('openThread', t.id)">
             {{ t.title }} <span class="text-xs text-gray-500">· {{ new Date(t.updatedAt).toLocaleString() }}</span>
           </button>
-          <button type="button" class="rounded p-1 text-red-700 hover:bg-danger/10" :aria-label="`Delete conversation ${t.title}`" @click="deleteThread(t.id)"><Trash2 class="size-4" /></button>
+          <ConfirmAction label="Delete" :aria-label="`Delete conversation ${t.title}`" :message="`Delete the conversation “${t.title}”?`" trigger-class="rounded p-1 text-red-700 hover:bg-danger/10" @confirm="deleteThread(t.id)"
+            ><Trash2 class="size-4" aria-hidden="true"
+          /></ConfirmAction>
         </li>
       </ul>
     </section>

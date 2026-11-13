@@ -4,6 +4,7 @@
 // what was said), the passphrase, export, sign out and erase.
 import { ACTIVITY_ACTIONS, AGE_RANGES, INTEREST_DOMAINS, MIN_PASSPHRASE } from "@sekaran-ind/yaxb-core/accounts";
 import { Download, LogOut, RotateCcw, Sparkles, Trash2 } from "@lucide/vue";
+import { ConfirmAction } from "@sekaran-ind/yaxb-journeys/vue";
 import { computed, ref } from "vue";
 import { useAccount } from "@/composables/account";
 import { languageLabel } from "@/lib/languages";
@@ -12,8 +13,6 @@ import AccountSetup from "./AccountSetup.vue";
 const account = useAccount();
 const editing = ref(false);
 const pw = ref({ current: "", next: "", confirm: "", msg: "", err: "", busy: false });
-const erasing = ref(false);
-const confirmText = ref("");
 const shown = ref(25);
 
 const p = computed(() => account.profile.value!);
@@ -66,7 +65,6 @@ async function exportProfile() {
 
 async function erase() {
   await account.erase();
-  erasing.value = false;
 }
 </script>
 
@@ -135,14 +133,15 @@ async function erase() {
       <h3 class="font-semibold text-ink">Your data</h3>
       <div class="mt-3 flex flex-wrap gap-2">
         <button type="button" class="btn-light" @click="exportProfile"><Download class="size-4" aria-hidden="true" /> Export my profile</button>
-        <button type="button" class="btn-light text-red-800" @click="erasing = !erasing"><Trash2 class="size-4" aria-hidden="true" /> Erase my profile</button>
-      </div>
-      <div v-if="erasing" class="mt-3 space-y-2 rounded-lg bg-danger/10 p-3 text-sm text-red-800">
-        <p>This erases your profile and its activity log from this device. It can't be undone. Type your nickname to confirm.</p>
-        <div class="flex flex-wrap gap-2">
-          <input v-model="confirmText" class="input max-w-xs" :aria-label="`Type ${p.nickname} to confirm`" />
-          <button type="button" class="btn-light text-red-800" :disabled="confirmText !== p.nickname" @click="erase">Erase</button>
-        </div>
+        <ConfirmAction
+          label="Erase my profile"
+          confirm-label="Erase"
+          message="This erases your profile and its activity log from this device. It can't be undone."
+          :type-to-confirm="p.nickname"
+          trigger-class="btn-light text-red-800"
+          @confirm="erase"
+          ><Trash2 class="size-4" aria-hidden="true" /> Erase my profile</ConfirmAction
+        >
       </div>
     </section>
   </div>

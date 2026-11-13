@@ -1,34 +1,44 @@
 <script setup lang="ts">
-// A staff section inside Services (For staff): answer quality, reviewing answers, the moderation
-// queue, the team (chat and calls), your moderator profile, or administration. Each needs a
-// moderator key (administration: the administrator); visitors see a sign-in. The Services list is
-// the menu: this shows the one section in the kiosk's address (/kiosk?screen=services&staff=team),
-// so links and the old /kiosk/curate, /kiosk/admin… addresses open it.
+// The staff sections inside Services (For staff): answer quality, reviewing answers, the moderation
+// queue, the team (chat and calls), your moderator profile, and administration. Each needs a
+// moderator key (administration: the administrator); visitors see a sign-in. They are siblings, so
+// they share one adaptive nav (tabs, a section menu when narrow) instead of each panel linking to
+// the others. The section is in the kiosk's address (/kiosk?screen=services&staff=team), so links and
+// the old /kiosk/curate, /kiosk/admin… addresses open it.
 import { kioskContent } from "@sekaran-ind/yaxb-core/content";
+import { AdaptiveNav, type NavScreen } from "@sekaran-ind/yaxb-journeys/vue";
 import { computed } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import CurateTimeline from "./CurateTimeline.vue";
 import AdminPanel from "@/components/moderation/AdminPanel.vue";
 import AnswerReviews from "@/components/moderation/AnswerReviews.vue";
 import ModeratorProfile from "@/components/moderation/ModeratorProfile.vue";
 import QualityDashboard from "@/components/moderation/QualityDashboard.vue";
 import TeamPanel from "@/components/team/TeamPanel.vue";
-import { iconFor } from "@/lib/icons";
+import { useWidth } from "@/composables/width";
 
 const COMPONENTS = { quality: QualityDashboard, review: AnswerReviews, moderation: CurateTimeline, team: TeamPanel, profile: ModeratorProfile, admin: AdminPanel } as const;
 type Section = keyof typeof COMPONENTS;
+const isSection = (s: unknown): s is Section => typeof s === "string" && s in COMPONENTS;
 
 const route = useRoute();
-const section = computed<Section>(() => (typeof route.query.staff === "string" && route.query.staff in COMPONENTS ? (route.query.staff as Section) : "quality"));
-/** The section's name and icon, from its card in the For staff service. */
-const item = computed(() => kioskContent.services.find((s) => s.id === "staff")?.items.find((i) => i.staff === section.value));
+const router = useRouter();
+const section = computed<Section>(() => (isSection(route.query.staff) ? route.query.staff : "quality"));
+/** The sections, named and drawn as their cards in the For staff service. */
+const screens = computed<NavScreen[]>(() =>
+  (kioskContent.services.find((s) => s.id === "staff")?.items ?? []).filter((i) => isSection(i.staff)).map((i) => ({ id: i.staff!, label: i.label, icon: i.icon })),
+);
+// Another section starts afresh: only the kiosk's screen is kept from the address.
+const open = (id: string) => void router.push({ path: "/kiosk", query: { screen: "services", staff: id } });
+const { el, width } = useWidth(900);
 </script>
 
 <template>
-  <section :aria-labelledby="`staff-${section}`" class="@container space-y-3">
-    <h2 :id="`staff-${section}`" class="flex items-center gap-2 text-base font-semibold text-ink">
-      <component :is="iconFor(item?.icon)" v-if="iconFor(item?.icon)" class="size-4 text-brand" aria-hidden="true" />{{ item?.label ?? "Staff" }}
-    </h2>
-    <component :is="COMPONENTS[section]" />
+  <section ref="el" aria-label="For staff">
+    <AdaptiveNav :screens="screens" mode="tabs" lock-mode storage-key="staff" :active="section" :width="width" @update:active="open">
+      <template v-for="s in screens" :key="s.id" #[s.id]>
+        <component :is="COMPONENTS[s.id as Section]" />
+      </template>
+    </AdaptiveNav>
   </section>
 </template>
