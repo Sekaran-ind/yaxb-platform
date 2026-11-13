@@ -148,13 +148,13 @@ export type Preferences = {
 const answer = (id: PersonalityId, value: string | undefined) => PERSONALITY_QUESTIONS.find((q) => q.id === id)?.options.find((o) => o.value === value)?.label;
 const interestLabel = (id: InterestId) => INTEREST_DOMAINS.find((d) => d.id === id)!.label;
 
-/** Which service items each interest brings forward (content/services keys and journey ids). */
+/** Which service items each interest brings forward (content/services keys, and catalogue items: a nested service's items are its journey ids). */
 const INTEREST_HIGHLIGHTS: Record<InterestId, string[]> = {
   "health-topics": ["ask"],
   medicines: ["ask"],
   nutrition: ["ask"],
   reports: ["find", "summarise"],
-  visits: ["check-in"],
+  visits: ["visit-check-in"],
   documents: ["open", "summarise", "briefing", "find"],
   policies: ["ask", "sources"],
   languages: ["translate"],

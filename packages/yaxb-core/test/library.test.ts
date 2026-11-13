@@ -3,7 +3,7 @@
 // (node:sqlite with every migration applied).
 import { compileBundle } from "@sekaran-ind/yaxb-journeys";
 import { describe, expect, it } from "vitest";
-import { JOURNEY_SERVICES } from "../src/content/index.js";
+import { JOURNEY_SERVICES, kioskContent } from "../src/content/index.js";
 import { createLibraryService, createMemoryLibraryStore, LibraryError, MAX_GUEST_SERVICES, type LibraryActor, type LibraryStore } from "../src/library/index.js";
 import { createD1ModeratorStore } from "../src/stores/d1.js";
 import { createMemoryModeratorStore, type ModeratorStore } from "../src/moderators/index.js";
@@ -148,6 +148,21 @@ for (const [name, make] of [
       await expectError(svc.createEntry(guest, null, { yaml: "kind: journey\nid: x\n" }), 422, /kind: service/);
       for (let i = 1; i < MAX_GUEST_SERVICES; i++) await svc.createEntry(guest, null, { yaml: clinic(`clinic-${i}`) });
       await expectError(svc.createEntry(guest, null, { yaml: clinic("one-too-many") }), 429);
+    });
+
+    it("is seeded once with the kiosk's own services, published", async () => {
+      const svc = setup();
+      const seeds = kioskContent.catalogue.map((c) => c.yaml);
+      expect(await svc.seed(seeds)).toEqual(["visits"]);
+      expect(await svc.seed(seeds)).toEqual([]);
+      const pub = await svc.published();
+      expect(pub.services.map((s) => [s.id, s.journeys.map((j) => j.id)])).toEqual([["visits", ["visit-check-in"]]]);
+      expect(pub.roles.map((r) => r.id)).toContain("front-desk");
+      // Archived, it stays archived: seeding again doesn't bring it back.
+      const id = pub.services[0]!.entry_id;
+      await svc.setEntryArchived(admin, id, true);
+      expect(await svc.seed(seeds)).toEqual([]);
+      expect((await svc.published()).services).toEqual([]);
     });
 
     it("keeps libraries for members to organise, and archives them", async () => {

@@ -96,7 +96,7 @@ describe("what commands may do", () => {
 
 describe("about the kiosk (CMD-2)", () => {
   it("answers from the kiosk's own definitions", () => {
-    expect(aboutKiosk("capabilities", { journeys: kioskContent.journeys, webSearch: true })).toContain("Check in for your visit");
+    expect(aboutKiosk("capabilities", { journeys: kioskContent.journeys, webSearch: true })).toContain("Translate text");
     expect(aboutKiosk("languages", { journeys: [], webSearch: false })).toContain("Tamil");
     expect(aboutKiosk("modes", { journeys: [], webSearch: false })).not.toContain("web");
     expect(aboutKiosk("modes", { journeys: [], webSearch: true })).toContain("from the web");

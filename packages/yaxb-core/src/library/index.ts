@@ -42,6 +42,8 @@ export const EDITOR_ROLES = ["administrator", "moderator", "curator"] as const;
 export const REVIEWER_ROLES = ["reviewer", "administrator"] as const;
 /** The id the ADMIN_TOKEN holder acts as. */
 export const ADMIN_ACTOR_ID = "admin";
+/** Who seeds the catalogue with the kiosk's own services. */
+export const SYSTEM_ACTOR_ID = "system";
 /** The library a service goes to when its author doesn't choose one. */
 export const DEFAULT_LIBRARY_NAME = "Service catalogue";
 /** A guest's services that aren't archived, at most. */
@@ -482,6 +484,51 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
       await store.putEntry(next);
       await audit(a, archived ? "library.entry_archived" : "library.entry_restored", id, { id: e.doc_id });
       return next;
+    },
+
+    /**
+     * Put the kiosk's own services (content/catalogue) into the catalogue, published, the first time:
+     * a seed whose service id the catalogue already has (in any state, archived too) is left alone,
+     * so editing or archiving a seeded service sticks. Returns the ids added.
+     */
+    async seed(yamls: readonly string[]): Promise<string[]> {
+      const added: string[] = [];
+      const system: LibraryActor = { id: SYSTEM_ACTOR_ID, name: "YAXB", roles: ["administrator"], admin: true };
+      for (const yaml of yamls) {
+        const d = readDocument(yaml);
+        if ("error" in d || (await store.entries()).some((e) => e.doc_id === d.id)) continue;
+        const l = await defaultLibrary(system);
+        const at = now();
+        const e: LibraryEntry = {
+          id: crypto.randomUUID(),
+          library_id: l.id,
+          kind: "service",
+          doc_id: d.id,
+          title: d.title,
+          yaml,
+          status: "accepted",
+          revision: 1,
+          published_yaml: yaml,
+          published_revision: 1,
+          owner_id: SYSTEM_ACTOR_ID,
+          owner_name: "YAXB",
+          submitted_by: SYSTEM_ACTOR_ID,
+          submitted_by_name: "YAXB",
+          submitted_at: at,
+          reviewed_by: SYSTEM_ACTOR_ID,
+          reviewed_by_name: "YAXB",
+          reviewed_at: at,
+          review_note: "Comes with the kiosk.",
+          created_at: at,
+          updated_at: at,
+          updated_by_name: "YAXB",
+        };
+        await store.putEntry(e);
+        await store.addRevision({ entry_id: e.id, revision: 1, yaml, at, by_id: SYSTEM_ACTOR_ID, by_name: "YAXB", note: "Comes with the kiosk" });
+        await options.audit?.(auditEvent({ actor_type: "system", actor_id: null, actor_name: "YAXB", action: "library.entry_created", target_id: e.id, details: { id: d.id, seeded: true } }));
+        added.push(d.id);
+      }
+      return added;
     },
 
     /** Everything waiting for a review, across active libraries. */

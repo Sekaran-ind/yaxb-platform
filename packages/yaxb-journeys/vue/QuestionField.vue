@@ -22,7 +22,17 @@ const id = `yj-f-${useId()}`;
 const str = (v: unknown) => (v === null || v === undefined ? "" : String(v));
 const languages = computed(() => props.languages ?? DEFAULT_LANGUAGES);
 const inputType = computed(() =>
-  props.field.type === "number" ? "number" : props.field.type === "date" ? "date" : props.field.entity === "email" ? "email" : props.field.entity === "phone" ? "tel" : "text",
+  props.field.type === "password"
+    ? "password"
+    : props.field.type === "number"
+      ? "number"
+      : props.field.type === "date"
+        ? "date"
+        : props.field.entity === "email"
+          ? "email"
+          : props.field.entity === "phone"
+            ? "tel"
+            : "text",
 );
 const pickSource = (sid: string) => emit("change", props.sources?.find((s) => s.id === sid) ?? null);
 const target = (e: Event) => e.target as HTMLInputElement;
@@ -62,6 +72,7 @@ const target = (e: Event) => e.target as HTMLInputElement;
         :inputmode="field.type === 'number' ? 'decimal' : undefined"
         step="any"
         :aria-invalid="invalid || undefined"
+        :autocomplete="field.type === 'password' ? 'off' : undefined"
         :placeholder="field.placeholder"
         :value="str(value)"
         @input="emit('change', target($event).value)"

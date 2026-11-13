@@ -3,6 +3,7 @@
 // Authored in packages/yaxb-core/content/ (YAML and SKILL.md), bundled by tools/build-content.mjs.
 import { load } from "js-yaml";
 import contentJson from "../data/content.json" with { type: "json" };
+import { compileBundle } from "@sekaran-ind/yaxb-journeys/bundle";
 import { compileJourney, compileQuestionnaire, type Journey, type Questionnaire } from "../journeys/index.js";
 import { compileScreens, type ScreenConfig } from "../screens/index.js";
 import { compileService, type Service } from "../services/index.js";
@@ -24,7 +25,10 @@ export const SCREEN_COMPONENTS = ["transcript", "services", "notebook", "account
 
 export type Skill = { name: string; description: string; markdown: string };
 
-const raw = contentJson as { skills: { name: string; markdown: string }[]; journeys: string[]; questionnaires?: string[]; services: string[]; screens: string };
+const raw = contentJson as { skills: { name: string; markdown: string }[]; journeys: string[]; questionnaires?: string[]; catalogue?: string[]; services: string[]; screens: string };
+
+/** A service the Service Catalogue is seeded with (content/catalogue): its YAML, and what it compiles to. */
+export type CatalogueSeed = { yaml: string; service: Service; journeys: Journey[] };
 
 /** name and description from a SKILL.md's YAML frontmatter. */
 export function skillMeta(markdown: string): { name: string; description: string } | null {
@@ -72,10 +76,19 @@ function build() {
     else problems.push(...r.problems.map((p) => `service: ${p}`));
   }
 
-  return { skills, questionnaires, journeys, services, screens, problems };
+  // Services seeded into the Service Catalogue: checked here like the rest, served from the catalogue.
+  const catalogue: CatalogueSeed[] = [];
+  for (const yaml of raw.catalogue ?? []) {
+    const b = compileBundle(yaml, { services: JOURNEY_SERVICES });
+    if (b.ok && b.services[0]) catalogue.push({ yaml, service: b.services[0], journeys: b.journeys });
+    else problems.push(...b.problems.filter((p) => p.level === "error").map((p) => `catalogue: ${p.id ?? ""} ${p.message}`));
+  }
+
+  return { skills, questionnaires, journeys, services, screens, catalogue, problems };
 }
 
 /** The compiled content. `problems` is empty for shippable content (a test checks it). */
 export const kioskContent = build();
 
-export const journeyById = (id: string) => kioskContent.journeys.find((j) => j.id === id);
+/** A built-in journey, or one of the catalogue's seeded services' journeys. */
+export const journeyById = (id: string) => kioskContent.journeys.find((j) => j.id === id) ?? kioskContent.catalogue.flatMap((c) => c.journeys).find((j) => j.id === id);

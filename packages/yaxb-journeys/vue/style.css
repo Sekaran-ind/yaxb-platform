@@ -965,3 +965,74 @@ textarea.yj-input {
   font-weight: 650;
   color: var(--yj-ink);
 }
+
+/* ---- the designer as steps ------------------------------------------------------------------- */
+.yj-wizard {
+  container-type: inline-size;
+}
+.yj-wizard-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.yj-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+}
+.yj-crumbs li + li::before {
+  content: "›";
+  margin-right: 0.25rem;
+  color: var(--yj-muted);
+}
+.yj-crumb {
+  border: 0;
+  background: transparent;
+  padding: 0.1rem 0.2rem;
+  border-radius: 6px;
+  font: inherit;
+  color: var(--yj-muted);
+  cursor: pointer;
+}
+button.yj-crumb:hover {
+  background: var(--yj-mist);
+  color: var(--yj-ink);
+}
+.yj-crumb-current {
+  color: var(--yj-ink);
+  font-weight: 650;
+  cursor: default;
+}
+.yj-progress {
+  display: flex;
+  gap: 3px;
+  margin-top: 0.6rem;
+}
+.yj-progress li {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--yj-line);
+}
+.yj-progress li.yj-done {
+  background: color-mix(in oklab, var(--yj-accent) 55%, transparent);
+}
+.yj-progress li.yj-now {
+  background: var(--yj-strong);
+}
+.yj-wizard-body {
+  margin-top: 1rem;
+  min-height: 14rem;
+}
+.yj-wizard-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+  border-top: 1px solid var(--yj-line);
+  padding-top: 0.85rem;
+}

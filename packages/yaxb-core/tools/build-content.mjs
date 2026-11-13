@@ -22,8 +22,10 @@ const content = {
   skills,
   journeys: list("journeys", ".journey.yaml"),
   questionnaires: list("questionnaires", ".questionnaire.yaml"),
+  // Nested services seeded into the Service Catalogue (not built into the kiosk).
+  catalogue: list("catalogue", ".service.yaml"),
   services: list("services", ".service.yaml"),
   screens: read(join(root, "screens.yaml")),
 };
 writeFileSync(fileURLToPath(new URL("../src/data/content.json", import.meta.url)), `${JSON.stringify(content, null, 2)}\n`);
-console.log(`content: ${skills.length} skills, ${content.journeys.length} journeys, ${content.questionnaires.length} questionnaires, ${content.services.length} services`);
+console.log(`content: ${skills.length} skills, ${content.journeys.length} journeys, ${content.questionnaires.length} questionnaires, ${content.catalogue.length} catalogue services, ${content.services.length} services`);

@@ -3,14 +3,27 @@
 // questionnaire), runs a service, decides where to go, or ends with a result. Screens follow one
 // another in order unless one says where to go next. Who may start and finish the journey comes
 // from the service's roles (the side panel adds them).
-import { newScreen, type JourneyDesign, type StepKind } from "@sekaran-ind/yaxb-journeys/forms";
+import { idFromName, newScreen, type JourneyDesign, type StepKind } from "@sekaran-ind/yaxb-journeys/forms";
 import type { Role } from "@sekaran-ind/yaxb-journeys/journeys";
 import { load } from "js-yaml";
 import { computed, ref, useId, watch } from "vue";
 import RolePicker from "./RolePicker.vue";
 
-const props = defineProps<{ modelValue: JourneyDesign; roles: readonly Role[]; serviceNames?: readonly string[]; readonly?: boolean }>();
-const emit = defineEmits<{ "update:modelValue": [journey: JourneyDesign] }>();
+// part: the journey's details and roles, its screens, or both (the service designer's steps show one at a time).
+const props = withDefaults(defineProps<{ modelValue: JourneyDesign; roles: readonly Role[]; serviceNames?: readonly string[]; readonly?: boolean; part?: "details" | "screens" | "all" }>(), {
+  part: "all",
+});
+const emit = defineEmits<{ "update:modelValue": [journey: JourneyDesign]; addRole: [role: Role] }>();
+
+// Add a role to the service without leaving the journey.
+const roleName = ref("");
+function addRole() {
+  const label = roleName.value.trim();
+  const roleId = idFromName(label);
+  if (!label || !roleId || props.roles.some((r) => r.id === roleId)) return;
+  emit("addRole", { id: roleId, label });
+  roleName.value = "";
+}
 const uid = useId();
 const id = (name: string) => `${uid}-${name}`;
 
@@ -79,7 +92,7 @@ const open = ref<number | null>(0);
 
 <template>
   <div class="yj yj-stack yj-form">
-    <fieldset class="yj-fieldset" :disabled="readonly">
+    <fieldset v-if="part !== 'screens'" class="yj-fieldset" :disabled="readonly">
       <div class="yj-form-grid">
         <div>
           <label :for="id('id')" class="yj-field-label">Journey id <span class="yj-required" aria-hidden="true">*</span></label>
@@ -107,11 +120,16 @@ const open = ref<number | null>(0);
       </div>
       <div class="yj-form-grid">
         <RolePicker v-model="j.initiate" :roles="roles" legend="Who may start it" with-visitor :disabled="readonly" hint="None ticked, or Visitor: anyone at the kiosk." />
-        <RolePicker v-model="j.complete" :roles="roles" legend="Who finishes it" :disabled="readonly" :hint="roles.length ? undefined : 'Add roles in the Roles panel.'" />
+        <RolePicker v-model="j.complete" :roles="roles" legend="Who finishes it" :disabled="readonly" />
       </div>
+      <form v-if="!readonly" class="yj-row yj-mt" @submit.prevent="addRole">
+        <label :for="id('newrole')" class="yj-small yj-muted">A role that isn't listed:</label>
+        <input :id="id('newrole')" v-model="roleName" class="yj-input yj-select-sm" placeholder="Front desk" maxlength="40" />
+        <button type="submit" class="yj-btn yj-select-sm" :disabled="!roleName.trim()">Add role</button>
+      </form>
     </fieldset>
 
-    <fieldset class="yj-fieldset" :disabled="readonly">
+    <fieldset v-if="part !== 'details'" class="yj-fieldset" :disabled="readonly">
       <legend class="yj-title">Screens</legend>
       <ol class="yj-stack">
         <li v-for="(s, i) in j.screens" :key="i" class="yj-card yj-step">
@@ -154,7 +172,7 @@ const open = ref<number | null>(0);
                   <label :for="id(`q${i}`)" class="yj-field-label">Questions (YAML)</label>
                   <textarea :id="id(`q${i}`)" v-model="s.fieldsYaml" class="yj-input yj-mono" rows="7" spellcheck="false" :aria-describedby="id(`qn${i}`)" />
                   <p :id="id(`qn${i}`)" class="yj-help" :class="questionsNote(s.fieldsYaml).ok ? '' : 'yj-status-bad'">
-                    {{ questionsNote(s.fieldsYaml).text }} · types: text, textarea, select (with options), boolean, number, date, source, language; <code v-pre class="yj-code">when: "values.x == true"</code> asks one only sometimes.
+                    {{ questionsNote(s.fieldsYaml).text }} · types: text, textarea, password (masked), select (with options), boolean, number, date, source, language; <code v-pre class="yj-code">when: "values.x == true"</code> asks one only sometimes.
                   </p>
                 </div>
                 <div>

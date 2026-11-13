@@ -11,7 +11,7 @@ Guided services: a sequence of steps that ask the visitor something, run an on-d
 | JRN-3 | Conditions and templates (`{{answers.step.field}}`) must use a small safe language; no code from content is ever evaluated. | Built |
 | JRN-4 | The Services screen must list what the visitor can do, grouped by service, and open screens or journeys from it. | Built |
 | JRN-5 | A running journey must show its progress, be stoppable, and end with a result the visitor can read aloud, copy, or start again. | Built |
-| JRN-6 | Field types: text, textarea, select, boolean, number, date, language and notebook source. A field may have a description, keywords and an entity type (person, location, organisation, email, phone). | Built |
+| JRN-6 | Field types: text, textarea, password (masked; never filled from speech or by the model, and masked in summaries), select, boolean, number, date, language and notebook source. A field may have a description, keywords and an entity type (person, location, organisation, email, phone). | Built |
 
 ## Filling forms from what the visitor says
 
@@ -68,4 +68,7 @@ Guided services: a sequence of steps that ask the visitor something, run an on-d
 | LIB-18 | Anyone can design services without signing in. A guest's services belong to their browser session; only they (or editors) change them, and the number they may keep is capped. Publishing still needs a reviewer. | Built |
 | LIB-19 | A kiosk keeps its built-in services and features (chat, notebook, sources, settings, the team), and can load published services from the catalogue. Journeys the viewer can't start show which role starts them; a member with that role who signs in can start them. | Built |
 | LIB-20 | The roles a published service defines can be given to team members. | Built |
+| LIB-21 | The kiosk's own guided services (such as Visits, with its check-in journey) live in the Service Catalogue, seeded once and published; they are not built-in services. Editing or archiving a seeded service sticks. | Built |
+| LIB-22 | Designing a service is a sequence of steps (service, roles, journeys, each journey's details and screens, review) with a breadcrumb, a step list and Previous / Next. | Built |
+| LIB-23 | The Service Catalogue looks like a kiosk: one frame, with an information panel where the kiosk has its player, and the catalogue's sections as kiosk screens. | Built |
 

@@ -1,5 +1,6 @@
 import { createKiosk, type Kiosk } from "@sekaran-ind/yaxb-core/agent";
-import { JOURNEY_SERVICES } from "@sekaran-ind/yaxb-core/content";
+import { JOURNEY_SERVICES, kioskContent } from "@sekaran-ind/yaxb-core/content";
+import { compileBundle } from "@sekaran-ind/yaxb-journeys/bundle";
 import { createLibraryService, type LibraryService } from "@sekaran-ind/yaxb-core/library";
 import { createVectorizeRetriever } from "@sekaran-ind/yaxb-core/knowledge";
 import { createModeratorService, type ModeratorService } from "@sekaran-ind/yaxb-core/moderators";
@@ -12,6 +13,29 @@ const kiosks = new WeakMap<object, Kiosk>();
 const moderatorServices = new WeakMap<object, ModeratorService>();
 const reviewServices = new WeakMap<object, ReviewService>();
 const libraryServices = new WeakMap<object, LibraryService>();
+const seeded = new WeakMap<object, Promise<unknown>>();
+
+/**
+ * The catalogue, seeded once per isolate with the kiosk's own services (content/catalogue, such as
+ * Visits with its check-in journey). A seed the catalogue already has is left alone.
+ */
+export async function catalogue(env: Bindings): Promise<LibraryService> {
+  const l = library(env);
+  let s = seeded.get(env);
+  if (!s) seeded.set(env, (s = l.seed(kioskContent.catalogue.map((c) => c.yaml)).catch(() => seeded.delete(env))));
+  await s;
+  return l;
+}
+
+/** A published catalogue journey's step fields, for slot filling's model pass. */
+async function catalogueFields(env: Bindings, journey: string, step: string) {
+  const { services } = await (await catalogue(env)).published([], { all: true });
+  for (const s of services) {
+    if (!s.journeys.some((j) => j.id === journey)) continue;
+    return compileBundle(s.yaml, { services: JOURNEY_SERVICES }).journeys.find((j) => j.id === journey)?.steps[step]?.fields;
+  }
+  return undefined;
+}
 
 /** The Service Catalogue in D1 (LIB-1..20), checked against this kiosk's handlers; audited in the moderators' log. */
 export function library(env: Bindings): LibraryService {
@@ -54,6 +78,8 @@ export function kiosk(env: Bindings): Kiosk {
       // Storage "server": the agent's /memories/ in D1 through Deep Agents' StoreBackend.
       store: new KvStore(createD1Kv(env.DB)),
       vector: env.VECTORIZE && env.AI ? createVectorizeRetriever({ index: env.VECTORIZE, ai: env.AI }) : undefined,
+      // Slot filling for journeys from the Service Catalogue: their fields come from the published service.
+      journeyFields: (journey, step) => catalogueFields(env, journey, step),
       // Workers Logs. No message content: it may contain health information.
       onError: (error, ctx) =>
         console.error(

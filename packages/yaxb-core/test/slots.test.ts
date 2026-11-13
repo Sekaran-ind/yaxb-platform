@@ -2,14 +2,15 @@
 // and the model pass (kiosk.extract) with a schema-constrained answer that is checked again.
 import { describe, expect, it } from "vitest";
 import { createKiosk } from "../src/agent/index.js";
-import { kioskContent } from "../src/content/index.js";
+import { journeyById } from "../src/content/index.js";
 import type { Embed } from "../src/knowledge/semantic.js";
 import { checkExtracted, clausesOf, fieldProblem, fieldsJsonSchema, matchFields, mergeEntities, type Entity } from "../src/journeys/index.js";
 import { LANGUAGES } from "../src/schemas/index.js";
 import { createMemoryModerationStore, createMemoryThreadStore } from "../src/stores/index.js";
 import { ScriptedModel } from "./scripted-model.js";
 
-const fields = kioskContent.journeys.find((j) => j.id === "visit-check-in")!.steps.details!.fields!;
+// The check-in journey is a Service Catalogue seed now (content/catalogue/visits.service.yaml).
+const fields = journeyById("visit-check-in")!.steps.details!.fields!;
 const byField = (fills: { field: string; value: unknown; via: string }[]) => Object.fromEntries(fills.map((f) => [f.field, [f.value, f.via]]));
 
 const STOP = new Set("a an and are as at be can do does for from how i if in is it me my of on or the to what when with you your have had has".split(" "));
@@ -132,5 +133,15 @@ describe("the model pass", () => {
     const system = JSON.stringify(model.calls.at(-1)!.find((m) => m.getType() === "system")?.content);
     expect(system).toContain("Never guess");
     expect(await kiosk.extract({ journey: "no-such-journey", step: "details", text: "x", selection })).toEqual({ error: "That form isn't available." });
+  });
+});
+
+describe("passwords", () => {
+  const withPassword = [...fields, { id: "pin", type: "password" as const, label: "Your PIN" }];
+  it("are never filled from what was said, nor asked of the model", async () => {
+    const m = await matchFields(withPassword, "my PIN is 4321, my name is Ravi");
+    expect(m.fills.some((f) => f.field === "pin")).toBe(false);
+    expect(Object.keys(fieldsJsonSchema(withPassword).properties)).not.toContain("pin");
+    expect(checkExtracted(withPassword, { pin: "4321" })).toEqual([]);
   });
 });
