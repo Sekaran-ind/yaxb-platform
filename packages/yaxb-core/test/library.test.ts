@@ -1,48 +1,44 @@
-// The journey library (LIB-1..12): roles, libraries, entries, the review and what the kiosk loads,
-// on the memory store and on D1 (node:sqlite with every migration applied).
-import { compileBundle, servicesFor } from "@sekaran-ind/yaxb-journeys";
+// The Service Catalogue (LIB-1..20): nested services with their own roles, authors (members and
+// guests), the review, the audit trail and what kiosks load, on the memory store and on D1
+// (node:sqlite with every migration applied).
+import { compileBundle } from "@sekaran-ind/yaxb-journeys";
 import { describe, expect, it } from "vitest";
 import { JOURNEY_SERVICES } from "../src/content/index.js";
-import { createLibraryService, createMemoryLibraryStore, LibraryError, type LibraryActor, type LibraryStore } from "../src/library/index.js";
-import type { AuditEvent } from "../src/moderators/index.js";
+import { createLibraryService, createMemoryLibraryStore, LibraryError, MAX_GUEST_SERVICES, type LibraryActor, type LibraryStore } from "../src/library/index.js";
+import { createD1ModeratorStore } from "../src/stores/d1.js";
+import { createMemoryModeratorStore, type ModeratorStore } from "../src/moderators/index.js";
 import { createD1LibraryStore } from "../src/stores/d1.js";
 import { sqliteD1 } from "./sqlite-d1.js";
 
-const admin: LibraryActor = { id: "admin", name: "Administrator", roles: [], admin: true };
+const admin: LibraryActor = { id: "admin", name: "Administrator", roles: ["administrator"], admin: true };
 const mod: LibraryActor = { id: "m1", name: "Meena", roles: ["moderator"], admin: false };
 const reviewer: LibraryActor = { id: "r1", name: "Ravi", roles: ["reviewer"], admin: false };
 const nurse: LibraryActor = { id: "n1", name: "Nila", roles: ["nurse"], admin: false };
+const guest: LibraryActor = { id: "guest:abc", name: "Guest", roles: [], admin: false, guest: true };
+const other: LibraryActor = { id: "guest:xyz", name: "Guest", roles: [], admin: false, guest: true };
 
-const questionnaire = `kind: questionnaire
-id: intake
-title: Intake
-fields:
-  - { id: name, type: text, label: Name, required: true }
-`;
-const journey = `kind: journey
-id: check-in
-title: Check in
-roles: { initiate: [visitor], complete: [nurse] }
-start: ask
-steps:
-  ask: { questionnaire: intake, next: done }
-  done: { final: true, result: { title: "Hello {{answers.ask.name}}" } }
-`;
-const staffJourney = `kind: journey
-id: triage
-title: Triage
-roles: { initiate: [nurse] }
-start: done
-steps:
-  done: { final: true }
-`;
-const service = `kind: service
-id: clinic
-title: Clinic
-roles: [nurse]
-items:
-  - { key: in, label: Check in, journey: check-in }
-  - { key: triage, label: Triage, journey: triage }
+const clinic = (id = "clinic") => `kind: service
+id: ${id}
+title: Clinic visit
+roles:
+  - { id: nurse, label: Nurse }
+journeys:
+  - id: check-in
+    title: Check in
+    roles: { initiate: [visitor], complete: [nurse] }
+    screens:
+      - id: about-you
+        title: About you
+        questions:
+          - { id: name, type: text, label: Your name, required: true }
+      - id: done
+        result: { title: "Hello {{answers.about-you.name}}" }
+  - id: triage
+    title: Triage
+    roles: { initiate: [nurse] }
+    screens:
+      - id: notes
+        questions: [{ id: note, type: textarea, label: Notes }]
 `;
 
 const expectError = async (p: Promise<unknown>, status: number, message?: RegExp) => {
@@ -56,118 +52,116 @@ const expectError = async (p: Promise<unknown>, status: number, message?: RegExp
 };
 
 for (const [name, make] of [
-  ["memory", () => createMemoryLibraryStore()],
-  ["D1", () => createD1LibraryStore(sqliteD1())],
-] as [string, () => LibraryStore][]) {
-  describe(`library on ${name}`, () => {
+  ["memory", () => ({ library: createMemoryLibraryStore(), moderators: createMemoryModeratorStore() })],
+  [
+    "D1",
+    () => {
+      const db = sqliteD1();
+      return { library: createD1LibraryStore(db), moderators: createD1ModeratorStore(db) };
+    },
+  ],
+] as [string, () => { library: LibraryStore; moderators: ModeratorStore }][]) {
+  describe(`the catalogue on ${name}`, () => {
     const setup = () => {
-      const log: AuditEvent[] = [];
-      const svc = createLibraryService(make(), { services: JOURNEY_SERVICES, audit: async (e) => void log.push(e) });
-      return { svc, log };
+      const stores = make();
+      const svc = createLibraryService(stores.library, {
+        services: JOURNEY_SERVICES,
+        audit: (e) => stores.moderators.audit(e),
+        auditTrail: (id) => stores.moderators.auditLog({ targetId: id }),
+      });
+      return svc;
     };
 
-    it("has the built-in roles, and administrators add their own", async () => {
-      const { svc, log } = setup();
-      expect((await svc.catalogue()).map((r) => r.id)).toEqual(["administrator", "moderator", "reviewer"]);
-      await expectError(svc.addRole(mod, { id: "nurse", label: "Nurse" }), 403);
-      await svc.addRole(admin, { id: "nurse", label: "Nurse", description: "Ward nurse" });
-      await expectError(svc.addRole(admin, { id: "nurse", label: "Again" }), 409);
-      await expectError(svc.addRole(admin, { id: "visitor", label: "V" }), 409);
-      await expectError(svc.updateRole(admin, "reviewer", { label: "R" }), 409);
-      expect((await svc.updateRole(admin, "nurse", { label: "Staff nurse" })).label).toBe("Staff nurse");
-      expect((await svc.catalogue()).find((r) => r.id === "nurse")).toEqual({ id: "nurse", label: "Staff nurse", description: "Ward nurse", builtin: false });
-      await expectError(svc.removeRole(admin, "moderator"), 409);
-      await expectError(svc.removeRole(admin, "nurse", [["moderator", "nurse"]]), 409, /team member/);
-      await svc.removeRole(admin, "nurse");
-      expect(log.map((e) => e.action)).toEqual(["library.role_added", "library.role_changed", "library.role_removed"]);
+    it("lets a guest design a service in the default library, and keeps it theirs", async () => {
+      const svc = setup();
+      const { entry, problems } = await svc.createEntry(guest, null, { yaml: clinic() });
+      expect(problems).toEqual([]);
+      expect(entry).toMatchObject({ doc_id: "clinic", title: "Clinic visit", status: "draft", owner_id: "guest:abc", owner_name: "Guest" });
+      expect((await svc.libraries(guest)).map((l) => l.name)).toEqual(["Service catalogue"]);
+      // Another guest sees nothing and changes nothing; members see it.
+      expect(await svc.entries(other)).toEqual([]);
+      await expectError(svc.entry(other, entry.id), 404);
+      await expectError(svc.saveEntry(other, entry.id, { yaml: clinic() }), 404);
+      expect((await svc.entries(reviewer)).map((e) => e.id)).toEqual([entry.id]);
+      await expectError(svc.saveEntry(reviewer, entry.id, { yaml: clinic().replace("Clinic visit", "X") }), 403);
+      // The author edits and submits; ids are unique across the catalogue.
+      const saved = await svc.saveEntry(guest, entry.id, { yaml: clinic().replace("title: Clinic visit", "title: Clinic"), note: "Shorter" });
+      expect(saved.entry).toMatchObject({ revision: 2, title: "Clinic" });
+      await expectError(svc.createEntry(mod, null, { yaml: clinic() }), 409, /already has a service with the id 'clinic'/);
+      expect((await svc.submit(guest, entry.id)).status).toBe("in_review");
+      await expectError(svc.review(guest, entry.id, { decision: "accept" }), 403);
+      expect((await svc.reviewQueue(guest)).length).toBe(0);
+      expect((await svc.reviewQueue(reviewer)).length).toBe(1);
     });
 
-    it("runs an entry from draft through review to the kiosk", async () => {
-      const { svc } = setup();
-      await svc.addRole(admin, { id: "nurse", label: "Nurse" });
-      await expectError(svc.createLibrary(reviewer, { name: "Clinic" }), 403);
-      const lib = await svc.createLibrary(mod, { name: "Clinic", description: "Front desk journeys" });
-      await expectError(svc.createLibrary(mod, { name: "clinic" }), 409);
+    it("reviews, publishes, and records an audit trail without content", async () => {
+      const svc = setup();
+      const { entry } = await svc.createEntry(mod, null, { yaml: clinic() });
+      await svc.submit(mod, entry.id);
+      await expectError(svc.review(mod, entry.id, { decision: "accept" }), 403);
+      await expectError(svc.review({ ...mod, roles: ["moderator", "reviewer"] }, entry.id, { decision: "accept" }), 403, /your own service/);
+      await expectError(svc.review(reviewer, entry.id, { decision: "reject" }), 422);
+      expect((await svc.review(reviewer, entry.id, { decision: "accept", note: "Clear" })).published_revision).toBe(1);
 
-      // A journey before its questionnaire: saved, with the problem reported, and it can't be submitted.
-      const j = await svc.createEntry(mod, lib.id, { kind: "journey", yaml: journey });
-      expect(j.entry).toMatchObject({ doc_id: "check-in", title: "Check in", status: "draft", revision: 1 });
-      expect(j.problems.map((p) => p.message)).toEqual(["step 'ask': no questionnaire 'intake'"]);
-      await expectError(svc.submit(mod, j.entry.id), 422, /no questionnaire 'intake'/);
-
-      const q = await svc.createEntry(mod, lib.id, { kind: "questionnaire", yaml: questionnaire });
-      expect(q.problems).toEqual([]);
-      await expectError(svc.createEntry(mod, lib.id, { kind: "questionnaire", yaml: questionnaire }), 409);
-      await expectError(svc.createEntry(mod, lib.id, { kind: "service", yaml: questionnaire }), 422, /kind: service/);
-      await expectError(svc.createEntry(mod, lib.id, { kind: "service", yaml: "a: [" }), 422, /YAML/);
-
-      expect((await svc.submit(mod, j.entry.id)).status).toBe("in_review");
-      expect((await svc.reviewQueue(reviewer)).map((e) => e.doc_id)).toEqual(["check-in"]);
-      // Accepting the journey before its questionnaire is published is refused.
-      await expectError(svc.review(reviewer, j.entry.id, { decision: "accept" }), 422, /Accept what it refers to first/);
-      await svc.submit(mod, q.entry.id);
-      // Nobody reviews their own submission; moderators don't review at all.
-      await expectError(svc.review(mod, q.entry.id, { decision: "accept" }), 403);
-      await expectError(svc.review({ ...mod, roles: ["moderator", "reviewer"] }, q.entry.id, { decision: "accept" }), 403, /another reviewer/);
-      await expectError(svc.review(reviewer, q.entry.id, { decision: "reject" }), 422);
-      expect((await svc.review(reviewer, q.entry.id, { decision: "accept" })).published_revision).toBe(1);
-      expect((await svc.review(reviewer, j.entry.id, { decision: "accept" })).status).toBe("accepted");
-
-      // A new revision of an accepted entry: back to draft, but the kiosk keeps the accepted one.
-      const saved = await svc.saveEntry(mod, j.entry.id, { yaml: journey.replace("title: Check in", "title: Check in here"), note: "Clearer" });
-      expect(saved.entry).toMatchObject({ status: "draft", revision: 2, title: "Check in here", published_revision: 1 });
-      const detail = await svc.entry(reviewer, j.entry.id);
-      expect(detail.revisions.map((r) => [r.revision, r.note])).toEqual([
-        [2, "Clearer"],
-        [1, "Created"],
-      ]);
+      // A new revision: back to draft; kiosks keep the accepted one.
+      await svc.saveEntry(mod, entry.id, { yaml: clinic().replace("title: Check in", "title: Check in here") });
       const pub = await svc.published();
-      expect(pub.libraries).toHaveLength(1);
-      expect(pub.libraries[0]!.sources.some((s) => s.includes("title: Check in\n"))).toBe(true);
+      expect(pub.services).toHaveLength(1);
+      expect(pub.services[0]!.journeys.map((j) => j.title)).toEqual(["Check in", "Triage"]);
 
-      // Rejected with a note, then archived: off the kiosk; restored as a draft.
-      await svc.submit(mod, j.entry.id);
-      const rejected = await svc.review(reviewer, j.entry.id, { decision: "reject", note: "Say where the desk is." });
-      expect(rejected).toMatchObject({ status: "rejected", review_note: "Say where the desk is.", reviewed_by_name: "Ravi" });
-      await svc.setEntryArchived(mod, j.entry.id, true);
-      expect((await svc.published()).libraries[0]!.sources).toEqual([questionnaire]);
-      expect((await svc.setEntryArchived(mod, j.entry.id, false)).status).toBe("draft");
-      await expectError(svc.saveEntry(reviewer, j.entry.id, { yaml: journey }), 403);
+      const trail = await svc.auditTrail(reviewer, entry.id);
+      expect(trail.map((e) => e.action)).toEqual(["library.entry_saved", "library.entry_accepted", "library.entry_submitted", "library.entry_created"]);
+      expect(trail.every((e) => !JSON.stringify(e).includes("Your name"))).toBe(true);
+      await expectError(svc.auditTrail(guest, entry.id), 404);
+
+      // Archived: off kiosks; restored as a draft.
+      await svc.setEntryArchived(mod, entry.id, true);
+      expect((await svc.published()).services).toEqual([]);
+      expect((await svc.setEntryArchived(mod, entry.id, false)).status).toBe("draft");
     });
 
-    it("gives the kiosk only the journeys the viewer may start, and hides archived libraries", async () => {
-      const { svc } = setup();
-      await svc.addRole(admin, { id: "nurse", label: "Nurse" });
-      const lib = await svc.createLibrary(admin, { name: "Clinic" });
-      for (const [kind, yaml] of [
-        ["questionnaire", questionnaire],
-        ["journey", journey],
-        ["journey", staffJourney],
-        ["service", service],
-      ] as const) {
-        const { entry } = await svc.createEntry(mod, lib.id, { kind, yaml });
-        await svc.submit(mod, entry.id);
-        await svc.review(reviewer, entry.id, { decision: "accept" });
-      }
+    it("tells kiosks which journeys each viewer may start, with every role there is", async () => {
+      const svc = setup();
+      await svc.addRole(admin, { id: "front-desk", label: "Front desk" });
+      const { entry } = await svc.createEntry(guest, null, { yaml: clinic() });
+      await svc.submit(guest, entry.id);
+      await svc.review(reviewer, entry.id, { decision: "accept" });
       const visitor = await svc.published([]);
-      expect(visitor.libraries[0]!.allowed).toEqual(["check-in"]);
-      // The kiosk compiles every document and offers the allowed journeys only.
-      const b = compileBundle(visitor.libraries[0]!.sources, { services: JOURNEY_SERVICES });
-      expect(b.ok).toBe(true);
-      expect(servicesFor(b.services, { journeys: visitor.libraries[0]!.allowed })[0]!.items.map((i) => i.key)).toEqual(["in"]);
-      expect((await svc.published(nurse.roles)).libraries[0]!.allowed).toEqual(["check-in", "triage"]);
+      expect(visitor.services[0]!.journeys.map((j) => [j.id, j.allowed])).toEqual([
+        ["check-in", true],
+        ["triage", false],
+      ]);
+      expect(visitor.roles.map((r) => r.id)).toEqual(["administrator", "moderator", "reviewer", "front-desk", "nurse"]);
+      expect((await svc.published(nurse.roles)).services[0]!.journeys.every((j) => j.allowed)).toBe(true);
+      // Kiosks compile the YAML they get.
+      expect(compileBundle(visitor.services[0]!.yaml, { services: JOURNEY_SERVICES }).ok).toBe(true);
+      // A role a service uses can't be removed; one nobody uses can.
+      await svc.removeRole(admin, "front-desk");
+      await expectError(svc.removeRole(admin, "moderator"), 409);
+    });
 
+    it("refuses broken services at submit, and caps a guest's services", async () => {
+      const svc = setup();
+      const { entry, problems } = await svc.createEntry(guest, null, { yaml: clinic().replace("complete: [nurse]", "complete: [doctor]") });
+      expect(problems.map((p) => p.message)).toEqual(["journey 'check-in': role 'doctor' isn't one of this service's roles: add it to the roles"]);
+      await expectError(svc.submit(guest, entry.id), 422, /doctor/);
+      await expectError(svc.createEntry(guest, null, { yaml: "kind: journey\nid: x\n" }), 422, /kind: service/);
+      for (let i = 1; i < MAX_GUEST_SERVICES; i++) await svc.createEntry(guest, null, { yaml: clinic(`clinic-${i}`) });
+      await expectError(svc.createEntry(guest, null, { yaml: clinic("one-too-many") }), 429);
+    });
+
+    it("keeps libraries for members to organise, and archives them", async () => {
+      const svc = setup();
+      await expectError(svc.createLibrary(guest, { name: "Mine" }), 403);
+      const lib = await svc.createLibrary(mod, { name: "Outpatients" });
+      const { entry } = await svc.createEntry(guest, lib.id, { yaml: clinic() });
+      expect(entry.library_id).toBe(lib.id);
+      await svc.submit(guest, entry.id);
+      await svc.review(reviewer, entry.id, { decision: "accept" });
       await expectError(svc.setLibraryStatus(mod, lib.id, "archived"), 403);
       await svc.setLibraryStatus(admin, lib.id, "archived");
-      expect((await svc.published()).libraries).toEqual([]);
-      await expectError(svc.createEntry(mod, lib.id, { kind: "questionnaire", yaml: questionnaire.replace("id: intake", "id: other") }), 409);
-      const counts = (await svc.libraries(reviewer))[0]!.counts;
-      expect(counts).toMatchObject({ total: 4, accepted: 4 });
-    });
-
-    it("needs a team member to see anything", async () => {
-      const { svc } = setup();
-      await expectError(svc.libraries({ id: "x", name: "x", roles: [], admin: false }), 403);
+      expect((await svc.published()).services).toEqual([]);
+      expect((await svc.libraries(guest)).map((l) => l.name)).toEqual([]);
     });
   });
 }

@@ -1,5 +1,5 @@
 import { createKiosk, type Kiosk } from "@sekaran-ind/yaxb-core/agent";
-import { JOURNEY_SERVICES, kioskContent } from "@sekaran-ind/yaxb-core/content";
+import { JOURNEY_SERVICES } from "@sekaran-ind/yaxb-core/content";
 import { createLibraryService, type LibraryService } from "@sekaran-ind/yaxb-core/library";
 import { createVectorizeRetriever } from "@sekaran-ind/yaxb-core/knowledge";
 import { createModeratorService, type ModeratorService } from "@sekaran-ind/yaxb-core/moderators";
@@ -13,12 +13,12 @@ const moderatorServices = new WeakMap<object, ModeratorService>();
 const reviewServices = new WeakMap<object, ReviewService>();
 const libraryServices = new WeakMap<object, LibraryService>();
 
-/** The journey library in D1 (LIB-1..12), checked against this kiosk's handlers and screens; audited with the moderators' log. */
+/** The Service Catalogue in D1 (LIB-1..20), checked against this kiosk's handlers; audited in the moderators' log. */
 export function library(env: Bindings): LibraryService {
   let l = libraryServices.get(env);
   if (!l) {
     const audit = moderators(env).store;
-    l = createLibraryService(createD1LibraryStore(env.DB), { services: JOURNEY_SERVICES, screens: kioskContent.screens.screens.map((s) => s.id), audit: (e) => audit.audit(e) });
+    l = createLibraryService(createD1LibraryStore(env.DB), { services: JOURNEY_SERVICES, audit: (e) => audit.audit(e), auditTrail: (id) => audit.auditLog({ targetId: id, limit: 200 }) });
     libraryServices.set(env, l);
   }
   return l;

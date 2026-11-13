@@ -8,7 +8,6 @@ items:
   - { key: staff-quality, label: Answer quality, summary: "F1, precision, recall and accuracy per notebook", icon: gauge, staff: quality }
   - { key: staff-review, label: Review answers, summary: Rate answers and their sources, icon: message-square, staff: review }
   - { key: staff-moderation, label: Moderation queue, summary: Escalated questions and session feedback, icon: search, staff: moderation }
-  - { key: staff-library, label: Journey library, summary: "Services, journeys and questionnaires: write, review, publish", icon: library, staff: library }
   - { key: staff-team, label: Team, summary: "Chat and video calls, device to device", icon: user-round, staff: team }
   - { key: staff-profile, label: My moderator profile, summary: Languages and the sources you look after, icon: notebook, staff: profile }
   - { key: staff-admin, label: Administration, summary: "Members, roles, keys and the audit log", icon: wrench, staff: admin }

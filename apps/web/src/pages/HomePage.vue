@@ -21,6 +21,11 @@ const TEAM = [
   { avatar: "/ramya.jpg", name: "P Sangeetha B.E", role: "Head of Technology", bio: "A Engineering Leader with 17+ years of experience in conceptualizing, designing and developing products. Over the years built expertise to deliver cutting-edge solutions by leveraging Digital, Data, Analytics, AI and ML technologies. FaceOPs platform was her brain child, which enables integration of AI seamlessly into the Digital touchpoints for the enterprises." },
   { avatar: "/sami.jpg", name: "Saminathan P", role: "Chief Operating Officer", bio: "Swaminathan has around 35 year of experience in various technology domains and has expertise in setting up & managing the large software development teams. Built the ML-OPS team for Yaxb from talent scouting to post delivery support." },
 ];
+const CATALOGUE = [
+  { eyebrow: "Design", title: "A service, its journeys, their screens", body: "Anyone can start: add journeys to a service and screens to each journey, with the questions people answer." },
+  { eyebrow: "Roles", title: "Who starts and who finishes", body: "Add the roles that deliver the service as you design, and assign each journey to the roles that start and complete it." },
+  { eyebrow: "Publish", title: "Reviewed, then on the kiosk", body: "A reviewer accepts it; any kiosk can then load the service and guide people through its journeys." },
+];
 </script>
 
 <template>
@@ -35,6 +40,7 @@ const TEAM = [
         </p>
         <div class="mt-9 flex flex-wrap items-center gap-3">
           <RouterLink to="/kiosk" class="btn-primary h-11 px-6">Try the kiosk</RouterLink>
+          <RouterLink to="/catalogue" class="btn-light h-11 px-5">Design a service</RouterLink>
           <a href="#explore" class="btn-ghost h-11 px-5">What we offer →</a>
         </div>
         <dl class="mt-12 grid max-w-md grid-cols-3 gap-6 border-t border-gray-200/70 pt-6 text-sm">
@@ -68,6 +74,17 @@ const TEAM = [
         <p class="mt-2 text-sm leading-relaxed text-gray-600">{{ item.body }}</p>
       </article>
     </div>
+  </PageSection>
+
+  <PageSection id="catalogue" color="light" title="The Service Catalogue" subtitle="Design a service once; run it on any kiosk.">
+    <div class="mx-auto grid max-w-5xl gap-4 md:grid-cols-3">
+      <article v-for="step in CATALOGUE" :key="step.title" class="card p-6">
+        <p class="eyebrow">{{ step.eyebrow }}</p>
+        <h3 class="mt-2 text-base font-semibold text-ink">{{ step.title }}</h3>
+        <p class="mt-2 text-sm leading-relaxed text-gray-600">{{ step.body }}</p>
+      </article>
+    </div>
+    <div class="mt-8 text-center"><RouterLink to="/catalogue" class="btn-primary h-11 px-6">Open the Service Catalogue</RouterLink></div>
   </PageSection>
 
   <PageSection id="about" title="How people talk to YAXB">

@@ -71,12 +71,13 @@ export const AUDIT_ACTIONS = {
   "library.changed": "Library renamed or described",
   "library.archived": "Library archived",
   "library.restored": "Library restored",
-  "library.entry_saved": "Library entry saved",
-  "library.entry_submitted": "Library entry submitted for review",
-  "library.entry_accepted": "Library entry accepted",
-  "library.entry_rejected": "Library entry rejected",
-  "library.entry_archived": "Library entry archived",
-  "library.entry_restored": "Library entry restored",
+  "library.entry_created": "Service created",
+  "library.entry_saved": "Service saved",
+  "library.entry_submitted": "Service submitted for review",
+  "library.entry_accepted": "Service accepted",
+  "library.entry_rejected": "Service rejected",
+  "library.entry_archived": "Service archived",
+  "library.entry_restored": "Service restored",
   "library.role_added": "Role added",
   "library.role_changed": "Role changed",
   "library.role_removed": "Role removed",
@@ -86,7 +87,8 @@ export type AuditAction = keyof typeof AUDIT_ACTIONS;
 export type AuditEvent = {
   id: string;
   at: string;
-  actor_type: "admin" | "moderator" | "system";
+  /** guest: someone designing in the Service Catalogue without signing in (their session). */
+  actor_type: "admin" | "moderator" | "system" | "guest";
   actor_id: string | null;
   actor_name: string | null;
   action: AuditAction;
@@ -174,7 +176,7 @@ export interface ModeratorStore {
   /** Remove a member and their profile (TEAM-2); the audit log keeps the history. */
   remove(id: string): Promise<boolean>;
   audit(e: AuditEvent): Promise<void>;
-  auditLog(opts?: { limit?: number; actorId?: string; before?: string }): Promise<AuditEvent[]>;
+  auditLog(opts?: { limit?: number; actorId?: string; targetId?: string; before?: string }): Promise<AuditEvent[]>;
 }
 
 /** An audit entry, with details limited to short scalar facts. */
@@ -329,8 +331,8 @@ export function createMemoryModeratorStore(): ModeratorStore {
       log.unshift(e);
       log.length = Math.min(log.length, 5000);
     },
-    async auditLog({ limit = 100, actorId, before } = {}) {
-      return log.filter((e) => (!actorId || e.actor_id === actorId) && (!before || e.at < before)).slice(0, Math.min(Math.max(limit, 1), 500));
+    async auditLog({ limit = 100, actorId, targetId, before } = {}) {
+      return log.filter((e) => (!actorId || e.actor_id === actorId) && (!targetId || e.target_id === targetId) && (!before || e.at < before)).slice(0, Math.min(Math.max(limit, 1), 500));
     },
   };
 }

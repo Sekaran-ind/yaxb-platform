@@ -871,3 +871,97 @@ textarea.yj-input {
   font-family: var(--yj-mono);
   font-size: 0.8125rem;
 }
+
+/* ---- the service designer -------------------------------------------------------------------- */
+.yj-designer {
+  container-type: inline-size;
+  display: grid;
+  gap: 1rem;
+}
+.yj-designer-main,
+.yj-designer-side {
+  min-width: 0;
+}
+@media (min-width: 72rem) {
+  .yj-designer {
+    grid-template-columns: minmax(0, 1fr) 21rem;
+    align-items: start;
+  }
+  .yj-designer-side {
+    position: sticky;
+    top: 1rem;
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+  }
+}
+.yj-screen-toggle {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.yj-journey .yj-panel-head {
+  border-bottom: 0;
+}
+.yj-journey .yj-panel-body {
+  border-top: 1px solid var(--yj-line);
+}
+.yj-role-list {
+  display: grid;
+  gap: 0.35rem;
+}
+.yj-role {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border: 1px solid var(--yj-line);
+  border-radius: 10px;
+  padding: 0.45rem 0.6rem;
+}
+.yj-matrix-wrap {
+  margin-top: 0.4rem;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.yj-matrix {
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+.yj-matrix th,
+.yj-matrix td {
+  border-bottom: 1px solid var(--yj-line);
+  padding: 0.3rem 0.4rem;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.yj-matrix thead th {
+  color: var(--yj-muted);
+  font-weight: 600;
+}
+.yj-matrix tbody th {
+  color: var(--yj-ink);
+  font-weight: 550;
+}
+.yj-stat-grid {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+}
+.yj-stat {
+  border: 1px solid var(--yj-line);
+  border-radius: var(--yj-radius);
+  padding: 0.6rem 0.75rem;
+}
+.yj-stat-value {
+  display: block;
+  font-size: 1.4rem;
+  font-weight: 650;
+  color: var(--yj-ink);
+}

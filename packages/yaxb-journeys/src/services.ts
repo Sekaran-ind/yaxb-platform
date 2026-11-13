@@ -18,7 +18,7 @@ import { roleListProblems } from "./roles.js";
 import { LAYOUTS, type Layout } from "./screens.js";
 
 /** The staff's sections, which a service item may open inside Services (SET-16). */
-export const STAFF_SECTIONS = ["quality", "review", "moderation", "library", "team", "profile", "admin"] as const;
+export const STAFF_SECTIONS = ["quality", "review", "moderation", "team", "profile", "admin"] as const;
 export type StaffSection = (typeof STAFF_SECTIONS)[number];
 
 export type ServiceItem = { key: string; label: string; summary?: string; icon?: string; screen?: string; journey?: string; staff?: StaffSection; layouts?: Layout[] };

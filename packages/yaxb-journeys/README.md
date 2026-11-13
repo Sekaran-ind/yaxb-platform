@@ -127,6 +127,49 @@ sections:                              # or `fields:` for one page
 - **Questionnaire answers** are `answers.<step>.<field>`. The questions are copied into the step,
   so the runner treats them as ordinary fields.
 
+## Nested services (the Service Catalogue's format)
+
+A service can hold its journeys, a journey its screens, and the service its own roles:
+
+```yaml
+kind: service
+id: clinic
+title: Clinic visit
+roles:
+  - { id: nurse, label: Nurse, description: Sees visitors after check-in }
+journeys:
+  - id: check-in
+    title: Check in
+    roles: { complete: [nurse] }        # no initiate: anyone may start it
+    screens:
+      - id: about-you
+        title: About you
+        questions:
+          - { id: name, type: text, label: Your name, required: true }
+      - id: done
+        result: { title: "Thanks {{answers.about-you.name}}" }
+  - id: triage
+    title: Triage
+    roles: { initiate: [nurse] }
+    screens:
+      - id: notes
+        questions: [{ id: note, type: textarea, label: Notes }]
+```
+
+`compileBundle` expands it (`expandService`) into the flat documents the engine runs.
+
+- Screens follow one another unless `next` says otherwise.
+- A journey whose last screen doesn't end it gets an ending.
+- `bundle.roles` lists the roles the service defines.
+
+For editing, there's a design model with converters both ways: `ServiceDesign`, `designFromDoc` and `designToDoc`.
+
+The Vue components are:
+
+- `ServiceDesigner`: the service's journeys, plus a `RolesPanel` side panel to add roles and assign who starts and finishes each journey.
+- `JourneyDesigner`: one journey's screens.
+- `ServiceSummary`: the service at a glance.
+
 ## Roles
 
 ```yaml
@@ -148,7 +191,7 @@ roles:
 Services and journeys can be edited as forms that write YAML:
 
 - `serviceToForm` / `formToService` and `journeyToForm` / `formToJourney`, plus `toYaml`.
-- The Vue components are `ServiceForm` and `JourneyForm`, with `RolePicker`.
+- (Flat forms have no Vue component; the nested `ServiceDesigner` replaced them.)
 - Journey steps are a list. Fields and service input are YAML text inside the form.
 - Steps that combine kinds are listed in `unsupported`, for YAML editing.
 - Questionnaires are written as YAML (`questionnaireTemplate`, `YamlEditor`).

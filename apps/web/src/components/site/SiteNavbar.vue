@@ -9,7 +9,7 @@ import ContactPanel from "./ContactPanel.vue";
 const LINKS = [
   { to: "/#about", label: "About" },
   { to: "/kiosk", label: "AI Kiosk" },
-  { to: "/studio", label: "Journey studio" },
+  { to: "/catalogue", label: "Service catalogue" },
 ];
 const route = useRoute();
 const menuOpen = ref(false);
