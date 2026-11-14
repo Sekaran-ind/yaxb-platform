@@ -28,6 +28,7 @@ import { computed, ref, shallowRef, watch } from "vue";
 import { useRoute } from "vue-router";
 import DesignerChat from "./DesignerChat.vue";
 import ConsentPanel from "./ConsentPanel.vue";
+import JourneyFlow from "./JourneyFlow.vue";
 import EntryStatus from "./EntryStatus.vue";
 import ServiceAudit from "./ServiceAudit.vue";
 import SegmentedControl from "@/components/site/SegmentedControl.vue";
@@ -112,7 +113,7 @@ function startOver() {
   openView("design");
 }
 
-type View = "design" | "yaml" | "preview" | "consent" | "summary" | "audit" | "history";
+type View = "design" | "yaml" | "preview" | "flow" | "consent" | "summary" | "audit" | "history";
 const view = ref<View>("design");
 const dirty = computed(() => yaml.value !== saved.value);
 const editable = computed(() => (props.entryId === null || mayChange.value) && !readOnlyCopy.value && entry.value?.status !== "archived");
@@ -125,7 +126,9 @@ watch(
     if (!awaitingCopy.value || !p) return;
     awaitingCopy.value = false;
     yaml.value = saved.value = p.yaml;
-    openView(view.value);
+    // The designer gave up on the empty YAML before: try it again with the copy.
+    designNote.value = null;
+    openView(view.value === "yaml" ? "design" : view.value);
   },
 );
 async function load() {
@@ -303,6 +306,7 @@ const VIEWS = computed<{ value: View; label: string }[]>(() => [
   { value: "design", label: "Design" },
   { value: "yaml", label: "YAML" },
   { value: "preview", label: "Preview" },
+  { value: "flow", label: "Flow" },
   { value: "consent", label: "Consent" },
   { value: "summary", label: "Summary" },
   ...(entry.value ? [{ value: "audit" as const, label: "Audit" }, { value: "history" as const, label: `History (${revisions.value.length})` }] : []),
@@ -398,6 +402,7 @@ watch(
     <div v-else-if="view === 'preview'" class="rounded-2xl bg-canvas p-3 ring-1 ring-gray-200">
       <FlowPreview :bundle="check.bundle" :layout="resolveLayout(width - 24)" :width="width - 24" storage-key="catalogue.preview" />
     </div>
+    <JourneyFlow v-else-if="view === 'flow'" :bundle="check.bundle" :problems="check.problems" @line="goToLine" />
     <ConsentPanel v-else-if="view === 'consent'" v-model="yaml" :editable="editable" :storage="entryStorage" :roles="roles" />
     <div v-else-if="view === 'summary'" class="space-y-4">
       <ServiceSummary :bundle="check.bundle" />

@@ -1446,3 +1446,74 @@ button.yj-crumb:hover {
   display: inline;
   font-weight: 400;
 }
+
+/* The flow diagram (JRN-43): the journey's state machine. */
+.yj-flowdiagram {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.yj-flowdiagram svg {
+  display: block;
+  margin: 0 auto;
+  max-width: none;
+  font-family: var(--yj-font);
+}
+.yj-fd-edge path {
+  stroke: var(--yj-muted);
+  stroke-width: 1.5;
+}
+.yj-fd-arrow {
+  fill: var(--yj-muted);
+}
+.yj-fd-label {
+  font-size: 11px;
+  fill: var(--yj-body);
+  paint-order: stroke;
+  stroke: var(--yj-surface);
+  stroke-width: 4px;
+}
+.yj-fd-node rect,
+.yj-fd-node polygon {
+  fill: var(--yj-surface);
+  stroke: var(--yj-line);
+  stroke-width: 1.5;
+}
+.yj-fd-ask rect {
+  stroke: var(--yj-strong);
+}
+.yj-fd-service rect {
+  fill: var(--yj-mist);
+}
+.yj-fd-decide polygon {
+  fill: var(--yj-mist);
+  stroke: var(--yj-info);
+}
+.yj-fd-final rect {
+  fill: var(--yj-strong);
+  stroke: var(--yj-strong);
+}
+.yj-fd-final .yj-fd-title {
+  fill: var(--yj-on-strong);
+}
+.yj-fd-failed rect {
+  stroke: var(--yj-danger);
+  stroke-dasharray: 4 3;
+}
+.yj-fd-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  fill: var(--yj-ink);
+}
+.yj-fd-role {
+  font-size: 10.5px;
+  fill: var(--yj-accent);
+  font-weight: 600;
+}
+.yj-fd-faded {
+  opacity: 0.45;
+}
+.yj-fd-faded rect,
+.yj-fd-faded polygon,
+.yj-fd-faded path {
+  stroke-dasharray: 5 4;
+}

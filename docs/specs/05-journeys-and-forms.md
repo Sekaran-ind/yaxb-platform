@@ -137,3 +137,13 @@ Guided services: a sequence of steps that ask the visitor something, run an on-d
 | CON-6 | Before a catalogue journey starts, or a staff member carries on their part, the kiosk shows the form for their role; they tick "I have read this" and agree, or decline and nothing is asked or sent. | Built |
 | CON-7 | A staff member who finishes requests agrees to their role's duties before the request opens. | Built |
 | CON-8 | Agreements are kept on the device for the open profile, by service, role and version (at the front desk only for the visit); agreeing or declining is a service event (role and version, never who) when the service records events. | Built |
+
+## Journeys as state machines
+
+| ID | Requirement | Status |
+|---|---|---|
+| JRN-40 | Every journey is also an XState state machine: a state per screen, a transition per way out (each branch of a decision, a service's success and failure), so the platform can walk every path whatever the answers. The runner still runs journeys; the machine is how they are checked and drawn. | Built |
+| JRN-41 | Design checks warn (never block) when a screen is never reached (and why: a result before it ends the journey), when a journey can loop with no way to an ending, when an "approve" or "review" step is a decision that runs by itself with nobody asked, and when a role is one letter from a known role ("curators" for "curator"). They show wherever a service's problems show. | Built |
+| JRN-42 | The Service Designer agent is told these rules and fixes these warnings before it submits a draft. | Built |
+| JRN-43 | A service's Flow view draws each journey: questions, services, decisions and endings, the role that answers each screen, each decision's conditions; what is never reached is faded below. | Built |
+| JRN-44 | The Flow view lists one way through to each ending (the shortest), with the conditions taken. | Built |

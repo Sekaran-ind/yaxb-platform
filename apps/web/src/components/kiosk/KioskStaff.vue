@@ -16,15 +16,17 @@ import AnswerReviews from "@/components/moderation/AnswerReviews.vue";
 import ModeratorProfile from "@/components/moderation/ModeratorProfile.vue";
 import QualityDashboard from "@/components/moderation/QualityDashboard.vue";
 import TeamPanel from "@/components/team/TeamPanel.vue";
+import MyWork from "@/components/moderation/MyWork.vue";
+import ServiceDashboard from "@/components/moderation/ServiceDashboard.vue";
 import { useWidth } from "@/composables/width";
 
-const COMPONENTS = { quality: QualityDashboard, review: AnswerReviews, moderation: CurateTimeline, team: TeamPanel, profile: ModeratorProfile, admin: AdminPanel } as const;
+const COMPONENTS = { work: MyWork, dashboards: ServiceDashboard, quality: QualityDashboard, review: AnswerReviews, moderation: CurateTimeline, team: TeamPanel, profile: ModeratorProfile, admin: AdminPanel } as const;
 type Section = keyof typeof COMPONENTS;
 const isSection = (s: unknown): s is Section => typeof s === "string" && s in COMPONENTS;
 
 const route = useRoute();
 const router = useRouter();
-const section = computed<Section>(() => (isSection(route.query.staff) ? route.query.staff : "quality"));
+const section = computed<Section>(() => (isSection(route.query.staff) ? route.query.staff : "work"));
 /** The sections, named and drawn as their cards in the For staff service. */
 const screens = computed<NavScreen[]>(() =>
   (kioskContent.services.find((s) => s.id === "staff")?.items ?? []).filter((i) => isSection(i.staff)).map((i) => ({ id: i.staff!, label: i.label, icon: i.icon })),

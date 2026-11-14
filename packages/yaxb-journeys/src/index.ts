@@ -7,4 +7,5 @@ export * from "./bundle.js";
 export * from "./forms.js";
 export * from "./nested.js";
 export * from "./consent.js";
+export * from "./machine.js";
 

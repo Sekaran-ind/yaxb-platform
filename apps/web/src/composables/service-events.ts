@@ -62,3 +62,25 @@ export async function flush() {
   if (queue.length) schedule();
 }
 if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && void flush());
+
+/**
+ * A service's events, for its dashboard and activity log (MET-3): from the organisation's box, or
+ * from the server (administrators, moderators and reviewers). None for a service without storage.
+ */
+export async function loadEvents(entryId: string, since?: string): Promise<ServiceEvent[]> {
+  const storage = storageOf(entryId);
+  const q = `service=${encodeURIComponent(entryId)}${since ? `&since=${encodeURIComponent(since)}` : ""}`;
+  if (storage === "box") {
+    if (!settings.box.url || !settings.box.token) throw new Error("This service keeps its records on the box: connect the box in Preferences → Storage.");
+    const res = await fetch(`${settings.box.url.replace(/\/+$/, "")}/v1/events?${q}`, { headers: { Authorization: `Bearer ${settings.box.token}` } });
+    if (!res.ok) throw new Error(`The box answered ${res.status}.`);
+    return ((await res.json()) as { items: ServiceEvent[] }).items;
+  }
+  if (storage === "server") {
+    const res = await fetch(`/api/events?${q}`);
+    const body = (await res.json().catch(() => null)) as { items?: ServiceEvent[]; error?: string } | null;
+    if (!res.ok) throw Object.assign(new Error(body?.error ?? "Couldn't read the records."), { status: res.status });
+    return body?.items ?? [];
+  }
+  return [];
+}

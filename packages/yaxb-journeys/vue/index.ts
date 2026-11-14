@@ -5,6 +5,7 @@ import "./style.css";
 export { default as AdaptiveNav } from "./AdaptiveNav.vue";
 export type { NavScreen } from "./AdaptiveNav.vue";
 export { default as ConfirmAction } from "./ConfirmAction.vue";
+export { default as FlowDiagram } from "./FlowDiagram.vue";
 export { default as FlowPreview } from "./FlowPreview.vue";
 export { default as FlowStudio } from "./FlowStudio.vue";
 export { default as JourneyDesigner } from "./JourneyDesigner.vue";

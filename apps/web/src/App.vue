@@ -4,6 +4,7 @@ import { useRoute } from "vue-router";
 import SiteFooter from "@/components/site/SiteFooter.vue";
 import SiteNavbar from "@/components/site/SiteNavbar.vue";
 import CallLayer from "@/components/team/CallLayer.vue";
+import TextDialog from "@/components/site/TextDialog.vue";
 import { NATIVE } from "@/lib/platform";
 import { restricted } from "@/composables/restricted";
 
@@ -30,5 +31,6 @@ const route = useRoute();
     <SiteFooter v-if="!restricted" />
     <!-- A team call or a ringing call, above every page (TEAM-20). -->
     <CallLayer />
+    <TextDialog />
   </template>
 </template>

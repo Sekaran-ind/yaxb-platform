@@ -10,6 +10,7 @@
 //
 // Documents can come in any order. Each problem names its document and the line it starts on,
 // so an editor can point at it.
+import { designChecks } from "./machine.js";
 import { load } from "js-yaml";
 import { compileJourney, type Journey, type ServiceHandler } from "./journeys.js";
 import { compileQuestionnaire, type Questionnaire } from "./questionnaires.js";
@@ -184,8 +185,14 @@ export function compileBundle(source: string | string[], options: BundleOptions 
   const journeyDocs = unique("journey");
   for (const p of journeyDocs) {
     const r = compileJourney(p.doc, { services: options.services, questionnaires, roles: p.known ?? options.roles });
-    if (r.ok) journeys.push(r.journey);
-    else fail(p, r.problems);
+    if (r.ok) {
+      journeys.push(r.journey);
+      // Design checks from the journey's state machine (machine.ts): warnings, never errors.
+      for (const c of designChecks(r.journey, { roles: [...new Set([...DEFAULT_ROLES.map((x) => x.id), "curator", ...(options.roles ?? [])])], order: Object.keys(r.journey.steps) })) {
+        const message = p.nested ? c.message : c.message.replace(/screen '/g, "step '");
+        problems.push({ level: c.level, line: problemLine(p.chunk, message), kind: "journey", id: p.meta.id, message });
+      }
+    } else fail(p, r.problems);
   }
 
   // A service may name a journey that failed to compile: that journey's own errors say why.
