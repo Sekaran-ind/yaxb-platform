@@ -10,11 +10,12 @@ import { computed, ref } from "vue";
 import type { NotebookApi } from "@/composables/notebook";
 import { useCapabilities } from "@/composables/settings";
 import { ACCEPTED_FILES, readDocument } from "@/lib/browser/documents";
+import CatalogueServices from "./CatalogueServices.vue";
 import { cn } from "@/lib/cn";
 
 const props = defineProps<{ nb: NotebookApi; activeThreadId: string }>();
 const { data: caps } = useCapabilities();
-const emit = defineEmits<{ openThread: [id: string]; newThread: [] }>();
+const emit = defineEmits<{ openThread: [id: string]; newThread: []; startJourney: [id: string] }>();
 
 const chars = (n: number) => (n >= 1000 ? `${Math.round(n / 100) / 10}k` : String(n));
 const fileInput = ref<HTMLInputElement | null>(null);
@@ -232,6 +233,9 @@ async function deleteThread(id: string) {
         <button type="button" class="btn-primary" @click="saveMemory">Save memory</button>
       </div>
     </section>
+
+    <!-- The services added to this kiosk (LIB-49): their journeys run in the conversation. -->
+    <CatalogueServices @start="(id) => emit('startJourney', id)" />
 
     <section aria-labelledby="nb-threads">
       <div class="mb-2 flex items-center justify-between">

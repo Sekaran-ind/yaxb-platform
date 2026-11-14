@@ -8,14 +8,14 @@ import { roleName } from "@/composables/library";
 import RequestStatus from "./RequestStatus.vue";
 
 defineProps<{ items: CaseSummary[] }>();
-const emit = defineEmits<{ open: [id: string] }>();
+const emit = defineEmits<{ open: [ref: string] }>();
 const when = (iso: string) => new Date(iso).toLocaleDateString([], { day: "numeric", month: "short" });
 </script>
 
 <template>
   <ul class="grid gap-2 @lg:grid-cols-2">
     <li v-for="c in items" :key="c.id">
-      <button type="button" class="card flex w-full items-center gap-3 p-3 text-left transition hover:border-gray-300" @click="emit('open', c.id)">
+      <button type="button" class="card flex w-full items-center gap-3 p-3 text-left transition hover:border-gray-300" @click="emit('open', c.ref)">
         <span class="min-w-0 flex-1">
           <span class="flex items-center gap-2">
             <span class="min-w-0 truncate text-sm font-medium text-ink">{{ c.journey_title }}</span>

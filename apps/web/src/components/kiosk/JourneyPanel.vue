@@ -6,10 +6,10 @@
 // A catalogue journey runs as the person at the kiosk (their roles): when it reaches a screen another
 // role answers, or ends with roles that finish it, it is handed over as a case (LIB-33..38), and the
 // visitor gets its reference. `resume` carries on a case from where it stopped, as its next person.
-import { createRunner, type Journey, type RunState, type ServiceHandler, type SlotConfirm, type SlotVia } from "@sekaran-ind/yaxb-core/journeys";
+import { createRunner, type Journey, type RunSnapshot, type RunState, type ServiceHandler, type SlotConfirm, type SlotVia } from "@sekaran-ind/yaxb-core/journeys";
 import { progressOf, summarizeJourney, summarizeRun } from "@sekaran-ind/yaxb-core/journeys";
 import { ArrowLeft, CheckCircle2, Circle, Copy, Loader2, Mic, MicOff, NotebookPen, RotateCcw, Sparkles, Square, Volume2, Wand2, XCircle } from "@lucide/vue";
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, useId, watch } from "vue";
 import { effectiveSelection, settings, useProviders } from "@/composables/settings";
 import { useSpeechInput } from "@/composables/speech";
 import { extractWithModel, matchOnDevice } from "@/lib/browser/slots";
@@ -18,6 +18,7 @@ import { cn } from "@/lib/cn";
 import { speechLangFor } from "@/lib/languages";
 import JourneyField from "./JourneyField.vue";
 import { kioskActor, roleName } from "@/composables/library";
+import { offerFormInput, withdrawFormInput } from "@/composables/form-input";
 import { actCase, deliveryText, resendCase, startCase, type CaseDetail } from "@/composables/cases";
 import type { CaseSummary, Delivery } from "@sekaran-ind/yaxb-core/cases";
 
@@ -30,8 +31,14 @@ const props = defineProps<{
   /** A case to carry on (from the work queue, or a visitor's reference). */
   resume?: CaseDetail | null;
   backLabel?: string;
+  /** In the conversation: no way back (the conversation goes on), and it carries on from `initial`. */
+  embedded?: boolean;
+  /** Where this run had got to when the conversation was kept. */
+  initial?: RunSnapshot | null;
 }>();
-const emit = defineEmits<{ close: []; speak: [text: string]; done: []; handed: [c: CaseSummary] }>();
+const emit = defineEmits<{ close: []; speak: [text: string]; done: []; handed: [c: CaseSummary]; progress: [run: RunSnapshot, status: RunState["status"], result: RunState["result"]] }>();
+const uid = useId();
+
 
 const state = shallowRef<RunState | null>(null);
 const handsOver = computed(() => Boolean(props.resume || props.entry));
@@ -217,6 +224,8 @@ const voice = useSpeechInput(
 watch(
   () => state.value?.status,
   (s) => {
+    // The conversation keeps where it got to (not while a service is still running).
+    if (s && s !== "running" && s !== "idle") emit("progress", keptSnapshot(), s, state.value?.result ?? null);
     if (s === "done") emit("done");
     if (!handsOver.value) return;
     if (s === "waiting" || (s === "done" && (props.resume || finishers.value.length))) void handOver();
@@ -233,14 +242,44 @@ async function copy() {
   copied.value = true;
   setTimeout(() => (copied.value = false), 1500);
 }
-const restart = () => {
+/** Start again, or (on opening) carry on from a case or from where the conversation left it. */
+/** What the conversation keeps of the run: everything but secrets (a `password` answer is never stored or prefilled). */
+function keptSnapshot(): RunSnapshot {
+  const snap = JSON.parse(JSON.stringify(runner.snapshot())) as RunSnapshot;
+  for (const [step, answers] of Object.entries(snap.answers)) {
+    for (const f of props.journey.steps[step]?.fields ?? []) if (f.type === "password") delete answers[f.id];
+  }
+  return snap;
+}
+const restart = (fresh = true) => {
   handed.value = null;
   delivery.value = null;
   handError.value = null;
-  void (props.resume ? runner.resume(props.resume.case.run, props.resume.actor) : runner.start());
+  if (props.resume) return void runner.resume(props.resume.case.run, props.resume.actor);
+  if (!fresh && props.initial) return void runner.resume(props.initial, handsOver.value ? kioskActor.value : undefined);
+  void runner.start();
 };
 
-onMounted(restart);
+// In the conversation, the message box answers this form while it waits for answers (LIB-56).
+watch(
+  () => [state.value?.status, state.value?.prompt?.step] as const,
+  ([status, step]) => {
+    if (!props.embedded) return;
+    if (status === "asking" && step && stepFields.value.some((f) => f.type !== "source")) {
+      offerFormInput({
+        id: uid,
+        label: props.journey.steps[step]?.label ?? props.journey.title,
+        fill: async (text) => {
+          said.value = text;
+          await fillFromWords();
+        },
+      });
+    } else withdrawFormInput(uid);
+  },
+);
+onBeforeUnmount(() => withdrawFormInput(uid));
+
+onMounted(() => restart(false));
 onBeforeUnmount(() => {
   if (runner.state.status === "running") runner.stop();
 });
@@ -249,10 +288,11 @@ onBeforeUnmount(() => {
 <template>
   <div class="space-y-4">
     <div>
-      <button type="button" class="btn-ghost -ml-2 h-9 px-2 text-sm" @click="emit('close')"><ArrowLeft class="size-4" aria-hidden="true" /> {{ backLabel ?? "Services" }}</button>
-      <h3 class="mt-1 text-lg font-semibold text-ink">{{ journey.title }}</h3>
-      <p v-if="journey.summary" class="text-sm text-gray-600">{{ journey.summary }}</p>
-      <p class="mt-1 text-xs text-gray-500">{{ about.privacy }}</p>
+      <button v-if="!embedded" type="button" class="btn-ghost -ml-2 h-9 px-2 text-sm" @click="emit('close')"><ArrowLeft class="size-4" aria-hidden="true" /> {{ backLabel ?? "Quick tools" }}</button>
+      <!-- In the conversation the person's turn already names the journey: a quieter header. -->
+      <h3 :class="embedded ? 'font-semibold text-ink' : 'mt-1 text-lg font-semibold text-ink'">{{ journey.title }}</h3>
+      <p v-if="journey.summary && !embedded" class="text-sm text-gray-600">{{ journey.summary }}</p>
+      <p :class="embedded ? 'text-xs text-gray-500' : 'mt-1 text-xs text-gray-500'">{{ embedded && journey.summary ? `${journey.summary} ` : "" }}{{ about.privacy }}</p>
     </div>
 
     <ol v-if="state && (state.trail.length || state.status === 'running' || state.status === 'asking')" class="flex flex-wrap gap-2 text-xs" aria-label="Progress">
@@ -265,10 +305,11 @@ onBeforeUnmount(() => {
 
     <form v-if="state?.status === 'asking' && state.prompt" class="card space-y-3 p-4" @submit.prevent="submit">
       <p class="font-medium text-ink">{{ state.prompt.text }}</p>
-      <div v-if="state.prompt.fields.some((f) => f.type !== 'source')" class="space-y-2 rounded-lg bg-mist p-3">
-        <label for="journey-said" class="block text-sm font-medium text-ink">Say or type it in your own words</label>
-        <div class="flex gap-2">
-          <textarea id="journey-said" v-model="said" class="input min-h-16" placeholder="e.g. I'm Ravi from Chennai, I've had a bad cough for 3 days" @keydown.enter.exact.prevent="fillFromWords" />
+      <!-- In the conversation, the message box below fills this form (LIB-56); elsewhere, its own box. -->
+      <div v-if="state.prompt.fields.some((f) => f.type !== 'source') && (!embedded || slotNote || confirms.length || (missing.length && said.trim()))" class="space-y-2 rounded-lg bg-mist p-3">
+        <label v-if="!embedded" :for="`${uid}-said`" class="block text-sm font-medium text-ink">Say or type it in your own words</label>
+        <div v-if="!embedded" class="flex gap-2">
+          <textarea :id="`${uid}-said`" v-model="said" class="input min-h-16" placeholder="e.g. I'm Ravi from Chennai, I've had a bad cough for 3 days" @keydown.enter.exact.prevent="fillFromWords" />
           <div class="flex flex-col gap-2">
             <button v-if="voice.supported.value" type="button" class="btn-light px-3" :aria-label="voice.listening.value ? 'Stop listening' : 'Speak'" @click="voice.listening.value ? voice.stop() : voice.start()">
               <MicOff v-if="voice.listening.value" class="size-4" aria-hidden="true" /><Mic v-else class="size-4" aria-hidden="true" />
@@ -278,7 +319,7 @@ onBeforeUnmount(() => {
             </button>
           </div>
         </div>
-        <p v-if="voice.interim.value" class="text-xs text-gray-500">{{ voice.interim.value }}</p>
+        <p v-if="voice.interim.value && !embedded" class="text-xs text-gray-500">{{ voice.interim.value }}</p>
         <p v-if="slotNote" role="status" class="text-sm text-ink">{{ slotNote }}</p>
         <div v-for="c in confirms" :key="c.field" class="flex flex-wrap items-center gap-2 text-sm">
           <span class="text-gray-600">{{ c.label }}: which one?</span>
@@ -333,7 +374,7 @@ onBeforeUnmount(() => {
             <Loader2 v-if="resending" class="size-3.5 animate-spin" aria-hidden="true" /><RotateCcw v-else class="size-3.5" aria-hidden="true" /> Send it again
           </button>
         </div>
-        <p v-if="!resume" class="text-xs text-gray-500">Keep the reference: under Services, “Check a request” shows where it is and lets you add a note.</p>
+        <p v-if="!resume" class="text-xs text-gray-500">The reference stays in this conversation. To see where the request is later, open the conversation again from My notebook, or type the reference into any conversation.</p>
         <div class="flex flex-wrap gap-2">
           <button v-if="run && services['notebook.add']" type="button" class="btn-light" @click="saveRun"><NotebookPen class="size-4" aria-hidden="true" /> Save to notebook</button>
           <button type="button" class="btn-primary ml-auto" @click="emit('close')">Done</button>
@@ -353,7 +394,7 @@ onBeforeUnmount(() => {
       <div class="flex flex-wrap gap-2">
         <button type="button" class="btn-light" @click="emit('speak', state.result.text)"><Volume2 class="size-4" aria-hidden="true" /> Read aloud</button>
         <button type="button" class="btn-light" @click="copy"><Copy class="size-4" aria-hidden="true" /> {{ copied ? "Copied" : "Copy" }}</button>
-        <button type="button" class="btn-light" @click="restart"><RotateCcw class="size-4" aria-hidden="true" /> Start again</button>
+        <button type="button" class="btn-light" @click="restart()"><RotateCcw class="size-4" aria-hidden="true" /> Start again</button>
         <button v-if="run && services['notebook.add']" type="button" class="btn-light" @click="saveRun"><NotebookPen class="size-4" aria-hidden="true" /> Save to notebook</button>
         <button type="button" class="btn-primary ml-auto" @click="emit('close')">Done</button>
       </div>
@@ -371,7 +412,7 @@ onBeforeUnmount(() => {
 
     <div v-if="state?.status === 'failed'" role="alert" class="space-y-2 rounded-lg bg-danger/10 px-4 py-3 text-sm text-red-800">
       <p>{{ state.error }}</p>
-      <button type="button" class="btn-light" @click="restart"><RotateCcw class="size-4" aria-hidden="true" /> Start again</button>
+      <button type="button" class="btn-light" @click="restart()"><RotateCcw class="size-4" aria-hidden="true" /> Start again</button>
     </div>
   </div>
 </template>

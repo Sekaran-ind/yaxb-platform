@@ -177,6 +177,26 @@ export function useChat(store: Ref<KioskStore>, onStored?: () => void) {
     await keep(turns.value.find((t) => t.role === "user")?.text ?? "", ctx, record?.state ?? null);
   }
 
+  /**
+   * Turns made on this device, without the agent: a journey started from /journeys or /staff, a
+   * request's reference, a file added. A user turn (what was asked for) and the kiosk's turn.
+   * Returns the kiosk turn's id.
+   */
+  async function addTurns(message: string, reply: Partial<ChatTurn>, ctx: Omit<TurnContext, "thread">): Promise<string> {
+    const id = crypto.randomUUID();
+    turns.value.push({ id: crypto.randomUUID(), role: "user", text: message, tools: [], todos: [], via: reply.via }, { text: "", tools: [], todos: [], local: true, ...reply, id, role: "assistant" });
+    await keep(message, ctx, record?.state ?? null);
+    return id;
+  }
+
+  /** Change a turn made on this device (a journey's progress, the request it became), and keep it. */
+  async function patchTurn(id: string, patch: Partial<ChatTurn>, ctx: Omit<TurnContext, "thread">) {
+    const turn = turns.value.find((t) => t.id === id);
+    if (!turn) return;
+    Object.assign(turn, patch);
+    await keep(turns.value.find((t) => t.role === "user")?.text ?? "", ctx, record?.state ?? null);
+  }
+
   function reset() {
     controller?.abort();
     record = null;
@@ -193,5 +213,5 @@ export function useChat(store: Ref<KioskStore>, onStored?: () => void) {
     turns.value = t.turns;
   }
 
-  return { turns, busy, threadId, send, sendLocal, addCard, updateCard, reset, open, stop: () => controller?.abort() };
+  return { turns, busy, threadId, send, sendLocal, addCard, updateCard, addTurns, patchTurn, reset, open, stop: () => controller?.abort() };
 }

@@ -40,7 +40,7 @@ const emit = defineEmits<{ back: [] }>();
     <AdaptiveNav :screens="screens" mode="tabs" storage-key="staff" label="Staff sections" :active="section" :width="width" @update:active="open">
       <!-- The way back to Services sits on the same row as the sections (one header, not two). -->
       <template #lead>
-        <button type="button" class="btn-ghost -ml-2 h-10 shrink-0 px-2 text-sm" @click="emit('back')"><ArrowLeft class="size-4" aria-hidden="true" /> Services</button>
+        <button type="button" class="btn-ghost -ml-2 h-10 shrink-0 px-2 text-sm" @click="emit('back')"><ArrowLeft class="size-4" aria-hidden="true" /> Quick tools</button>
       </template>
       <template v-for="s in screens" :key="s.id" #[s.id]>
         <component :is="COMPONENTS[s.id as Section]" />

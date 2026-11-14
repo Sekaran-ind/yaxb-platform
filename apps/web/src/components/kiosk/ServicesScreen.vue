@@ -2,15 +2,14 @@
 // What the visitor can do here, from the kiosk's service config (yaxb-core content/services): each
 // item opens a screen, runs a journey, or (For staff) opens a staff section here, inside Services.
 // Cards are laid out by the kiosk's own width (container queries), not the window's, so the Mini
-// kiosk on a wide screen gets one clean column. Services loaded from the Service Catalogue come
-// after the built-in ones (LIB-18..19): their journeys open for those who may start them, and the
-// rest show which role starts them. Loading one checks the team has someone for each role it needs
-// (LIB-37). Requests (cases, LIB-33..38) are here too: a signed-in member's work queue, and "Check a
+// kiosk on a wide screen gets one clean column. Services loaded from the Service Catalogue live in
+// the Notebook (CatalogueServices, LIB-49); a pointer here says so, and every journey runs in the
+// conversation (the shell's startJourney). ?load=<id> still loads one here. Requests (cases, LIB-33..38) are here too: a signed-in member's work queue, and "Check a
 // request" by reference for anyone; ?case=<id or reference> opens one.
 import type { ServiceHandler } from "@sekaran-ind/yaxb-core/journeys";
 import type { Layout } from "@sekaran-ind/yaxb-core/screens";
 import { servicesFor, type ServiceItem } from "@sekaran-ind/yaxb-core/services";
-import { AlertTriangle, ChevronDown, ChevronRight, Inbox, Info, Library, Lock, Plus, Search, X } from "@lucide/vue";
+import { ChevronDown, ChevronRight, Inbox, Info, Search } from "@lucide/vue";
 import { kioskContent } from "@sekaran-ind/yaxb-core/content";
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -18,25 +17,17 @@ import type { NotebookRecord } from "@/lib/browser/store";
 import { cn } from "@/lib/cn";
 import { iconFor } from "@/lib/icons";
 import { NATIVE } from "@/lib/platform";
-import CaseView from "./CaseView.vue";
 import RequestList from "./RequestList.vue";
-import JourneyPanel from "./JourneyPanel.vue";
 import JourneySummaryCard from "./JourneySummaryCard.vue";
 import KioskStaff from "./KioskStaff.vue";
 import {
   catalogue,
-  catalogueReady,
-  entryOfJourney,
   kioskJourneys,
   loadCatalogue,
   loadedServices,
   loadIntoKiosk,
-  needsOf,
-  removeFromKiosk,
-  roleName,
   viewerIsMember,
   kioskViewer,
-  type CatalogueJourney,
 } from "@/composables/library";
 import { caseQueue, onDevices, refreshQueue, startCaseNetwork } from "@/composables/cases";
 import { collect } from "@/composables/case-network";
@@ -44,8 +35,9 @@ import RequestBoard from "./RequestBoard.vue";
 import { CASE_REF } from "@sekaran-ind/yaxb-core/cases";
 
 // highlight: service item keys the visitor's profile brings forward (yaxb-core accounts preferencesFrom).
-const props = defineProps<{ layout: Layout; openJourney: string | null; services: Record<string, ServiceHandler>; notebook: NotebookRecord | null; highlight?: string[] }>();
-const emit = defineEmits<{ openJourney: [id: string | null]; openScreen: [id: string]; speak: [text: string]; journeyDone: [id: string] }>();
+const props = defineProps<{ layout: Layout; services: Record<string, ServiceHandler>; notebook: NotebookRecord | null; highlight?: string[] }>();
+// Every journey runs in the conversation (LIB-50): Services asks the shell to start it there.
+const emit = defineEmits<{ openJourney: [id: string]; openScreen: [id: string]; speak: [text: string]; request: [ref: string] }>();
 
 const route = useRoute();
 const router = useRouter();
@@ -65,11 +57,6 @@ onMounted(async () => {
     void router.replace({ path: route.path, query });
   }
 });
-const picking = ref(false);
-const available = computed(() => catalogue.value.filter((s) => !s.loaded));
-const startedBy = (j: CatalogueJourney) => j.initiate.filter((r) => r !== "visitor").map(roleName).join(" or ");
-const finishedBy = (j: CatalogueJourney) => j.complete.map(roleName).join(" or ");
-const journey = computed(() => (props.openJourney ? kioskJourneys.value.find((j) => j.id === props.openJourney) : undefined));
 // The native app is for visitors: staff work in the web kiosk, where their sign-in is a cookie.
 const offered = computed(() => servicesFor(kioskContent.services, { layout: props.layout, journeys: kioskJourneys.value.map((j) => j.id) }).filter((s) => !(NATIVE && s.id === "staff")));
 const forYou = computed(() => {
@@ -93,8 +80,8 @@ function open(item: ServiceItem) {
 const backToServices = () => void router.push({ path: "/kiosk", query: { screen: "services" } });
 
 // ---- requests (cases) --------------------------------------------------------------------------
-const caseKey = computed(() => (typeof route.query.case === "string" ? route.query.case : null));
-const openRequest = (key: string) => void router.push({ path: "/kiosk", query: { screen: "services", case: key } });
+/** A request opens in the conversation, unfolded (LIB-52). */
+const openRequest = (ref: string) => emit("request", ref);
 const refInput = ref("");
 const refProblem = ref<string | null>(null);
 function checkRequest() {
@@ -113,37 +100,10 @@ const otherGroups = computed(() =>
   ].filter((g) => g.items.length),
 );
 
-// ---- loading a catalogue service: who it needs (LIB-37) ----------------------------------------
-const checking = ref<string | null>(null);
-const unstaffed = (entryId: string) => needsOf(entryId).filter((n) => n.staffing !== "ready");
-function askToLoad(entryId: string) {
-  if (!unstaffed(entryId).length) return loadIntoKiosk(entryId);
-  checking.value = entryId;
-}
-function confirmLoad(entryId: string) {
-  loadIntoKiosk(entryId);
-  checking.value = null;
-}
-const STAFFING = { ready: "has someone", invited: "invited, but not signed in yet", nobody: "nobody has this role yet" } as const;
 </script>
 
 <template>
-  <JourneyPanel
-    v-if="journey"
-    :key="journey.id"
-    :journey="journey"
-    :entry="entryOfJourney(journey.id)"
-    :services="services"
-    :notebook="notebook"
-    @close="emit('openJourney', null)"
-    @speak="(t) => emit('speak', t)"
-    @done="emit('journeyDone', journey.id)"
-    @handed="refreshQueue"
-  />
-
-  <CaseView v-else-if="caseKey" :key="caseKey" :case-key="caseKey" :services="services" :notebook="notebook" @back="backToServices" @speak="(t) => emit('speak', t)" />
-
-  <KioskStaff v-else-if="staffSection" @back="backToServices" />
+  <KioskStaff v-if="staffSection" @back="backToServices" />
 
   <div v-else class="@container space-y-7">
     <!-- Work waiting for this member's roles comes first. -->
@@ -206,74 +166,12 @@ const STAFFING = { ready: "has someone", invited: "invited, but not signed in ye
       </ul>
     </section>
 
-    <!-- Services loaded from the Service Catalogue. -->
-    <section aria-labelledby="svc-catalogue" class="space-y-4">
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <h3 id="svc-catalogue" class="flex items-center gap-2 text-base font-semibold text-ink"><Library class="size-4 text-brand" aria-hidden="true" /> From the Service Catalogue</h3>
-        <button v-if="catalogueReady" type="button" class="btn-light h-8 px-3 text-xs" :aria-expanded="picking" @click="picking = !picking"><Plus class="size-3.5" aria-hidden="true" /> Load a service</button>
-      </div>
-      <div v-if="picking" class="rounded-2xl bg-mist p-3">
-        <p v-if="!available.length" class="text-sm text-gray-600">Every published service is loaded<template v-if="!catalogue.length">: nothing is published yet</template>.</p>
-        <ul class="grid gap-2 @lg:grid-cols-2">
-          <li v-for="s in available" :key="s.entry_id" class="card flex flex-wrap items-start justify-between gap-2 p-3">
-            <span class="min-w-0">
-              <span class="block text-sm font-medium text-ink">{{ s.title }}</span>
-              <span class="block text-xs text-gray-500">{{ s.journeys.length }} journey{{ s.journeys.length === 1 ? "" : "s" }} · {{ s.library }}</span>
-            </span>
-            <button v-if="checking !== s.entry_id" type="button" class="btn-primary h-8 px-3 text-xs" @click="askToLoad(s.entry_id)">Load</button>
-            <!-- Roles nobody can act on yet: say so before loading. -->
-            <div v-else class="caution w-full space-y-2 p-3 text-sm" role="status">
-              <p class="flex items-center gap-1.5 font-medium"><AlertTriangle class="size-4 shrink-0" aria-hidden="true" /> Some roles have nobody to act yet</p>
-              <ul class="space-y-0.5">
-                <li v-for="n in unstaffed(s.entry_id)" :key="n.role"><span class="font-medium">{{ n.label }}</span>: {{ STAFFING[n.staffing] }}. Needed to {{ n.why.join("; ") }}.</li>
-              </ul>
-              <p class="text-gray-700">Requests would wait for them until someone has the role. An administrator gives a member a role in For staff → Administration.</p>
-              <div class="flex flex-wrap gap-2">
-                <button type="button" class="btn-primary h-10 px-4" @click="confirmLoad(s.entry_id)">Load anyway</button>
-                <button type="button" class="btn-ghost h-10" @click="checking = null">Cancel</button>
-              </div>
-            </div>
-          </li>
-        </ul>
-        <RouterLink v-if="!NATIVE" to="/catalogue" class="mt-2 inline-block text-sm font-medium text-ink hover:underline">Design a service in the catalogue →</RouterLink>
-      </div>
-      <p v-if="!loadedServices.length && !picking" class="text-sm text-gray-500">No catalogue services are loaded on this kiosk.</p>
-
-      <article v-for="s in loadedServices" :key="s.meta.entry_id" :aria-labelledby="`cat-${s.meta.entry_id}`" class="space-y-2">
-        <div class="flex items-start justify-between gap-2">
-          <div class="min-w-0">
-            <h4 :id="`cat-${s.meta.entry_id}`" class="flex items-center gap-2 font-semibold text-ink">
-              <component :is="iconFor(s.meta.icon ?? undefined)" v-if="iconFor(s.meta.icon ?? undefined)" class="size-4 text-brand" aria-hidden="true" />{{ s.meta.title }}
-            </h4>
-            <p v-if="s.meta.summary" class="text-sm text-gray-500">{{ s.meta.summary }}</p>
-            <p v-if="s.meta.roles.length" class="mt-1 text-xs text-gray-500">Delivered by {{ s.meta.roles.map((r) => r.label).join(", ") }}</p>
-            <p v-if="unstaffed(s.meta.entry_id).length" class="caution mt-1 flex items-center gap-1.5 px-2 py-1 text-xs">
-              <AlertTriangle class="size-3.5 shrink-0" aria-hidden="true" /> Nobody can act yet for: {{ unstaffed(s.meta.entry_id).map((n) => n.label).join(", ") }}. Their requests wait.
-            </p>
-          </div>
-          <button type="button" class="btn-ghost h-8 shrink-0 px-2 text-xs" :aria-label="`Remove ${s.meta.title} from this kiosk`" @click="removeFromKiosk(s.meta.entry_id)"><X class="size-3.5" aria-hidden="true" /> Remove</button>
-        </div>
-        <ul class="grid gap-2 @lg:grid-cols-2">
-          <li v-for="j in s.meta.journeys" :key="j.id">
-            <button v-if="j.allowed" type="button" class="card flex w-full items-center gap-3 p-3 text-left transition hover:border-gray-300" @click="emit('openJourney', j.id)">
-              <span class="min-w-0 flex-1">
-                <span class="block text-sm font-medium text-ink">{{ j.title }}</span>
-                <span v-if="j.summary" class="line-clamp-2 block text-xs text-gray-500">{{ j.summary }}</span>
-                <span v-if="finishedBy(j)" class="block text-xs text-gray-500">Finished by {{ finishedBy(j) }}</span>
-              </span>
-              <ChevronRight class="size-4 shrink-0 text-gray-400" aria-hidden="true" />
-            </button>
-            <div v-else class="card flex items-center gap-3 p-3 opacity-80">
-              <Lock class="size-4 shrink-0 text-gray-400" aria-hidden="true" />
-              <span class="min-w-0 flex-1">
-                <span class="block text-sm font-medium text-ink">{{ j.title }}</span>
-                <span class="block text-xs text-gray-500">Started by {{ startedBy(j) }}. Staff with that role sign in under For staff.</span>
-              </span>
-            </div>
-          </li>
-        </ul>
-      </article>
-    </section>
+    <!-- Services loaded from the Service Catalogue live in the notebook; their journeys run in the conversation. -->
+    <p class="rounded-lg bg-mist px-3 py-2 text-sm text-gray-700">
+      Looking for more? Services added to this kiosk from the Service Catalogue are in
+      <button type="button" class="font-medium text-ink underline underline-offset-2" @click="emit('openScreen', 'notebook')">My notebook</button>.
+      Every journey runs in the conversation, where you can also type <span class="font-mono text-ink">/journeys</span> to pick one.
+    </p>
 
     <!-- Moderators: who has which request kept on devices, and reassigning an idle one. -->
     <RequestBoard v-if="onDevices && (kioskViewer.admin || kioskViewer.roles.includes('moderator') || kioskViewer.roles.includes('administrator'))" />
@@ -282,7 +180,7 @@ const STAFFING = { ready: "has someone", invited: "invited, but not signed in ye
     <section aria-labelledby="svc-requests" class="space-y-3">
       <div>
         <h3 id="svc-requests" class="flex items-center gap-2 text-base font-semibold text-ink"><Search class="size-4 text-brand" aria-hidden="true" /> Requests</h3>
-        <p class="mt-0.5 text-sm text-gray-500">When a service passes your answers on to its staff, you get a reference. Type it here to see where your request is, or to add a note.</p>
+        <p class="mt-0.5 text-sm text-gray-500">When a service passes your answers on to its staff, you get a reference, kept in the conversation where you started it. Type it here, or in any conversation, to see where your request is or to add a note.</p>
       </div>
       <form class="flex flex-wrap items-end gap-2" novalidate @submit.prevent="checkRequest">
         <div class="w-36">

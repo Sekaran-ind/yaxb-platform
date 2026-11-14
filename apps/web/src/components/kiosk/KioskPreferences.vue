@@ -13,7 +13,7 @@ const emit = defineEmits<{ close: [] }>();
 <template>
   <section aria-labelledby="prefs-title" :class="fill ? 'flex h-full min-h-0 flex-col gap-3' : 'space-y-4'">
     <header class="min-w-0">
-      <button type="button" class="btn-ghost -ml-2 h-9 px-2 text-sm" @click="emit('close')"><ArrowLeft class="size-4" aria-hidden="true" /> Kiosk</button>
+      <button type="button" class="btn-ghost -ml-2 h-9 px-2 text-sm" @click="emit('close')"><ArrowLeft class="size-4" aria-hidden="true" /> Back</button>
       <h2 id="prefs-title" class="mt-1 text-lg font-semibold text-ink">Preferences</h2>
       <p class="text-xs text-gray-500">{{ nickname ? `Signed in as ${nickname}` : "Not signed in" }} · changes apply at once and stay on this device</p>
     </header>
