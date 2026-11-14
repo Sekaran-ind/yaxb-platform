@@ -6,6 +6,7 @@ import { NOTEBOOK_LIMITS } from "@sekaran-ind/yaxb-core/notebook";
 import { STORAGE_OPTIONS } from "@sekaran-ind/yaxb-core/settings";
 import { Brain, ClipboardPaste, Eye, FileText, Globe, Loader2, MessagesSquare, Plus, RefreshCw, Trash2, Upload } from "@lucide/vue";
 import { ConfirmAction } from "@sekaran-ind/yaxb-journeys/vue";
+import { askText } from "@/composables/dialog";
 import { computed, ref } from "vue";
 import type { NotebookApi } from "@/composables/notebook";
 import { useCapabilities } from "@/composables/settings";
@@ -98,13 +99,14 @@ async function addPaste() {
   await props.nb.addSource({ title: paste.value.title.trim() || "Pasted text", mime: "text/plain", text: paste.value.text.slice(0, NOTEBOOK_LIMITS.sourceChars) });
   paste.value = null;
 }
-function newNotebookPrompt() {
-  const t = prompt("Name the new notebook");
-  if (t !== null) void props.nb.create(t);
+async function newNotebookPrompt() {
+  const t = await askText({ title: "New notebook", label: "Name", placeholder: "Clinic leaflets, School circulars…", confirm: "Create" });
+  if (t) void props.nb.create(t);
 }
-function renamePrompt() {
-  const t = notebook.value && prompt("Rename the notebook", notebook.value.title);
-  if (t?.trim() && notebook.value) void props.nb.save({ ...notebook.value, title: t.trim().slice(0, 200) });
+async function renamePrompt() {
+  if (!notebook.value) return;
+  const t = await askText({ title: "Rename the notebook", label: "Name", value: notebook.value.title, confirm: "Rename" });
+  if (t && notebook.value) void props.nb.save({ ...notebook.value, title: t.slice(0, 200) });
 }
 function removeNotebook() {
   if (notebook.value) void props.nb.remove(notebook.value.id);

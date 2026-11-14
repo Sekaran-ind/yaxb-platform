@@ -61,3 +61,13 @@ Check: `packages/yaxb-core/test/reviews.test.ts` (the worked example, fewer than
 | ID | Requirement | Status |
 |---|---|---|
 | MOD-40 | Moderators must see session feedback (FBK): counts of Bad, Fine and Good by day and by answer mode, and the comments. | Built |
+
+## My work and service dashboards
+
+| ID | Requirement | Status |
+|---|---|---|
+| WRK-1 | Moderators and reviewers have one page, My work (For staff, first): the requests waiting for one of their roles, the requests they started, the escalated questions still open, and the answers people asked a moderator to check, each opening where the work is done. | Built |
+| WRK-2 | My work needs a moderator key; without one it asks for it. | Built |
+| MET-3 | Service dashboards (For staff) read a service's events from where it keeps them (the box, or the server for administrators, moderators and reviewers). A service without storage says it keeps no records and has no dashboard. | Built |
+| MET-4 | A dashboard shows journeys started and finished, completion, requests open, closed and declined, journeys started per week, and per journey a funnel (how many reached each screen, how many stopped there), the median time, how long each role takes to pick a request up, reassignments, failing services and forms filled from words. Bars carry their numbers as text and a hover hint. | Built |
+| MET-5 | The activity log lists what staff did on requests (picked up, answered, closed, declined, reassigned), by name and time, newest first; never a visitor or an answer. | Built |

@@ -85,7 +85,8 @@ export function useNotebook(storage: Ref<StorageId>, activeId: Ref<string | null
   );
 
   async function save(next: NotebookRecord) {
-    await store.value.putNotebook({ ...next, updatedAt: nowIso() });
+    // A plain copy: the notebook on screen is a reactive proxy, which IndexedDB can't store.
+    await store.value.putNotebook(JSON.parse(JSON.stringify({ ...next, updatedAt: nowIso() })) as NotebookRecord);
     refresh();
   }
   /** Latest copy from the store, so concurrent edits (a journey and the agent) don't overwrite each other. */

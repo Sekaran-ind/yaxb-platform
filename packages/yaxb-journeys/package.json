@@ -28,6 +28,10 @@
       "types": "./dist/bundle.d.ts",
       "default": "./dist/bundle.js"
     },
+    "./machine": {
+      "types": "./dist/machine.d.ts",
+      "default": "./dist/machine.js"
+    },
     "./forms": {
       "types": "./dist/forms.d.ts",
       "default": "./dist/forms.js"
@@ -62,7 +66,9 @@
     "@codemirror/state": "6.7.6",
     "@codemirror/view": "6.43.15",
     "@lezer/highlight": "1.2.5",
-    "js-yaml": "5.5.0"
+    "@xstate/graph": "3.0.4",
+    "js-yaml": "5.5.0",
+    "xstate": "5.33.3"
   },
   "peerDependencies": {
     "vue": "^3.5.0"

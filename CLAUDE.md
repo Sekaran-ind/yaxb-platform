@@ -219,7 +219,7 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
 - `FlowStudio` (a free YAML editor with preview) stays in the package; the portal uses the Service Catalogue instead.
 - `YamlEditor` lazy-loads CodeMirror 6 (`vue/yaml-codemirror.ts`, its own chunk; `@codemirror/*` and `@lezer/*` are external in the library build) and takes `problems` (line, level, message) as lint marks; a textarea is the fallback.
 - The web uses the package's `AdaptiveNav` everywhere (kiosk, Preferences, catalogue, staff sections); `main.ts` imports the package's `style.css` and provides `iconFor` through `ICONS_KEY`. The package's element resets sit in the `yj-base` cascade layer so host classes win inside it.
-- `ConfirmAction` (package) is the one confirmation for destructive actions, in the web and the package; never `window.confirm`. `components/site/SegmentedControl.vue` is the web's segmented control. `ServiceDesigner`'s last step renders the host's `finish` slot (props `ok`, `errors`) and emits `last`. See `docs/ux/patterns.md`.
+- `ConfirmAction` (package) is the one confirmation for destructive actions, in the web and the package; never `window.confirm`. A line of text is asked with `askText` (`composables/dialog.ts`, the `TextDialog` overlay mounted once in `App.vue`), never `prompt()`; ESLint's `no-alert` is an error. `components/site/SegmentedControl.vue` is the web's segmented control. `ServiceDesigner`'s last step renders the host's `finish` slot (props `ok`, `errors`) and emits `last`. See `docs/ux/patterns.md`.
 
 ## The Service Catalogue (LIB-1..20)
 
@@ -303,6 +303,15 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
 - **Worker**: `POST /api/library/consent { yaml, storage, provider?, model? }` (anyone who may design; chat limiter, form limiter for guests).
 - **Web**: the Consent view in `ServiceWorkspace` (`catalogue/ConsentPanel.vue`); `composables/consent.ts` (`useConsent().pending/answer`, localStorage `yaxb.consent` per profile, the visit only at the front desk, events `consent.given`/`consent.declined` with `step: consent-v<n>`); `kiosk/ConsentGate.vue` before a catalogue journey or a resumed part in `JourneyPanel`, and before a finisher's request in `CaseView`.
 - **Typed values** (JRN-16): field entities `url`, `money`, `measure` besides `email`/`phone`; `SlotHelpers.values` (core) backed in the browser by `lib/browser/recognizers.ts` (Microsoft Recognizers-Text sequence and number-with-unit, English rules for every language, lazy-loaded).
+
+## Journeys as state machines (JRN-40..44)
+
+- yaxb-journeys `machine.ts` (export `./machine`, and from the root): `journeyMachine(j)` (XState 5: a state per step, each way out its own event: `SUBMIT[.n]`, `DONE[.n]`, `ERROR` → next or `(failed)`, `DECIDE.n`; structure only), `journeyGraph(j)` (`@xstate/graph` `toDirectedGraph`, plus kind, role, depth, reachable; unreached steps get their own rows below), `waysThrough(j)` (shortest path to each ending), `designChecks(j, { roles, order })`. `compileBundle` adds the checks as warnings (screens never reached, loops with no ending, an approval that is a decision nobody is asked for, a role one letter from a known role). The runner (journeys.ts) still runs journeys.
+- Vue `FlowDiagram` (SVG, `.yj-fd-*` styles); the web's `catalogue/JourneyFlow.vue` is the workspace's Flow view (diagram, the journey's warnings with their lines, ways through). The designer prompt carries the same rules.
+
+## My work and service dashboards (WRK-1..2, MET-3..5)
+
+- Staff sections `work` and `dashboards` (yaxb-journeys `STAFF_SECTIONS`, `content/services/staff.service.yaml`; My work opens first). `components/moderation/MyWork.vue`: `caseQueue` (mine, started), `/api/agent/moderation?state=open`, `/api/reviews/answers?state=open`. `components/moderation/ServiceDashboard.vue` (`?service=<entry id>`): `loadEvents(entryId)` in `composables/service-events.ts` (box `/v1/events`, or `/api/events`), core `serviceMetrics` and `activityLog`; single-series bars with their numbers as text.
 
 ## Journey summaries
 

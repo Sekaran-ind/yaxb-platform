@@ -15,7 +15,7 @@ const contactOpen = ref(false);
     <div :class="cn('mx-auto flex flex-col gap-4 py-8 text-sm md:flex-row md:items-center md:justify-between', SITE_WIDTH)">
       <div class="flex items-center gap-2.5">
         <BrandLogo class="size-6" />
-        <span class="text-gray-500">© 2026 {{ BRAND }} · {{ OPERATOR.name }} · GSTIN {{ OPERATOR.gstin }}</span>
+        <span class="text-gray-500">{{ BRAND }} · {{ OPERATOR.name }} · GSTIN {{ OPERATOR.gstin }}</span>
       </div>
       <nav class="flex flex-wrap items-center gap-x-5 gap-y-2 text-gray-500" aria-label="Footer">
         <a href="#top" class="hover:text-ink">Top</a>

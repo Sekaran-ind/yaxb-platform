@@ -11,6 +11,8 @@ export default tseslint.config(
   },
   {
     rules: {
+      // Never the browser's alert(), confirm() or prompt(): askText (composables/dialog) and ConfirmAction.
+      "no-alert": "error",
       // Formatting is the editor's job; these fight long Tailwind class lists.
       "vue/max-attributes-per-line": "off",
       "vue/singleline-html-element-content-newline": "off",
