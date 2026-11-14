@@ -54,6 +54,13 @@ const MIGRATIONS = [
      updated_at TEXT NOT NULL,
      expires_at TEXT NOT NULL
    );`,
+  `CREATE TABLE events (
+     id TEXT PRIMARY KEY,
+     service TEXT NOT NULL,
+     at TEXT NOT NULL,
+     body TEXT NOT NULL
+   );
+   CREATE INDEX events_service ON events (service, at);`,
 ];
 
 export function openDb(path) {
@@ -99,6 +106,8 @@ export function openDb(path) {
     bcPut: db.prepare(`INSERT INTO beacons (case_id, body, updated_at, expires_at) VALUES (?, ?, ?, ?)
       ON CONFLICT(case_id) DO UPDATE SET body = excluded.body, updated_at = excluded.updated_at, expires_at = excluded.expires_at`),
     bcList: db.prepare('SELECT body FROM beacons ORDER BY updated_at LIMIT 500'),
+    evPut: db.prepare('INSERT OR IGNORE INTO events (id, service, at, body) VALUES (?, ?, ?, ?)'),
+    evList: db.prepare('SELECT body FROM (SELECT body, at FROM events WHERE service = ? AND at >= ? ORDER BY at DESC LIMIT ?) ORDER BY at'),
   };
   const purge = () => {
     const at = new Date().toISOString();
@@ -189,6 +198,11 @@ export function openDb(path) {
       purge();
       return s.bcList.all().map((r) => JSON.parse(r.body));
     },
+    /** A service's events (MET-2): facts about its journeys, never answers. */
+    eventsAdd: (events) => {
+      for (const e of events) s.evPut.run(e.id, e.service, e.at, JSON.stringify(e));
+    },
+    eventsList: (service, since = '', limit = 10000) => s.evList.all(service, since, limit).map((r) => JSON.parse(r.body)),
     close: () => db.close(),
   };
 }

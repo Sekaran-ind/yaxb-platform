@@ -9,6 +9,8 @@ import { computed, onMounted, ref } from "vue";
 import { caseBoard, reassignCase } from "@/composables/cases";
 import { roleName } from "@/composables/library";
 import { useTeam } from "@/composables/team";
+import { catalogue } from "@/composables/library";
+import { recordEvent } from "@/composables/service-events";
 
 const team = useTeam();
 const items = ref<Beacon[] | null>(null);
@@ -45,6 +47,8 @@ async function reassign(b: Beacon) {
   error.value = notice.value = null;
   try {
     await reassignCase(b, { id: m.id, name: m.name }, reason.value.trim() || null);
+    const entry = b.entry_id ?? catalogue.value.find((s) => s.title === b.service_title)?.entry_id ?? null;
+    recordEvent(entry, { journey: b.journey_id ?? b.journey_title, kind: "request.reassigned", run: b.case_id, role: b.role, staff: true });
     notice.value = `${b.ref} goes to ${m.name}: the device that has it sends it on.`;
     picking.value = null;
     member.value = reason.value = "";

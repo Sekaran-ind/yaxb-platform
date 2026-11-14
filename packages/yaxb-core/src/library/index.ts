@@ -18,6 +18,7 @@
 //   review     reviewer, administrator: accept or reject what is in review, never their own submission
 //   manage     administrator: the organisation's roles, archiving and restoring whole libraries
 // The ADMIN_TOKEN holder may do everything.
+import { SERVICE_STORAGE, type ServiceStorage } from "../metrics/index.js";
 import {
   canInitiate,
   checkDocument,
@@ -89,6 +90,12 @@ export type LibraryEntry = {
   created_at: string;
   updated_at: string;
   updated_by_name: string | null;
+  /**
+   * Where the service records what happens to its journeys (MET-1): none (nothing leaves the
+   * devices; no dashboard or activity log), the organisation's box, or the server (the paid plan).
+   * An administrator sets it, usually when the service is added to a kiosk. Absent: none.
+   */
+  storage?: ServiceStorage | null;
 };
 
 export type EntryRevision = { entry_id: string; revision: number; yaml: string; at: string; by_id: string | null; by_name: string | null; note: string | null };
@@ -478,6 +485,17 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
     },
 
     /** Archive: out of the catalogue and off kiosks. Restore brings it back as a draft, to be reviewed again. */
+    /** Where a service records its events (MET-1): administrators only. */
+    async setEntryStorage(a: LibraryActor, id: string, storage: unknown) {
+      if (!permissionsOf(a).manage) throw new LibraryError("Only an administrator chooses where a service keeps its records.", 403);
+      if (typeof storage !== "string" || !(SERVICE_STORAGE as readonly string[]).includes(storage)) throw new LibraryError("Storage is none, box or server.");
+      const e = await getEntry(a, id);
+      const next: LibraryEntry = { ...e, storage: storage as ServiceStorage, updated_at: now() };
+      await store.putEntry(next);
+      await audit(a, "library.entry_storage", id, { id: e.doc_id, storage });
+      return next;
+    },
+
     async setEntryArchived(a: LibraryActor, id: string, archived: boolean) {
       const e = await getEntry(a, id);
       mustChange(a, e);
@@ -570,6 +588,8 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
               published_at: e.reviewed_at,
               /** Where its latest revision is: kiosks run the published revision whatever this says, but only an accepted service is offered to add. */
               state: e.status,
+              /** Where it records events: kiosks send them there (MET-1). */
+              storage: (e.storage ?? "none") as ServiceStorage,
               roles: b.roles,
               journeys: b.journeys.map((j) => ({
                 id: j.id,

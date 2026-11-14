@@ -24,7 +24,7 @@ describe("built-in content", () => {
     expect(staff?.items.map((i) => i.staff)).toEqual(["quality", "review", "moderation", "team", "profile", "admin"]);
     expect(full).not.toContain("translate"); // hidden
     const tools = servicesFor(kioskContent.services, { layout: "mini" }).find((s) => s.id === "tools");
-    expect(tools?.items.map((i) => i.key)).toEqual(["translate"]);
+    expect(tools?.items.map((i) => i.key)).toEqual(["translate", "scheduler"]);
   });
 });
 

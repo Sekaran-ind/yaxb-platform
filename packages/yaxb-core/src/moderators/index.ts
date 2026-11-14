@@ -81,6 +81,7 @@ export const AUDIT_ACTIONS = {
   "library.role_added": "Role added",
   "library.role_changed": "Role changed",
   "library.role_removed": "Role removed",
+  "library.entry_storage": "Storage chosen",
 } as const;
 export type AuditAction = keyof typeof AUDIT_ACTIONS;
 

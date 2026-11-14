@@ -201,7 +201,7 @@ watch(signingIn, (v) => !v && void load());
             @step="(st) => (designStep = st)"
           />
           <AdaptiveNav v-else :screens="navScreens" storage-key="catalogue" label="Catalogue screens" :active="view" :width="paneWidth" :fill="layout === 'full'" @update:active="(v) => go({ view: v === 'catalogue' ? null : v })">
-            <template #trail><CataloguePills :who="who" :signing-in="signingIn" @new-service="go({ service: 'new', prefs: null })" @sign-in="signingIn = !signingIn" @sign-out="signOut" @prefs="go({ prefs: 'model' })" /></template>
+            <template #trail><CataloguePills trail :who="who" :signing-in="signingIn" @new-service="go({ service: 'new', prefs: null })" @sign-in="signingIn = !signingIn" @sign-out="signOut" @prefs="go({ prefs: 'model' })" /></template>
             <template #ask>
               <div :class="layout === 'full' ? 'h-full min-h-[30rem]' : 'h-[max(28rem,calc(100dvh-16rem))]'"><KioskShell embedded /></div>
             </template>
@@ -215,6 +215,8 @@ watch(signingIn, (v) => !v && void load());
                   <span class="min-w-0">
                     <span class="block font-semibold text-ink">{{ s.title }}</span>
                     <span class="block text-xs text-gray-500">{{ s.library }} · revision {{ s.revision }} · {{ when(s.published_at) }}</span>
+                    <!-- Kiosks keep this revision; a newer one isn't published (and isn't offered to add). -->
+                    <span v-if="s.state && s.state !== 'accepted'" class="caution mt-1 inline-block rounded-full px-2 py-0.5 text-xs">{{ s.state === "rejected" ? "Latest revision rejected" : s.state === "in_review" ? "Newer revision in review" : "Newer revision in draft" }}: not offered to add to kiosks</span>
                   </span>
                 </div>
                 <p v-if="s.summary" class="text-sm text-gray-600">{{ s.summary }}</p>

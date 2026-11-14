@@ -1431,3 +1431,18 @@ button.yj-crumb:hover {
     display: none;
   }
 }
+
+/* The service's key dates (SCH-3). */
+.yj-date-row {
+  flex-wrap: wrap;
+}
+.yj-date-input {
+  width: 10.5rem;
+}
+.yj-time-input {
+  width: 7.5rem;
+}
+.yj-inline {
+  display: inline;
+  font-weight: 400;
+}

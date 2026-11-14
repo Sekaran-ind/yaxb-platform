@@ -238,6 +238,22 @@ const badge = (k: StepKey) => (k === "journeys" ? String(d.value.journeys.length
               </div>
             </div>
           </details>
+          <!-- The service's own days (SCH-3): they show in the calendars of kiosks that offer it. -->
+          <fieldset class="yj-fieldset yj-mt" :disabled="readonly">
+            <legend class="yj-field-label">Key dates <span class="yj-help yj-inline">such as a closing day, a collection day, the event itself</span></legend>
+            <ul v-if="d.dates.length" class="yj-stack">
+              <li v-for="(x, i) in d.dates" :key="i" class="yj-row yj-date-row">
+                <label class="yj-sr-only" :for="id(`date-title-${i}`)">Title</label>
+                <input :id="id(`date-title-${i}`)" v-model="x.title" class="yj-input yj-grow" placeholder="Race day" @input="!x.id || /^date(-\d+)?$/.test(x.id) ? (x.id = idFromName(x.title) || x.id) : null" />
+                <label class="yj-sr-only" :for="id(`date-day-${i}`)">Day</label>
+                <input :id="id(`date-day-${i}`)" v-model="x.date" type="date" class="yj-input yj-date-input" />
+                <label class="yj-sr-only" :for="id(`date-time-${i}`)">Time</label>
+                <input :id="id(`date-time-${i}`)" v-model="x.time" type="time" class="yj-input yj-time-input" />
+                <button type="button" class="yj-btn yj-btn-quiet" :aria-label="`Remove ${x.title || 'this date'}`" @click="d.dates.splice(i, 1)">Remove</button>
+              </li>
+            </ul>
+            <button v-if="!readonly" type="button" class="yj-btn yj-mt" @click="d.dates.push({ id: `date-${d.dates.length + 1}`, title: '', date: '', time: '' })">+ Add a date</button>
+          </fieldset>
         </fieldset>
 
         <!-- 2 Roles -->

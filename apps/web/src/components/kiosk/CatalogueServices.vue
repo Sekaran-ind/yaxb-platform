@@ -2,11 +2,13 @@
 // The services added to this kiosk from the Service Catalogue (LIB-18..19, LIB-37), shown in the
 // notebook: load one (checking the team has someone for every role it needs), remove one, and start
 // a journey, which runs in the conversation. Journeys a viewer can't start show who starts them.
-import { AlertTriangle, ChevronRight, FileText, Library, Lock, Plus, X } from "@lucide/vue";
+import { AlertTriangle, ChevronRight, FileText, Library, Lock, Plus, Users, X } from "@lucide/vue";
+import { cn } from "@/lib/cn";
+import AddServiceFlow from "./AddServiceFlow.vue";
 import { computed, ref } from "vue";
 import { iconFor } from "@/lib/icons";
 import { NATIVE } from "@/lib/platform";
-import { catalogue, catalogueReady, loadedServices, loadIntoKiosk, needsOf, removeFromKiosk, roleName, type CatalogueJourney } from "@/composables/library";
+import { catalogue, catalogueReady, loadedServices, needsOf, removeFromKiosk, roleName, type CatalogueJourney } from "@/composables/library";
 
 // staff: they manage each service's documents and SOPs (its kiosk notebook, RST-3); docCount says how many it has.
 const props = defineProps<{ staff?: boolean; docCount?: (entryId: string) => number }>();
@@ -19,17 +21,10 @@ const available = computed(() => catalogue.value.filter((s) => !s.loaded && (s.s
 const startedBy = (j: CatalogueJourney) => j.initiate.filter((r) => r !== "visitor").map(roleName).join(" or ");
 const finishedBy = (j: CatalogueJourney) => j.complete.map(roleName).join(" or ");
 
-const checking = ref<string | null>(null);
+/** The service being added (its three steps), and the loaded one whose people and storage are open. */
+const adding = ref<string | null>(null);
+const managing = ref<string | null>(null);
 const unstaffed = (entryId: string) => needsOf(entryId).filter((n) => n.staffing !== "ready");
-function askToLoad(entryId: string) {
-  if (!unstaffed(entryId).length) return loadIntoKiosk(entryId);
-  checking.value = entryId;
-}
-function confirmLoad(entryId: string) {
-  loadIntoKiosk(entryId);
-  checking.value = null;
-}
-const STAFFING = { ready: "has someone", invited: "invited, but not signed in yet", nobody: "nobody has this role yet" } as const;
 </script>
 
 <template>
@@ -42,24 +37,14 @@ const STAFFING = { ready: "has someone", invited: "invited, but not signed in ye
     <div v-if="picking" class="rounded-2xl bg-mist p-3">
       <p v-if="!available.length" class="text-sm text-gray-600">Every published service is loaded<template v-if="!catalogue.length">: nothing is published yet</template>.</p>
       <ul class="grid gap-2 @lg:grid-cols-2">
-        <li v-for="s in available" :key="s.entry_id" class="card flex flex-wrap items-start justify-between gap-2 p-3">
+        <li v-for="s in available" :key="s.entry_id" :class="cn('card flex flex-wrap items-start justify-between gap-2 p-3', adding === s.entry_id && '@lg:col-span-2')">
           <span class="min-w-0">
             <span class="block text-sm font-medium text-ink">{{ s.title }}</span>
             <span class="block text-xs text-gray-500">{{ s.journeys.length }} journey{{ s.journeys.length === 1 ? "" : "s" }} · {{ s.library }}</span>
           </span>
-          <button v-if="checking !== s.entry_id" type="button" class="btn-primary h-8 px-3 text-xs" @click="askToLoad(s.entry_id)">Load</button>
-          <!-- Roles nobody can act on yet: say so before loading. -->
-          <div v-else class="caution w-full space-y-2 p-3 text-sm" role="status">
-            <p class="flex items-center gap-1.5 font-medium"><AlertTriangle class="size-4 shrink-0" aria-hidden="true" /> Some roles have nobody to act yet</p>
-            <ul class="space-y-0.5">
-              <li v-for="n in unstaffed(s.entry_id)" :key="n.role"><span class="font-medium">{{ n.label }}</span>: {{ STAFFING[n.staffing] }}. Needed to {{ n.why.join("; ") }}.</li>
-            </ul>
-            <p class="text-gray-700">Requests would wait for them until someone has the role. An administrator gives a member a role in For staff → Administration.</p>
-            <div class="flex flex-wrap gap-2">
-              <button type="button" class="btn-primary h-10 px-4" @click="confirmLoad(s.entry_id)">Load anyway</button>
-              <button type="button" class="btn-ghost h-10" @click="checking = null">Cancel</button>
-            </div>
-          </div>
+          <button v-if="adding !== s.entry_id" type="button" class="btn-primary h-8 px-3 text-xs" @click="adding = s.entry_id">Add</button>
+          <!-- Adding: what it needs, the people for its roles, and its storage (LIB-60..62). -->
+          <AddServiceFlow v-else :entry-id="s.entry_id" @done="(adding = null), (picking = false)" @cancel="adding = null" />
         </li>
       </ul>
       <RouterLink v-if="!NATIVE" to="/catalogue" class="mt-2 inline-block text-sm font-medium text-ink hover:underline">Design a service in the catalogue →</RouterLink>
@@ -79,12 +64,16 @@ const STAFFING = { ready: "has someone", invited: "invited, but not signed in ye
           </p>
         </div>
         <div class="flex shrink-0 flex-wrap justify-end gap-1">
+          <button v-if="props.staff" type="button" class="btn-light h-8 px-2 text-xs" :aria-expanded="managing === s.meta.entry_id" @click="managing = managing === s.meta.entry_id ? null : s.meta.entry_id">
+            <Users class="size-3.5" aria-hidden="true" /> People and storage
+          </button>
           <button v-if="props.staff" type="button" class="btn-light h-8 px-2 text-xs" @click="emit('documents', s.meta.entry_id, s.meta.title)">
             <FileText class="size-3.5" aria-hidden="true" /> Documents and SOPs<template v-if="props.docCount"> ({{ props.docCount(s.meta.entry_id) }})</template>
           </button>
           <button type="button" class="btn-ghost h-8 px-2 text-xs" :aria-label="`Remove ${s.meta.title} from this kiosk`" @click="removeFromKiosk(s.meta.entry_id)"><X class="size-3.5" aria-hidden="true" /> Remove</button>
         </div>
       </div>
+      <AddServiceFlow v-if="managing === s.meta.entry_id" :entry-id="s.meta.entry_id" loaded @done="managing = null" @cancel="managing = null" />
       <ul class="grid gap-2 @lg:grid-cols-2">
         <li v-for="j in s.meta.journeys" :key="j.id">
           <button v-if="j.allowed" type="button" class="card flex w-full items-center gap-3 p-3 text-left transition hover:border-gray-300" @click="emit('start', j.id)">

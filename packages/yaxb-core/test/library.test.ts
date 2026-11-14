@@ -110,9 +110,15 @@ for (const [name, make] of [
       expect(pub.services[0]!.journeys.map((j) => j.title)).toEqual(["Check in", "Triage"]);
       // The latest revision's state goes with it: kiosks offer only accepted services to add.
       expect(pub.services[0]!.state).toBe("draft");
+      // Where it records events (MET-1): none until an administrator chooses.
+      expect(pub.services[0]!.storage).toBe("none");
+      await expectError(svc.setEntryStorage(mod, entry.id, "box"), 403);
+      await expectError(svc.setEntryStorage(admin, entry.id, "cloud"), 422);
+      expect((await svc.setEntryStorage(admin, entry.id, "box")).storage).toBe("box");
+      expect((await svc.published()).services[0]!.storage).toBe("box");
 
       const trail = await svc.auditTrail(reviewer, entry.id);
-      expect(trail.map((e) => e.action)).toEqual(["library.entry_saved", "library.entry_accepted", "library.entry_submitted", "library.entry_created"]);
+      expect(trail.map((e) => e.action)).toEqual(["library.entry_storage", "library.entry_saved", "library.entry_accepted", "library.entry_submitted", "library.entry_created"]);
       expect(trail.every((e) => !JSON.stringify(e).includes("Your name"))).toBe(true);
       await expectError(svc.auditTrail(guest, entry.id), 404);
 

@@ -13,7 +13,7 @@ import { iconFor } from "@/lib/icons";
 import type { ContextPick } from "@/lib/types";
 
 // only: the front desk's services (catalogue entry ids); nothing else is listed then.
-const props = defineProps<{ mode: "journeys" | "staff"; only?: string[] }>();
+const props = defineProps<{ mode: "journeys" | "staff" | "qt"; only?: string[] }>();
 const emit = defineEmits<{ pick: [pick: ContextPick]; close: [] }>();
 
 const query = ref("");
@@ -49,7 +49,16 @@ const groups = computed<Group[]>(() => {
   return [...fromCatalogue, ...builtIn];
 });
 const waiting = computed(() => (props.mode === "staff" ? caseQueue.value.mine.filter((c) => matches({ title: c.journey_title, summary: c.ref })) : []));
-const empty = computed(() => !groups.value.length && !waiting.value.length);
+/** /qt: the Quick tools, as the Quick tools screen lists them (staff's only for members). */
+const tools = computed(() =>
+  props.mode !== "qt"
+    ? []
+    : kioskContent.services
+        .filter((s) => s.id !== "ask" && (s.id !== "staff" || kioskViewer.value.member))
+        .map((s) => ({ id: s.id, title: s.title, icon: s.icon, items: s.items.filter((i) => matches({ title: i.label, summary: i.summary ?? null })) }))
+        .filter((g) => g.items.length),
+);
+const empty = computed(() => (props.mode === "qt" ? !tools.value.length : !groups.value.length && !waiting.value.length));
 </script>
 
 <template>
@@ -57,14 +66,14 @@ const empty = computed(() => !groups.value.length && !waiting.value.length);
   <section role="dialog" aria-labelledby="ctx-title" class="flex max-h-full flex-col overflow-hidden rounded-t-3xl border border-b-0 border-gray-200 bg-surface shadow-[var(--shadow-lift)]" @keydown.esc.stop.prevent="emit('close')">
     <div class="flex items-center gap-2 border-b border-gray-100 px-4 pt-3 pb-2">
       <span class="font-mono text-sm text-gray-500">/{{ mode }}</span>
-      <h3 id="ctx-title" class="flex-1 text-sm font-semibold text-ink">{{ mode === "staff" ? "For staff" : "Start a journey here" }}</h3>
+      <h3 id="ctx-title" class="flex-1 text-sm font-semibold text-ink">{{ mode === "staff" ? "For staff" : mode === "qt" ? "Quick tools" : "Start a journey here" }}</h3>
       <button type="button" class="grid size-10 place-items-center rounded-full text-gray-500 hover:bg-mist hover:text-ink" aria-label="Close" @click="emit('close')"><X class="size-4" aria-hidden="true" /></button>
     </div>
     <div class="px-4 pt-3">
       <label for="ctx-search" class="sr-only">Search</label>
       <div class="flex items-center gap-2 rounded-full bg-mist px-3">
         <Search class="size-4 text-gray-500" aria-hidden="true" />
-        <input id="ctx-search" ref="search" v-model="query" class="min-w-0 flex-1 bg-transparent py-2 text-sm text-ink outline-none" :placeholder="mode === 'staff' ? 'Search requests and staff journeys' : 'Search journeys'" />
+        <input id="ctx-search" ref="search" v-model="query" class="min-w-0 flex-1 bg-transparent py-2 text-sm text-ink outline-none" :placeholder="mode === 'staff' ? 'Search requests and staff journeys' : mode === 'qt' ? 'Search the tools' : 'Search journeys'" />
       </div>
     </div>
     <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3 [scrollbar-width:thin]">
@@ -78,6 +87,21 @@ const empty = computed(() => !groups.value.length && !waiting.value.length);
               <span class="min-w-0 flex-1">
                 <span class="block text-sm font-medium text-ink">{{ c.journey_title }}</span>
                 <span class="block text-xs text-gray-500"><span class="font-mono">{{ c.ref }}</span> · {{ statusText(c, roleName) }}</span>
+              </span>
+              <ChevronRight class="size-4 shrink-0 text-gray-400" aria-hidden="true" />
+            </button>
+          </li>
+        </ul>
+      </div>
+      <div v-for="g in tools" :key="`qt-${g.id}`">
+        <h4 class="eyebrow mb-2 flex items-center gap-1.5"><component :is="iconFor(g.icon ?? undefined)" v-if="iconFor(g.icon ?? undefined)" class="size-3.5" aria-hidden="true" />{{ g.title }}</h4>
+        <ul class="space-y-1.5">
+          <li v-for="i in g.items" :key="i.key">
+            <button type="button" class="flex min-h-12 w-full items-center gap-3 rounded-2xl px-3 py-2 text-left hover:bg-mist" @click="emit('pick', { kind: 'tool', label: i.label, ...(i.journey ? { journey: i.journey } : {}), ...(i.screen ? { screen: i.screen } : {}), ...(i.staff ? { staff: i.staff } : {}) })">
+              <component :is="iconFor(i.icon)" v-if="iconFor(i.icon)" class="size-4 shrink-0 text-gray-500" aria-hidden="true" />
+              <span class="min-w-0 flex-1">
+                <span class="block text-sm font-medium text-ink">{{ i.label }}</span>
+                <span v-if="i.summary" class="line-clamp-1 block text-xs text-gray-500">{{ i.summary }}</span>
               </span>
               <ChevronRight class="size-4 shrink-0 text-gray-400" aria-hidden="true" />
             </button>
@@ -99,7 +123,7 @@ const empty = computed(() => !groups.value.length && !waiting.value.length);
         </ul>
       </div>
       <p v-if="empty && (mode === 'journeys' || kioskViewer.member)" class="text-sm text-gray-600">
-        {{ query ? "Nothing matches." : mode === "staff" ? "Nothing is waiting for your roles, and no journey is for staff only." : "No journeys yet. Add services from the Service Catalogue in My notebook." }}
+        {{ query ? "Nothing matches." : mode === "qt" ? "No tools here." : mode === "staff" ? "Nothing is waiting for your roles, and no journey is for staff only." : "No journeys yet. Add services from the Service Catalogue in My notebook." }}
       </p>
     </div>
   </section>

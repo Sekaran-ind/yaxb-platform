@@ -9,6 +9,8 @@
 //   roles:                                   the roles that deliver it, defined here
 //     - { id: receptionist, label: Receptionist }
 //     - { id: nurse, label: Nurse, description: Ward nurse }
+//   dates:                                   the service's own days (a race day), for calendars
+//     - { id: race-day, title: Race day, date: 2027-02-14, time: "06:00" }
 //   journeys:
 //     - id: check-in
 //       title: Check in
@@ -39,7 +41,7 @@ import { DEFAULT_ROLES, ROLE_ID, VISITOR_ROLE, type Role } from "./roles.js";
 export const isNestedService = (doc: unknown): doc is Record<string, unknown> =>
   Boolean(doc && typeof doc === "object" && !Array.isArray(doc) && (doc as Record<string, unknown>).kind === "service" && (doc as Record<string, unknown>).journeys !== undefined);
 
-const SERVICE_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "order", "layouts", "hidden", "roles", "journeys"]);
+const SERVICE_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "order", "layouts", "hidden", "roles", "journeys", "dates"]);
 const JOURNEY_KEYS = new Set(["id", "title", "summary", "icon", "category", "version", "roles", "start", "screens"]);
 const SCREEN_KEYS = new Set(["id", "title", "ask", "questions", "submitLabel", "service", "with", "onError", "decide", "next", "result", "stage", "icon", "role"]);
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
@@ -86,8 +88,35 @@ export function serviceRoles(value: unknown, problems: string[] = []): Role[] {
   return out;
 }
 
+/** A date a service declares (SCH-3): a marathon's registration closing, bib collection, race day. */
+export type ServiceDate = { id: string; title: string; date: string; time?: string | null; description?: string | null };
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** The service's `dates:`, and what's wrong with them. */
+export function serviceDates(value: unknown, problems: string[] = []): ServiceDate[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    problems.push("dates must be a list of { id, title, date }");
+    return [];
+  }
+  const out: ServiceDate[] = [];
+  value.forEach((raw, i) => {
+    const d = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+    const at = `date ${typeof d.id === "string" ? `'${d.id}'` : i + 1}`;
+    if (typeof d.id !== "string" || !ID.test(d.id)) return void problems.push(`${at}: id is lower-case words joined by '-'`);
+    if (typeof d.title !== "string" || !d.title.trim()) return void problems.push(`${at}: give it a title`);
+    if (typeof d.date !== "string" || !DAY.test(d.date)) return void problems.push(`${at}: date is YYYY-MM-DD`);
+    if (d.time !== undefined && d.time !== null && (typeof d.time !== "string" || !TIME.test(d.time))) return void problems.push(`${at}: time is HH:MM`);
+    if (out.some((x) => x.id === d.id)) return void problems.push(`${at} is listed twice`);
+    out.push({ id: d.id, title: d.title.trim(), date: d.date, ...(d.time ? { time: d.time as string } : {}), ...(typeof d.description === "string" && d.description.trim() ? { description: d.description.trim() } : {}) });
+  });
+  return out;
+}
+
 export function expandService(doc: Record<string, unknown>): Expanded {
   const problems: string[] = [];
+  serviceDates(doc.dates, problems);
   for (const k of Object.keys(doc)) if (!SERVICE_KEYS.has(k)) problems.push(k === "items" ? "a service with journeys lists no items: each journey is one" : `unknown key '${k}'`);
   const roles = serviceRoles(doc.roles, problems);
   const known = new Set<string>([VISITOR_ROLE, ...DEFAULT_ROLES.map((r) => r.id), ...roles.map((r) => r.id)]);

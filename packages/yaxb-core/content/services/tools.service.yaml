@@ -6,3 +6,4 @@ icon: wrench
 order: 30
 items:
   - { key: translate, label: Translate text, icon: languages, journey: translate-text }
+  - { key: scheduler, label: Scheduler, summary: "Your to-dos, birthdays and anniversaries, and your services' dates.", icon: calendar, screen: scheduler }
