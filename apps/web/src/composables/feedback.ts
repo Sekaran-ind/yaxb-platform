@@ -1,4 +1,4 @@
-// Session feedback (FBK-1..5): "How is YAXB doing this session?" with Bad, Fine and Good, asked
+// Session feedback (FBK-1..5): "How is Anjal doing this session?" with Bad, Fine and Good, asked
 // at most once per browser session, at random (the deployment's rate), after an answer and never
 // mid-task (yaxb-core feedback shouldAskFeedback). Sent without anything identifying the visitor;
 // when it can't be sent (offline), it waits in this browser and goes with the next try.

@@ -12,7 +12,8 @@ import { kioskJourneys, kioskViewer, loadedServices, roleName } from "@/composab
 import { iconFor } from "@/lib/icons";
 import type { ContextPick } from "@/lib/types";
 
-const props = defineProps<{ mode: "journeys" | "staff" }>();
+// only: the front desk's services (catalogue entry ids); nothing else is listed then.
+const props = defineProps<{ mode: "journeys" | "staff"; only?: string[] }>();
 const emit = defineEmits<{ pick: [pick: ContextPick]; close: [] }>();
 
 const query = ref("");
@@ -44,6 +45,7 @@ const groups = computed<Group[]>(() => {
     }))
     .filter((g) => g.journeys.length);
   const fromCatalogue = loadedServices.value.map((s) => ({ id: s.meta.entry_id, title: s.meta.title, icon: s.meta.icon, journeys: s.journeys.filter(want) })).filter((g) => g.journeys.length);
+  if (props.only) return fromCatalogue.filter((g) => props.only!.includes(g.id));
   return [...fromCatalogue, ...builtIn];
 });
 const waiting = computed(() => (props.mode === "staff" ? caseQueue.value.mine.filter((c) => matches({ title: c.journey_title, summary: c.ref })) : []));

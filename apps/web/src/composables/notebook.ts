@@ -1,14 +1,36 @@
 // The active notebook and its conversations, in the store the Storage setting picks. The first
 // visit creates an empty notebook, so the kiosk always has one to add to.
+//
+// Notebooks belong to someone (PRF-2): the open profile's, or (no profile) this device's. A service's
+// kiosk notebook (its documents and SOPs, RST-3) belongs to the service: staff see and edit it here,
+// and a front-desk kiosk answers from it (`serviceDocuments`).
 import type { StorageId } from "@sekaran-ind/yaxb-core/settings";
 import { computed, ref, shallowRef, watch, type Ref } from "vue";
 import { logActivity } from "./account";
+import type { NotebookSource } from "@sekaran-ind/yaxb-core/notebook";
 import { newNotebook, nowIso, storeFor, withSource, type BoxConnection, type KioskStore, type NotebookRecord, type ThreadRecord } from "@/lib/browser/store";
 
-export function useNotebook(storage: Ref<StorageId>, activeId: Ref<string | null>, box: Ref<BoxConnection>) {
+/** Whose notebooks show: the open profile's (or this device's), and services' when staff are signed in. */
+export type NotebookScope = { owner: string | null; staff: boolean };
+
+/** The documents of these services' kiosk notebooks, from the kiosk's own store (a front desk answers from them). */
+export async function serviceDocuments(entryIds: readonly string[], storage: StorageId, box: BoxConnection): Promise<NotebookSource[]> {
+  if (!entryIds.length) return [];
+  try {
+    const list = await storeFor(storage === "session" ? "indexeddb" : storage, box).listNotebooks();
+    return list.filter((n) => n.service && entryIds.includes(n.service)).flatMap((n) => n.sources);
+  } catch {
+    return [];
+  }
+}
+
+export function useNotebook(storage: Ref<StorageId>, activeId: Ref<string | null>, box: Ref<BoxConnection>, scope: Ref<NotebookScope> = ref({ owner: null, staff: false })) {
   const storeError = ref<string | null>(null);
   const store = shallowRef<KioskStore>(storeFor("session"));
-  const notebooks = ref<NotebookRecord[]>([]);
+  const all = ref<NotebookRecord[]>([]);
+  const mine = (n: NotebookRecord) => !n.service && (n.owner ?? null) === scope.value.owner;
+  /** The notebooks this person may open: their own, and services' for staff. */
+  const notebooks = computed(() => all.value.filter((n) => mine(n) || (n.service && scope.value.staff)));
   const threads = ref<ThreadRecord[]>([]);
   const error = ref<string | null>(null);
   const version = ref(0);
@@ -30,17 +52,19 @@ export function useNotebook(storage: Ref<StorageId>, activeId: Ref<string | null
   );
 
   watch(
-    [store, version],
+    [store, version, () => scope.value.owner, () => scope.value.staff],
     async () => {
       try {
         let list = await store.value.listNotebooks();
-        if (!list.length) {
-          const first = newNotebook();
+        // Everyone has a notebook of their own to add to.
+        if (!list.some(mine)) {
+          const first = newNotebook("My notebook", scope.value.owner ? { owner: scope.value.owner } : {});
           await store.value.putNotebook(first);
-          list = [first];
+          list = [...list, first];
         }
-        notebooks.value = list;
-        if (!activeId.value || !list.some((n) => n.id === activeId.value)) activeId.value = list[0]!.id;
+        all.value = list;
+        const visible = notebooks.value;
+        if (!activeId.value || !visible.some((n) => n.id === activeId.value)) activeId.value = visible.find(mine)?.id ?? visible[0]!.id;
         error.value = null;
       } catch (e) {
         error.value = storage.value === "box" ? (e as Error).message : `Browser storage isn't available: ${(e as Error).message}`;
@@ -79,8 +103,21 @@ export function useNotebook(storage: Ref<StorageId>, activeId: Ref<string | null
     save,
     latest,
     select: (id: string) => (activeId.value = id),
+    /** A service's kiosk notebook (its documents and SOPs), made on first use, and opened. */
+    async openServiceNotebook(entryId: string, serviceTitle: string) {
+      let n = all.value.find((x) => x.service === entryId);
+      if (!n) {
+        n = newNotebook(`${serviceTitle}: documents and SOPs`, { service: entryId });
+        await store.value.putNotebook(n);
+      }
+      activeId.value = n.id;
+      refresh();
+      return n;
+    },
+    /** How many documents a service's kiosk notebook holds. */
+    serviceDocumentCount: (entryId: string) => all.value.find((x) => x.service === entryId)?.sources.length ?? 0,
     async create(title: string) {
-      const n = newNotebook(title.trim() || "Untitled notebook");
+      const n = newNotebook(title.trim() || "Untitled notebook", scope.value.owner ? { owner: scope.value.owner } : {});
       await store.value.putNotebook(n);
       activeId.value = n.id;
       refresh();

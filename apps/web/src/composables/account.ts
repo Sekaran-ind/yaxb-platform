@@ -142,6 +142,8 @@ export function useAccount() {
   return {
     list,
     profile,
+    /** The open profile's id: whose notebooks show (PRF-2). */
+    profileId: computed(() => current.value?.record.id ?? null),
     preferences,
     activity: computed(() => current.value?.data.activity ?? []),
     applied: computed(() => Boolean(current.value?.data.previous)),

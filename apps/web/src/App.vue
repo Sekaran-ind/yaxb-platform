@@ -5,6 +5,7 @@ import SiteFooter from "@/components/site/SiteFooter.vue";
 import SiteNavbar from "@/components/site/SiteNavbar.vue";
 import CallLayer from "@/components/team/CallLayer.vue";
 import { NATIVE } from "@/lib/platform";
+import { restricted } from "@/composables/restricted";
 
 const route = useRoute();
 </script>
@@ -21,11 +22,12 @@ const route = useRoute();
   </template>
   <template v-else>
     <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:p-2">Skip to content</a>
-    <SiteNavbar />
+    <!-- At the front desk (Restricted Mode) the kiosk is all there is. -->
+    <SiteNavbar v-if="!restricted" />
     <main id="main" class="flex-1">
       <RouterView />
     </main>
-    <SiteFooter />
+    <SiteFooter v-if="!restricted" />
     <!-- A team call or a ringing call, above every page (TEAM-20). -->
     <CallLayer />
   </template>

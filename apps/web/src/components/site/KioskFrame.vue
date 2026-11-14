@@ -16,10 +16,11 @@ import { useWidth } from "@/composables/width";
 import { cn } from "@/lib/cn";
 import { NATIVE } from "@/lib/platform";
 
-const props = defineProps<{ layout: Layout; miniHeight?: string; podHeight?: string; narrowPanel?: boolean }>();
+// chromeless: no site navbar above it (the native app, and the front desk).
+const props = defineProps<{ layout: Layout; miniHeight?: string; podHeight?: string; narrowPanel?: boolean; chromeless?: boolean }>();
 const { el: screens, width } = useWidth(900);
 // The full frame's height: the window less the site's navbar and the page padding (no navbar in the app).
-const FULL_HEIGHT = NATIVE ? "h-[calc(100dvh-2.5rem)]" : "h-[calc(100dvh-6.5rem)]";
+const fullHeight = () => (NATIVE || props.chromeless ? "h-[calc(100dvh-2.5rem)]" : "h-[calc(100dvh-6.5rem)]");
 const outer = () => cn("mx-auto px-3 py-5 sm:px-5", props.layout === "mini" ? "max-w-md" : props.layout === "pod" ? "max-w-5xl" : "max-w-[110rem]");
 </script>
 
@@ -30,7 +31,7 @@ const outer = () => cn("mx-auto px-3 py-5 sm:px-5", props.layout === "mini" ? "m
       :class="
         cn(
           'rounded-[2rem] border border-gray-200/70 bg-surface p-2 shadow-[var(--shadow-lift)]',
-          layout === 'full' ? cn('grid min-h-[38rem] gap-2', FULL_HEIGHT, narrowPanel ? 'grid-cols-[18rem_minmax(0,1fr)]' : 'grid-cols-[22rem_minmax(0,1fr)] 2xl:grid-cols-[25rem_minmax(0,1fr)]') : 'space-y-2',
+          layout === 'full' ? cn('grid min-h-[38rem] gap-2', fullHeight(), narrowPanel ? 'grid-cols-[18rem_minmax(0,1fr)]' : 'grid-cols-[22rem_minmax(0,1fr)] 2xl:grid-cols-[25rem_minmax(0,1fr)]') : 'space-y-2',
         )
       "
     >
