@@ -11,9 +11,9 @@
   // to index.html for the Vue router.
   "assets": { "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": true },
 
-  // An agent turn is mostly waiting on the LLM (wall time, not CPU), but graph work adds up.
-  // Needs the Workers Paid plan.
-  "limits": { "cpu_ms": 60000 },
+  // Free plan for now: 10 ms of CPU per request (waiting on the model doesn't count). If chat or the
+  // designer fail with error 1102 (exceeded resources), move to Workers Paid and add back:
+  //   "limits": { "cpu_ms": 60000 },
   "observability": { "enabled": true },
 
   // Threads, the moderation queue and the agent's long-term store. Create once with
