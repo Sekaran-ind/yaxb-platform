@@ -19,6 +19,8 @@ import { cn } from "@/lib/cn";
 import { LANGUAGES } from "@/lib/languages";
 import BoxConnection from "./BoxConnection.vue";
 import FrontDeskSetup from "./FrontDeskSetup.vue";
+import ChildLockSetup from "./ChildLockSetup.vue";
+import { useChildMode } from "@/composables/child";
 import { casesCaps } from "@/composables/case-network";
 import ChoiceGrid from "./ChoiceGrid.vue";
 import ToggleRow from "./ToggleRow.vue";
@@ -35,7 +37,10 @@ const SECTIONS = [
   { id: "memory", label: "Memory & skills", icon: "notebook" },
   { id: "storage", label: "Storage", icon: "file-text" },
   { id: "front-desk", label: "Front desk", icon: "lock" },
+  { id: "child", label: "Child safety lock", icon: "shield" },
 ];
+/** In child mode (CHL-6) only these stay; the rest need the parent's PIN. */
+const CHILD_SECTIONS = new Set(["profile", "language", "kiosk", "child"]);
 
 // The section comes from the kiosk's address (/kiosk?prefs=model), so a kiosk command can open one (CMD-1).
 // fill: take the parent's height (the Full and Mini kiosks), so the section list stays put.
@@ -51,8 +56,11 @@ const CASE_STORAGE = computed(() => [
   },
 ]);
 const route = useRoute();
-const sectionFrom = (q: unknown) => (typeof q === "string" && SECTIONS.some((x) => x.id === q) ? q : "profile");
+const child = useChildMode();
+const sections = computed(() => (child.on.value ? SECTIONS.filter((x) => CHILD_SECTIONS.has(x.id)) : SECTIONS));
+const sectionFrom = (q: unknown) => (typeof q === "string" && sections.value.some((x) => x.id === q) ? q : "profile");
 const section = ref(sectionFrom(route.query.prefs));
+watch(sections, () => (section.value = sectionFrom(section.value)));
 watch(
   () => route.query.prefs,
   (q) => (section.value = sectionFrom(q)),
@@ -91,7 +99,7 @@ async function clearBrowser() {
 
 <template>
   <div ref="el" :class="fill ? 'flex h-full min-h-0 w-full max-w-5xl flex-col gap-4' : 'max-w-5xl space-y-6'">
-    <AdaptiveNav v-model:active="section" :screens="SECTIONS" mode="sidebar" storage-key="settings" label="Preferences" :width="width" :fill="fill" :class="fill && 'min-h-0 flex-1'" body-class="[scrollbar-width:thin]">
+    <AdaptiveNav v-model:active="section" :screens="sections" mode="sidebar" storage-key="settings" label="Preferences" :width="width" :fill="fill" :class="fill && 'min-h-0 flex-1'" body-class="[scrollbar-width:thin]">
       <template #profile>
         <AccountScreen />
       </template>
@@ -283,6 +291,10 @@ async function clearBrowser() {
 
       <template #front-desk>
         <FrontDeskSetup />
+      </template>
+
+      <template #child>
+        <ChildLockSetup />
       </template>
 
       <template #storage>

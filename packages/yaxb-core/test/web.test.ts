@@ -153,6 +153,15 @@ describe("semantic tool routing", () => {
 });
 
 describe("web fallback", () => {
+  it("never searches or offers the web with the child safety lock, and answers for a child (CHL-2, CHL-3)", async () => {
+    const { search, queries } = fakeSearch();
+    const { kiosk, model } = setup([{ text: "A rainbow is sunlight split into colours." }], { web: search });
+    await collect(kiosk.ask({ threadId: THREAD, message: "How much holiday pay for public holiday work?", selection: SELECTION, settings: { ...lean, child: true } }));
+    expect(queries).toEqual([]);
+    expect(model.boundTools[0] ?? []).not.toContain("web_search");
+    expect(systemOf(model)).toContain("A child is using the kiosk");
+  });
+
   it("searches the web automatically when the knowledge base doesn't cover the question, and offers the results as cited web sources", async () => {
     const { search, queries } = fakeSearch();
     const { kiosk, model } = setup([{ calls: [{ name: "search_knowledge_base", args: { query: "holiday pay" } }] }, { text: "According to labour.example.gov ... (sources: web:1)" }], { web: search });

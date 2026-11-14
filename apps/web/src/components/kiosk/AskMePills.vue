@@ -2,18 +2,17 @@
 // The kiosk's own controls, as pills at the end of the tab row (beside Ask Me, Quick tools…): on Ask
 // Me, a new conversation and the conversations drawer; always, the visitor's profile and the
 // preferences. At the front desk: End session, and the staff lock.
-import { LogOut, Lock, MessagesSquare, RotateCcw, SlidersHorizontal, UserRound } from "@lucide/vue";
+import { Lock, LogOut, MessagesSquare, RotateCcw, ShieldCheck, SlidersHorizontal, UserRound } from "@lucide/vue";
 import { cn } from "@/lib/cn";
-import { computed } from "vue";
 
-const props = defineProps<{ restricted: boolean; /** Only New and Conversations, inside another surface's pills (the catalogue's Ask Me). */ conversationOnly?: boolean; onAskMe: boolean; canNew: boolean; threads: number; drawerOpen: boolean; nickname: string | null }>();
-const emit = defineEmits<{ new: []; conversations: []; profile: []; prefs: []; endSession: []; unlock: [] }>();
+defineProps<{ restricted: boolean; /** Only New and Conversations, inside another surface's pills (the catalogue's Ask Me). */ conversationOnly?: boolean; onAskMe: boolean; canNew: boolean; threads: number; drawerOpen: boolean; nickname: string | null; /** The child safety lock is on (CHL-8): a pill says so. */ child?: boolean }>();
+const emit = defineEmits<{ new: []; conversations: []; profile: []; prefs: []; endSession: []; unlock: []; child: [] }>();
 const pill = "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm text-gray-600 transition hover:bg-surface hover:text-ink";
 /**
- * The words go when the screens area is narrow (the title stays as the hint). Inside the catalogue's
- * pills (conversationOnly) they follow the catalogue's cut-off, so the group stays on the tab row.
+ * The words go when the screens area is under 64rem, as the catalogue's do (the title stays as the
+ * hint): with New, a count and the child lock, worded pills don't fit beside the tabs in Full.
  */
-const words = computed(() => (props.conversationOnly ? "@max-[64rem]/screens:sr-only" : "@max-[48rem]/screens:sr-only"));
+const words = "@max-[64rem]/screens:sr-only";
 const initials = (n: string) =>
   n
     .split(/\s+/)
@@ -41,6 +40,7 @@ const initials = (n: string) =>
         <span v-if="nickname" class="grid size-6 place-items-center rounded-full bg-brand-dark text-[10px] font-semibold text-on-brand">{{ initials(nickname) }}</span>
         <UserRound v-else class="size-4" aria-hidden="true" />
       </button>
+      <button v-if="child" type="button" :class="cn(pill, 'text-ink')" aria-label="Child safety lock is on" title="Child safety lock is on" @click="emit('child')"><ShieldCheck class="size-4 text-brand" aria-hidden="true" /><span :class="words">Child lock</span></button>
       <button type="button" :class="cn(pill, 'px-2.5')" aria-label="Preferences" title="Preferences" @click="emit('prefs')"><SlidersHorizontal class="size-4" aria-hidden="true" /></button>
       </template>
     </template>

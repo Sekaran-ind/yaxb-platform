@@ -201,7 +201,7 @@ export function planTurn(
 Guided services, from their definitions:
 ${journeysText(kioskContent.journeys)}`,
           })
-        : "") + turnPromptAddendum({ language: languageName(settings.language), localKnowledge: localKnowledge && isOn(settings.tools, "search_knowledge_base"), web }),
+        : "") + turnPromptAddendum({ language: languageName(settings.language), localKnowledge: localKnowledge && isOn(settings.tools, "search_knowledge_base"), web, child: settings.child }),
   };
   return { harness, options, skills };
 }
@@ -457,7 +457,8 @@ ${JSON.stringify({ forms: draft.forms }, null, 1)}
     // Web fallback: searched automatically when the knowledge base doesn't cover the question, and
     // offered as a tool when coverage is unknown. Never for a possible emergency: the question
     // would go to an outside service, and the answer is the emergency line anyway.
-    const webAllowed = Boolean(webSearch) && settings.knowledge.web === "fallback" && searchOn && !emergency;
+    // The child safety lock: never the open web (CHL-2).
+    const webAllowed = Boolean(webSearch) && settings.knowledge.web === "fallback" && searchOn && !emergency && !settings.child;
     const turnWeb: TurnWeb = { next: 1, urls: {} };
     const webFound: Passage[] = [];
     let web: "none" | "searched" | "available" = webAllowed && covered !== true ? "available" : "none";
@@ -482,7 +483,7 @@ ${JSON.stringify({ forms: draft.forms }, null, 1)}
     try {
       plan = planTurn(settings, { modelHarness, hasNotebook: Boolean(notebook), memoryStore: deps.store, localKnowledge: passed.length + serverPassages.length > 0, web });
       // Semantic routing: only the MCP tools that match the message are offered.
-      if (plan.harness === "deep" && settings.mcp.length) {
+      if (plan.harness === "deep" && settings.mcp.length && !settings.child) {
         const all = await mcpToolsFor(settings.mcp);
         let extraTools = all;
         if (embed && all.length > ROUTE_LIMIT) {

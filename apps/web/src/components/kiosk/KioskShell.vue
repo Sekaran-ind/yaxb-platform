@@ -48,6 +48,7 @@ import RestrictedUnlock from "./RestrictedUnlock.vue";
 import ComingUp from "./ComingUp.vue";
 import { pendingScheduleText } from "@/composables/schedule";
 import AskMePills from "./AskMePills.vue";
+import { useChildMode } from "@/composables/child";
 import type { NotebookSource } from "@sekaran-ind/yaxb-core/notebook";
 import type { StorageId } from "@sekaran-ind/yaxb-core/settings";
 import { formInput } from "@/composables/form-input";
@@ -88,7 +89,12 @@ const turnNotebook = computed(() => {
   return { ...n, title: "Front desk", sources: [...frontDocs.value, ...n.sources] };
 });
 /** At the front desk nothing is kept on the server either. */
-const agentSettings = computed(() => (restricted.value ? { ...settings.agent, storage: "session" as const } : settings.agent));
+// The child safety lock (CHL-2..4): the server is told, and keeps the web and outside tools away.
+const childMode = useChildMode();
+const agentSettings = computed(() => {
+  const base = restricted.value ? { ...settings.agent, storage: "session" as const } : settings.agent;
+  return childMode.on.value ? { ...base, child: true, mcp: [], knowledge: { ...base.knowledge, web: "off" as const } } : base;
+});
 const turnCtx = () => ({ settings: agentSettings.value, notebook: turnNotebook.value });
 /** The services' journeys anyone may start: the front desk's tiles. */
 const frontJourneys = computed(() =>
@@ -202,7 +208,7 @@ function localAnswer(question: string, found: LocalSearch) {
  * visitor hasn't turned it off. Never for a possible emergency.
  */
 async function withWeb(question: string, a: LocalAnswer, signal: AbortSignal): Promise<LocalAnswer> {
-  if (a.kind !== "none" || a.emergency || settings.agent.knowledge?.web === "off" || !caps.value?.web) return a;
+  if (a.kind !== "none" || a.emergency || settings.agent.knowledge?.web === "off" || childMode.on.value || !caps.value?.web) return a;
   try {
     const res = await fetch("/api/agent/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }), signal });
     if (!res.ok) return a;
@@ -267,6 +273,7 @@ function settingsChanges(e: Extract<CommandEffect, { type: "settings" }>) {
 }
 
 function applySettings(e: Extract<CommandEffect, { type: "settings" }>) {
+  if (childMode.on.value && e.agent?.knowledge) return;
   if (e.agent) updateSettings({ agent: { ...settings.agent, ...(e.agent.language ? { language: e.agent.language } : {}), knowledge: { ...settings.agent.knowledge, ...e.agent.knowledge } } });
   const k = e.kiosk ?? {};
   updateSettings({
@@ -307,6 +314,9 @@ async function cardFor(question: string, m: CommandMatch): Promise<CommandCard> 
     case "refuse":
       return { ...base, title: "I can't do that from here.", state: "refused", text: e.reason };
     case "settings": {
+      // The child safety lock (CHL-7): what the answers come from, and the web, stay as the parent set them.
+      if (childMode.on.value && e.agent?.knowledge)
+        return { ...base, title: "I can't do that from here.", state: "refused", text: "The child safety lock is on: a parent changes where answers come from in Preferences, with the PIN." };
       const changes = settingsChanges(e);
       return changes.length ? { ...base, title: confirmText(m), state: "confirm", changes } : { ...base, title: "That's already how the kiosk is set.", state: "done" };
     }
@@ -666,7 +676,7 @@ const fixedHeight = computed(() => true);
       @reset="chat.reset"
       :services="services"
       :notebook="nb.notebook.value"
-      :member="kioskViewer.member"
+      :member="kioskViewer.member && !childMode.on.value"
       @journey="(id) => startJourney(id)"
       @request="(ref, open) => showRequest(ref, open)"
       @attach="attachFiles"
@@ -754,6 +764,8 @@ const fixedHeight = computed(() => true);
                 @conversations="(screen = 'transcript'), (threadsOpen = !threadsOpen)"
                 @profile="openPrefs('profile')"
                 @prefs="openPrefs('language')"
+                :child="childMode.on.value"
+                @child="openPrefs('child')"
                 @end-session="endSession"
                 @unlock="unlocking = true"
               />
@@ -781,7 +793,7 @@ const fixedHeight = computed(() => true);
                 @reset="chat.reset"
                 :services="services"
                 :notebook="nb.notebook.value"
-                :member="kioskViewer.member"
+                :member="kioskViewer.member && !childMode.on.value"
                 @journey="(id) => startJourney(id)"
                 @request="(ref, open) => showRequest(ref, open)"
                 @attach="attachFiles"

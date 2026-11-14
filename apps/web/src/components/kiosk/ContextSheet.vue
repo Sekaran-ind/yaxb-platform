@@ -4,6 +4,7 @@
 // service (the kiosk's own and those added from the Service Catalogue). /staff: requests waiting for
 // this member's roles, then the journeys only staff start. Picking one runs it in the conversation.
 import { canInitiate, VISITOR_ROLE, type Journey } from "@sekaran-ind/yaxb-journeys";
+import { useChildMode } from "@/composables/child";
 import { kioskContent } from "@sekaran-ind/yaxb-core/content";
 import { ChevronRight, Inbox, Search, X } from "@lucide/vue";
 import { computed, nextTick, onMounted, ref } from "vue";
@@ -49,12 +50,13 @@ const groups = computed<Group[]>(() => {
   return [...fromCatalogue, ...builtIn];
 });
 const waiting = computed(() => (props.mode === "staff" ? caseQueue.value.mine.filter((c) => matches({ title: c.journey_title, summary: c.ref })) : []));
+const childMode = useChildMode();
 /** /qt: the Quick tools, as the Quick tools screen lists them (staff's only for members). */
 const tools = computed(() =>
   props.mode !== "qt"
     ? []
     : kioskContent.services
-        .filter((s) => s.id !== "ask" && (s.id !== "staff" || kioskViewer.value.member))
+        .filter((s) => s.id !== "ask" && (s.id !== "staff" || (kioskViewer.value.member && !childMode.on.value)))
         .map((s) => ({ id: s.id, title: s.title, icon: s.icon, items: s.items.filter((i) => matches({ title: i.label, summary: i.summary ?? null })) }))
         .filter((g) => g.items.length),
 );

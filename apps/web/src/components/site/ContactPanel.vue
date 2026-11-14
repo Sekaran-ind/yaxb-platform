@@ -22,7 +22,7 @@ withDefaults(defineProps<{ heading?: boolean }>(), { heading: true });
         </div>
         <div class="flex items-start gap-4">
           <span class="grid size-10 shrink-0 place-items-center rounded-lg bg-mist ring-1 ring-gray-200/70"><MapPin class="size-4 text-ink" aria-hidden="true" /></span>
-          <div><dt class="text-xs text-gray-500">Headquarters</dt><dd class="font-semibold text-ink">Bengaluru, Karnataka, India</dd><dd class="mt-0.5 text-gray-600">1555, 13th Main Rd, Sunshine Colony, Stage 2, BTM Layout, Bengaluru 560076</dd></div>
+          <div><dt class="text-xs text-gray-500">Headquarters</dt><dd class="font-semibold text-ink">Bengaluru, Karnataka, India</dd></div>
         </div>
         <div class="flex items-start gap-4">
           <span class="grid size-10 shrink-0 place-items-center rounded-lg bg-mist ring-1 ring-gray-200/70"><Building2 class="size-4 text-ink" aria-hidden="true" /></span>
