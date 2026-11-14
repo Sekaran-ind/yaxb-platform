@@ -2,13 +2,15 @@
 // The services added to this kiosk from the Service Catalogue (LIB-18..19, LIB-37), shown in the
 // notebook: load one (checking the team has someone for every role it needs), remove one, and start
 // a journey, which runs in the conversation. Journeys a viewer can't start show who starts them.
-import { AlertTriangle, ChevronRight, Library, Lock, Plus, X } from "@lucide/vue";
+import { AlertTriangle, ChevronRight, FileText, Library, Lock, Plus, X } from "@lucide/vue";
 import { computed, ref } from "vue";
 import { iconFor } from "@/lib/icons";
 import { NATIVE } from "@/lib/platform";
 import { catalogue, catalogueReady, loadedServices, loadIntoKiosk, needsOf, removeFromKiosk, roleName, type CatalogueJourney } from "@/composables/library";
 
-const emit = defineEmits<{ start: [journeyId: string] }>();
+// staff: they manage each service's documents and SOPs (its kiosk notebook, RST-3); docCount says how many it has.
+const props = defineProps<{ staff?: boolean; docCount?: (entryId: string) => number }>();
+const emit = defineEmits<{ start: [journeyId: string]; documents: [entryId: string, title: string] }>();
 
 const picking = ref(false);
 const available = computed(() => catalogue.value.filter((s) => !s.loaded));
@@ -74,7 +76,12 @@ const STAFFING = { ready: "has someone", invited: "invited, but not signed in ye
             <AlertTriangle class="size-3.5 shrink-0" aria-hidden="true" /> Nobody can act yet for: {{ unstaffed(s.meta.entry_id).map((n) => n.label).join(", ") }}. Their requests wait.
           </p>
         </div>
-        <button type="button" class="btn-ghost h-8 shrink-0 px-2 text-xs" :aria-label="`Remove ${s.meta.title} from this kiosk`" @click="removeFromKiosk(s.meta.entry_id)"><X class="size-3.5" aria-hidden="true" /> Remove</button>
+        <div class="flex shrink-0 flex-wrap justify-end gap-1">
+          <button v-if="props.staff" type="button" class="btn-light h-8 px-2 text-xs" @click="emit('documents', s.meta.entry_id, s.meta.title)">
+            <FileText class="size-3.5" aria-hidden="true" /> Documents and SOPs<template v-if="props.docCount"> ({{ props.docCount(s.meta.entry_id) }})</template>
+          </button>
+          <button type="button" class="btn-ghost h-8 px-2 text-xs" :aria-label="`Remove ${s.meta.title} from this kiosk`" @click="removeFromKiosk(s.meta.entry_id)"><X class="size-3.5" aria-hidden="true" /> Remove</button>
+        </div>
       </div>
       <ul class="grid gap-2 @lg:grid-cols-2">
         <li v-for="j in s.meta.journeys" :key="j.id">

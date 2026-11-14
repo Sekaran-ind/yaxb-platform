@@ -18,6 +18,7 @@ import { storeFor } from "@/lib/browser/store";
 import { cn } from "@/lib/cn";
 import { LANGUAGES } from "@/lib/languages";
 import BoxConnection from "./BoxConnection.vue";
+import FrontDeskSetup from "./FrontDeskSetup.vue";
 import { casesCaps } from "@/composables/case-network";
 import ChoiceGrid from "./ChoiceGrid.vue";
 import ToggleRow from "./ToggleRow.vue";
@@ -33,6 +34,7 @@ const SECTIONS = [
   { id: "mcp", label: "MCP servers", icon: "library" },
   { id: "memory", label: "Memory & skills", icon: "notebook" },
   { id: "storage", label: "Storage", icon: "file-text" },
+  { id: "front-desk", label: "Front desk", icon: "lock" },
 ];
 
 // The section comes from the kiosk's address (/kiosk?prefs=model), so a kiosk command can open one (CMD-1).
@@ -277,6 +279,10 @@ async function clearBrowser() {
             <ToggleRow v-for="s in caps.skills" :key="s.name" :label="s.name" :description="s.description" :checked="on(agent.skills, s.name)" @change="(v) => setAgent({ skills: { ...agent.skills, [s.name]: v } })" />
           </section>
         </div>
+      </template>
+
+      <template #front-desk>
+        <FrontDeskSetup />
       </template>
 
       <template #storage>

@@ -11,11 +11,16 @@ import type { NotebookApi } from "@/composables/notebook";
 import { useCapabilities } from "@/composables/settings";
 import { ACCEPTED_FILES, readDocument } from "@/lib/browser/documents";
 import CatalogueServices from "./CatalogueServices.vue";
+import { kioskViewer } from "@/composables/library";
 import { cn } from "@/lib/cn";
 
 const props = defineProps<{ nb: NotebookApi; activeThreadId: string }>();
 const { data: caps } = useCapabilities();
 const emit = defineEmits<{ openThread: [id: string]; newThread: []; startJourney: [id: string] }>();
+/** Staff manage services' documents and SOPs (RST-3). */
+const staff = computed(() => kioskViewer.value.member || kioskViewer.value.admin);
+const root = ref<HTMLElement | null>(null);
+const scrollToTop = () => root.value?.scrollIntoView({ behavior: "smooth", block: "start" });
 
 const chars = (n: number) => (n >= 1000 ? `${Math.round(n / 100) / 10}k` : String(n));
 const fileInput = ref<HTMLInputElement | null>(null);
@@ -121,13 +126,17 @@ async function deleteThread(id: string) {
 <template>
   <p v-if="nb.error.value" role="alert" class="rounded-md bg-danger/10 px-3 py-2 text-sm text-red-800">{{ nb.error.value }}</p>
   <p v-else-if="!notebook" class="flex items-center gap-2 text-sm text-gray-500"><Loader2 class="size-4 animate-spin" aria-hidden="true" /> Opening the notebook…</p>
-  <div v-else class="space-y-6">
+  <div v-else ref="root" class="space-y-6">
+    <!-- A service's kiosk notebook: what the front desk answers from (RST-3). -->
+    <p v-if="notebook.service" class="rounded-lg bg-brand/10 px-3 py-2 text-sm text-ink">
+      This is a service's own notebook. Its documents and SOPs are what the kiosk answers from for this service, and what a front desk uses. Visitors read them, never change them.
+    </p>
     <div class="flex flex-wrap items-end justify-between gap-3">
       <div class="min-w-0">
         <label for="nb-pick" class="text-xs font-semibold text-gray-500 uppercase">Notebook</label>
         <div class="mt-1 flex gap-2">
           <select id="nb-pick" class="input max-w-64" :value="notebook.id" @change="nb.select(($event.target as HTMLSelectElement).value)">
-            <option v-for="n in nb.notebooks.value" :key="n.id" :value="n.id">{{ n.title }}</option>
+            <option v-for="n in nb.notebooks.value" :key="n.id" :value="n.id">{{ n.service ? `Service · ${n.title}` : n.title }}</option>
           </select>
           <button type="button" class="btn-light" @click="newNotebookPrompt"><Plus class="size-4" aria-hidden="true" /> New</button>
         </div>
@@ -235,7 +244,12 @@ async function deleteThread(id: string) {
     </section>
 
     <!-- The services added to this kiosk (LIB-49): their journeys run in the conversation. -->
-    <CatalogueServices @start="(id) => emit('startJourney', id)" />
+    <CatalogueServices
+      :staff="staff"
+      :doc-count="nb.serviceDocumentCount"
+      @start="(id) => emit('startJourney', id)"
+      @documents="async (id, title) => (await nb.openServiceNotebook(id, title), scrollToTop())"
+    />
 
     <section aria-labelledby="nb-threads">
       <div class="mb-2 flex items-center justify-between">

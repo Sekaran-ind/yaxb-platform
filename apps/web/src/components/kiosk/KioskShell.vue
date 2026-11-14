@@ -10,7 +10,7 @@ import type { ServiceHandler } from "@sekaran-ind/yaxb-core/journeys";
 import { composeLocalAnswer, composeWebAnswer, EMBEDDING_MODELS, looksLikeEmergency, type LocalAnswer } from "@sekaran-ind/yaxb-core/knowledge/semantic";
 import { resolveLayout, screensFor } from "@sekaran-ind/yaxb-core/screens";
 import { DEFAULT_LANGUAGE, type LanguageCode } from "@sekaran-ind/yaxb-core/settings";
-import { computed, onBeforeUnmount, onMounted, ref, toRef, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, toRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { logActivity, useAccount } from "@/composables/account";
 import { askOnce, useChat } from "@/composables/chat";
@@ -42,6 +42,14 @@ import TranslatePane from "./TranslatePane.vue";
 import KioskFrame from "@/components/site/KioskFrame.vue";
 import { SlidersHorizontal } from "@lucide/vue";
 import { NATIVE } from "@/lib/platform";
+import { endSession, restricted, sessionEnds } from "@/composables/restricted";
+import { serviceDocuments } from "@/composables/notebook";
+import { loadedServices } from "@/composables/library";
+import ProfilePicker from "@/components/account/ProfilePicker.vue";
+import RestrictedUnlock from "./RestrictedUnlock.vue";
+import type { NotebookSource } from "@sekaran-ind/yaxb-core/notebook";
+import type { StorageId } from "@sekaran-ind/yaxb-core/settings";
+import { LogOut, Lock } from "@lucide/vue";
 import { formInput } from "@/composables/form-input";
 
 /**
@@ -55,9 +63,81 @@ const KIOSK_NAME = "Anjal - Digital Kiosk (Your Own)";
 
 
 const activeNotebook = computed({ get: () => settings.activeNotebook, set: (id) => updateSettings({ activeNotebook: id }) });
-const nb = useNotebook(toRef(() => settings.agent.storage), activeNotebook, toRef(() => settings.box));
-const chat = useChat(nb.store, nb.refresh);
 const account = useAccount();
+// Notebooks are the open profile's (or this device's), and services' for staff (PRF-2). At the front
+// desk (Restricted Mode) a visit keeps nothing: its notebook and conversation live in session memory.
+const nbStorage = computed<StorageId>(() => (restricted.value ? "session" : settings.agent.storage));
+const nbScope = computed(() => ({ owner: restricted.value ? null : account.profileId.value, staff: !restricted.value && (kioskViewer.value.member || kioskViewer.value.admin) }));
+const nb = useNotebook(nbStorage, activeNotebook, toRef(() => settings.box), nbScope);
+const chat = useChat(nb.store, nb.refresh);
+
+// ---- the front desk (Restricted Mode, RST-1..6) ----------------------------------------------------
+/** The chosen services' documents and SOPs: what the front desk answers from. */
+const frontDocs = shallowRef<NotebookSource[]>([]);
+watch(
+  [restricted, () => settings.restricted.services.join()],
+  async () => {
+    frontDocs.value = restricted.value ? await serviceDocuments(settings.restricted.services, settings.agent.storage, settings.box) : [];
+  },
+  { immediate: true },
+);
+/** The notebook a turn goes with: at the front desk, the services' documents and what the visitor attached. */
+const turnNotebook = computed(() => {
+  const n = nb.notebook.value;
+  if (!n || !restricted.value) return n;
+  return { ...n, title: "Front desk", sources: [...frontDocs.value, ...n.sources] };
+});
+/** At the front desk nothing is kept on the server either. */
+const agentSettings = computed(() => (restricted.value ? { ...settings.agent, storage: "session" as const } : settings.agent));
+const turnCtx = () => ({ settings: agentSettings.value, notebook: turnNotebook.value });
+/** The services' journeys anyone may start: the front desk's tiles. */
+const frontJourneys = computed(() =>
+  loadedServices.value
+    .filter((s) => settings.restricted.services.includes(s.meta.entry_id))
+    .flatMap((s) => s.journeys.filter((j) => !j.roles?.initiate?.length || j.roles.initiate.includes("visitor")).map((j) => ({ id: j.id, title: j.title, summary: j.summary ?? null, service: s.meta.title }))),
+);
+const unlocking = ref(false);
+// A visit ends (End session, idle, or the front desk turned on): nothing of it stays.
+watch(sessionEnds, async () => {
+  voiceOut.cancel();
+  chat.reset();
+  for (const n of nb.notebooks.value) await nb.remove(n.id).catch(() => undefined);
+  screen.value = "transcript";
+});
+
+// ---- profiles (PRF-1): who is using the kiosk ---------------------------------------------------------
+const VISITOR_KEY = "yaxb.visitor";
+const visitorChosen = ref(readVisitor());
+function readVisitor() {
+  try {
+    return sessionStorage.getItem(VISITOR_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+function chooseVisitor() {
+  visitorChosen.value = true;
+  try {
+    sessionStorage.setItem(VISITOR_KEY, "1");
+  } catch {
+    /* private mode */
+  }
+}
+// A profile that locks (by hand or after 10 quiet minutes) brings the picker back.
+watch(
+  () => account.profile.value,
+  (p, before) => {
+    if (before && !p) {
+      visitorChosen.value = false;
+      try {
+        sessionStorage.removeItem(VISITOR_KEY);
+      } catch {
+        /* private mode */
+      }
+    }
+  },
+);
+const showPicker = computed(() => !props.embedded && !restricted.value && account.list.value.length > 0 && !account.profile.value && !visitorChosen.value);
 const { data: catalog, error: catalogError } = useProviders();
 const { data: caps } = useCapabilities();
 const feedback = useFeedback();
@@ -157,7 +237,7 @@ const route = useRoute();
 
 // Preferences (profile, language, layout, theme, voice, knowledge, model…) open inside the kiosk,
 // in place of its screens: /kiosk?prefs=<section>. There's no separate settings page.
-const prefsOpen = computed(() => typeof route.query.prefs === "string");
+const prefsOpen = computed(() => !restricted.value && typeof route.query.prefs === "string");
 // Preferences open inside whichever surface this is (the kiosk, or the catalogue's Ask Me).
 const openPrefs = (section = "profile") => void router.push({ path: props.embedded ? route.path : "/kiosk", query: props.embedded ? { ...route.query, prefs: section } : { prefs: section } });
 const closePrefs = () => {
@@ -237,7 +317,7 @@ async function cardFor(question: string, m: CommandMatch): Promise<CommandCard> 
 }
 
 async function runCommand(question: string, m: CommandMatch) {
-  const ctx = { settings: settings.agent, notebook: nb.notebook.value };
+  const ctx = turnCtx();
   const card = await cardFor(question, m);
   await chat.addCard(question, card, ctx);
   if (card.state === "done" || card.state === "info") void logActivity("command.used", { command: m.command.id });
@@ -271,7 +351,7 @@ async function reviewAnswer(turnId: string) {
 }
 
 async function onCard(turnId: string, action: "yes" | "no" | "start" | "sign-in" | "ask-assistant") {
-  const ctx = { settings: settings.agent, notebook: nb.notebook.value };
+  const ctx = turnCtx();
   const card = chat.turns.value.find((t) => t.id === turnId)?.card;
   if (!card) return;
   if (action === "no") return chat.updateCard(turnId, { state: "cancelled" }, ctx);
@@ -311,17 +391,17 @@ async function startJourney(id: string) {
   screen.value = "transcript";
   journey.value = null;
   const turn: JourneyTurn = { id: j.id, entry: entryOfJourney(j.id), title: j.title, run: null, status: "running" };
-  await chat.addTurns(j.title, { journey: turn, via: "journey" }, { settings: settings.agent, notebook: nb.notebook.value });
+  await chat.addTurns(j.title, { journey: turn, via: "journey" }, turnCtx());
 }
 /** A request's reference, kept in the conversation: its status shows whenever the conversation is open. */
 async function showRequest(ref: string, open = false) {
   screen.value = "transcript";
-  await chat.addTurns(ref, { request: { ref, ...(open ? { open } : {}) }, via: "request" }, { settings: settings.agent, notebook: nb.notebook.value });
+  await chat.addTurns(ref, { request: { ref, ...(open ? { open } : {}) }, via: "request" }, turnCtx());
 }
 async function onJourneyUpdate(turnId: string, patch: Partial<JourneyTurn>) {
   const turn = chat.turns.value.find((t) => t.id === turnId);
   if (!turn?.journey) return;
-  await chat.patchTurn(turnId, { journey: { ...turn.journey, ...patch } }, { settings: settings.agent, notebook: nb.notebook.value });
+  await chat.patchTurn(turnId, { journey: { ...turn.journey, ...patch } }, turnCtx());
 }
 // A link to a request (/kiosk?case=<id or reference>: shared in team chat, the old Services address)
 // opens it in the conversation.
@@ -353,7 +433,7 @@ async function attachFiles(files: File[]) {
   }
   const one = added.length === 1;
   const text = [added.length ? `Added ${added.map((t) => `“${t}”`).join(", ")} to the notebook. Ask about ${one ? "it" : "them"}, and answers will cite ${one ? "it" : "them"}.` : null, ...problems].filter(Boolean).join(" ");
-  await chat.addTurns(names, { text, via: "file" }, { settings: settings.agent, notebook: nb.notebook.value });
+  await chat.addTurns(names, { text, via: "file" }, turnCtx());
 }
 
 async function ask(question: string) {
@@ -380,7 +460,7 @@ async function ask(question: string) {
   journey.value = null;
   failed.value = false;
   voiceOut.cancel();
-  const ctx = { settings: settings.agent, notebook: nb.notebook.value };
+  const ctx = turnCtx();
   const semantic = settings.agent.knowledge?.semantic !== false;
   const model = modelFor(settings.agent, question);
   try {
@@ -475,7 +555,10 @@ const status = computed<KioskStatus>(() => {
 
 const sourceCount = computed(() => nb.notebook.value?.sources.length ?? 0);
 const navScreens = computed<NavScreen[]>(() =>
-  screensFor(kioskContent.screens, layout.value).map((s) => ({
+  screensFor(kioskContent.screens, layout.value)
+    // The front desk is Ask Me alone.
+    .filter((s) => !restricted.value || s.component === "transcript")
+    .map((s) => ({
     id: s.id,
     label: s.label,
     icon: s.icon,
@@ -488,8 +571,8 @@ const navScreens = computed<NavScreen[]>(() =>
  * window, and every screen scrolls inside. It never shrinks below a usable height. (The native app
  * has no site navbar.)
  */
-const MINI_HEIGHT = NATIVE ? "h-[max(26rem,calc(100dvh-10.5rem))]" : "h-[max(26rem,calc(100dvh-14rem))]";
-const POD_HEIGHT = NATIVE ? "h-[max(28rem,calc(100dvh-11rem))]" : "h-[max(28rem,calc(100dvh-14.5rem))]";
+const MINI_HEIGHT = computed(() => (NATIVE || restricted.value ? "h-[max(26rem,calc(100dvh-10.5rem))]" : "h-[max(26rem,calc(100dvh-14rem))]"));
+const POD_HEIGHT = computed(() => (NATIVE || restricted.value ? "h-[max(28rem,calc(100dvh-11rem))]" : "h-[max(28rem,calc(100dvh-14.5rem))]"));
 const MINI_BODY = "overflow-y-auto [scrollbar-width:thin]";
 const componentOf = (id: string) => kioskContent.screens.screens.find((s) => s.id === id)?.component;
 // A link may open a screen (/kiosk?screen=services&staff=team): the old staff pages redirect here.
@@ -532,7 +615,7 @@ const fixedHeight = computed(() => true);
       :turns="chat.turns.value"
       :busy="chat.busy.value"
       :listening="voiceIn.listening.value"
-      :voice-supported="voiceIn.supported.value"
+      :voice-supported="voiceIn.supported.value && (!restricted || settings.restricted.mic)"
       height-class="h-full"
       @mic="onMic"
       :selection="selection"
@@ -557,21 +640,47 @@ const fixedHeight = computed(() => true);
       @journey-done="(id) => void logActivity('journey.completed', { journey: id })"
       @speak="(t) => voiceOut.speak(t)"
       :threads="nb.threads.value"
+      :restricted="restricted"
+      :front-services="settings.restricted.services"
+      :allow-attach="!restricted || settings.restricted.attach"
       :active-thread-id="chat.threadId.value"
       @open-thread="(id) => chat.open(id)"
     >
       <!-- Beside Conversations: the visitor's profile (sign in) and the kiosk's preferences. -->
       <template #actions>
-        <ProfileButton tone="light" :nickname="account.profile.value?.nickname ?? null" :open="false" @toggle="openPrefs('profile')" />
-        <button type="button" class="grid size-9 place-items-center rounded-full text-gray-500 ring-1 ring-gray-200 hover:bg-mist hover:text-ink" aria-label="Preferences" title="Preferences" @click="openPrefs('language')">
-          <SlidersHorizontal class="size-4" aria-hidden="true" />
-        </button>
+        <!-- The front desk: end the visit, and (staff) leave Restricted Mode. -->
+        <template v-if="restricted">
+          <button type="button" class="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-sm text-ink ring-1 ring-gray-200 hover:bg-mist" @click="endSession">
+            <LogOut class="size-4" aria-hidden="true" /> End session
+          </button>
+          <button type="button" class="grid size-9 place-items-center rounded-full text-gray-400 hover:bg-mist hover:text-ink" aria-label="Staff: leave the front desk" title="Staff" @click="unlocking = true">
+            <Lock class="size-4" aria-hidden="true" />
+          </button>
+          <RestrictedUnlock v-if="unlocking" @close="unlocking = false" @unlocked="unlocking = false" />
+        </template>
+        <template v-else>
+          <ProfileButton tone="light" :nickname="account.profile.value?.nickname ?? null" :open="false" @toggle="openPrefs('profile')" />
+          <button type="button" class="grid size-9 place-items-center rounded-full text-gray-500 ring-1 ring-gray-200 hover:bg-mist hover:text-ink" aria-label="Preferences" title="Preferences" @click="openPrefs('language')">
+            <SlidersHorizontal class="size-4" aria-hidden="true" />
+          </button>
+        </template>
+      </template>
+      <!-- The front desk starts with its services. -->
+      <template v-if="restricted && frontJourneys.length" #empty>
+        <ul class="mx-auto mt-6 grid max-w-xl gap-2 text-left @lg:grid-cols-2">
+          <li v-for="j in frontJourneys" :key="j.id">
+            <button type="button" class="card flex min-h-16 w-full flex-col items-start p-4 text-left transition hover:border-gray-300" @click="startJourney(j.id)">
+              <span class="text-base font-medium text-ink">{{ j.title }}</span>
+              <span v-if="j.summary" class="text-sm text-gray-600">{{ j.summary }}</span>
+            </button>
+          </li>
+        </ul>
       </template>
     </TranscriptPane>
   </div>
   <div v-else ref="root" class="w-full">
     <!-- The kiosk: one frame holding the player (with the kiosk's controls) and its screens. -->
-    <KioskFrame :layout="layout" :mini-height="MINI_HEIGHT" :pod-height="POD_HEIGHT">
+    <KioskFrame :layout="layout" :mini-height="MINI_HEIGHT" :pod-height="POD_HEIGHT" :chromeless="restricted">
       <template #before>
         <FeedbackPrompt class="mb-3" />
         <h1 class="sr-only">{{ KIOSK_NAME }}</h1>
@@ -585,20 +694,22 @@ const fixedHeight = computed(() => true);
           :speaking="voiceOut.speaking.value"
           :listening="voiceIn.listening.value"
           :interim="voiceIn.interim.value"
-          :voice-supported="voiceIn.supported.value"
+          :voice-supported="voiceIn.supported.value && (!restricted || settings.restricted.mic)"
           :can-ask="canAsk"
           @mic="onMic"
           @pause-resume="onPauseResume"
           @stop="onStop"
         >
           <template #meta>
-            <template v-if="nb.notebook.value">{{ nb.notebook.value.title }} · {{ sourceCount }} source{{ sourceCount === 1 ? "" : "s" }}</template>
+            <template v-if="restricted">Front desk · {{ frontDocs.length }} document{{ frontDocs.length === 1 ? "" : "s" }}</template>
+            <template v-else-if="nb.notebook.value">{{ nb.notebook.value.title }} · {{ sourceCount }} source{{ sourceCount === 1 ? "" : "s" }}</template>
             <span v-if="offline" class="block text-brand">Loading on-device model{{ offline.progress ? ` ${Math.round(offline.progress)}%` : "…" }}</span>
           </template>
         </PlayerPanel>
       </template>
       <template #default="{ width: screensWidth }">
       <KioskPreferences v-if="prefsOpen" :nickname="account.profile.value?.nickname ?? null" :fill="fixedHeight" @close="closePrefs" />
+      <ProfilePicker v-else-if="showPicker" @visitor="chooseVisitor" @add="openPrefs('profile')" />
       <AdaptiveNav
         v-else
         :screens="navScreens"
@@ -617,7 +728,7 @@ const fixedHeight = computed(() => true);
                 :turns="chat.turns.value"
                 :busy="chat.busy.value"
                 :listening="voiceIn.listening.value"
-                :voice-supported="voiceIn.supported.value"
+                :voice-supported="voiceIn.supported.value && (!restricted || settings.restricted.mic)"
                 :height-class="fixedHeight ? 'h-full' : undefined"
                 @mic="onMic"
                 :selection="selection"
@@ -642,15 +753,41 @@ const fixedHeight = computed(() => true);
                 @journey-done="(id) => void logActivity('journey.completed', { journey: id })"
                 @speak="(t) => voiceOut.speak(t)"
                 :threads="nb.threads.value"
+                :restricted="restricted"
+                :front-services="settings.restricted.services"
+                :allow-attach="!restricted || settings.restricted.attach"
                 :active-thread-id="chat.threadId.value"
                 @open-thread="(id) => chat.open(id)"
               >
                 <!-- Beside Conversations: the visitor's profile (sign in) and the kiosk's preferences. -->
                 <template #actions>
-                  <ProfileButton tone="light" :nickname="account.profile.value?.nickname ?? null" :open="false" @toggle="openPrefs('profile')" />
-                  <button type="button" class="grid size-9 place-items-center rounded-full text-gray-500 ring-1 ring-gray-200 hover:bg-mist hover:text-ink" aria-label="Preferences" title="Preferences" @click="openPrefs('language')">
-                    <SlidersHorizontal class="size-4" aria-hidden="true" />
-                  </button>
+                  <!-- The front desk: end the visit, and (staff) leave Restricted Mode. -->
+                  <template v-if="restricted">
+                    <button type="button" class="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-sm text-ink ring-1 ring-gray-200 hover:bg-mist" @click="endSession">
+                      <LogOut class="size-4" aria-hidden="true" /> End session
+                    </button>
+                    <button type="button" class="grid size-9 place-items-center rounded-full text-gray-400 hover:bg-mist hover:text-ink" aria-label="Staff: leave the front desk" title="Staff" @click="unlocking = true">
+                      <Lock class="size-4" aria-hidden="true" />
+                    </button>
+                    <RestrictedUnlock v-if="unlocking" @close="unlocking = false" @unlocked="unlocking = false" />
+                  </template>
+                  <template v-else>
+                    <ProfileButton tone="light" :nickname="account.profile.value?.nickname ?? null" :open="false" @toggle="openPrefs('profile')" />
+                    <button type="button" class="grid size-9 place-items-center rounded-full text-gray-500 ring-1 ring-gray-200 hover:bg-mist hover:text-ink" aria-label="Preferences" title="Preferences" @click="openPrefs('language')">
+                      <SlidersHorizontal class="size-4" aria-hidden="true" />
+                    </button>
+                  </template>
+                </template>
+                <!-- The front desk starts with its services. -->
+                <template v-if="restricted && frontJourneys.length" #empty>
+                  <ul class="mx-auto mt-6 grid max-w-xl gap-2 text-left @lg:grid-cols-2">
+                    <li v-for="j in frontJourneys" :key="j.id">
+                      <button type="button" class="card flex min-h-16 w-full flex-col items-start p-4 text-left transition hover:border-gray-300" @click="startJourney(j.id)">
+                        <span class="text-base font-medium text-ink">{{ j.title }}</span>
+                        <span v-if="j.summary" class="text-sm text-gray-600">{{ j.summary }}</span>
+                      </button>
+                    </li>
+                  </ul>
                 </template>
               </TranscriptPane>
               <ServicesScreen

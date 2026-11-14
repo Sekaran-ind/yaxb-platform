@@ -29,6 +29,13 @@ export type KioskSettings = {
    * cloud, which is the paid plan. Box and relay can each be turned off.
    */
   cases: { storage: "devices" | "central"; useBox: boolean; useRelay: boolean };
+  /**
+   * Restricted Mode (RST-1..6): a public front-desk kiosk. Staff turn it on with a PIN; visitors then
+   * get only Ask Me with the chosen services (catalogue entry ids), answered from those services'
+   * documents, in a session that is wiped after `idleMinutes` or on End session. `pinHash` is the
+   * PIN's SHA-256; staff unlock with it (or their own key).
+   */
+  restricted: { on: boolean; services: string[]; idleMinutes: number; mic: boolean; attach: boolean; pinHash: string | null };
 };
 
 const DEFAULTS: KioskSettings = {
@@ -44,13 +51,14 @@ const DEFAULTS: KioskSettings = {
   activeNotebook: null,
   box: { url: "", token: "" },
   cases: { storage: "devices", useBox: true, useRelay: true },
+  restricted: { on: false, services: [], idleMinutes: 3, mic: true, attach: false, pinHash: null },
 };
 
 function load(): KioskSettings {
   try {
     const saved = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) ?? "{}") as Partial<KioskSettings>;
     if (!isThemeChoice(saved.theme)) delete saved.theme;
-    return { ...DEFAULTS, ...saved, agent: { ...DEFAULT_AGENT_SETTINGS, ...saved.agent, knowledge: { ...DEFAULT_AGENT_SETTINGS.knowledge, ...saved.agent?.knowledge } }, box: { ...DEFAULTS.box, ...saved.box }, cases: { ...DEFAULTS.cases, ...saved.cases } };
+    return { ...DEFAULTS, ...saved, agent: { ...DEFAULT_AGENT_SETTINGS, ...saved.agent, knowledge: { ...DEFAULT_AGENT_SETTINGS.knowledge, ...saved.agent?.knowledge } }, box: { ...DEFAULTS.box, ...saved.box }, cases: { ...DEFAULTS.cases, ...saved.cases }, restricted: { ...DEFAULTS.restricted, ...saved.restricted } };
   } catch {
     return structuredClone(DEFAULTS);
   }

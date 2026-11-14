@@ -5,7 +5,7 @@
 import { z } from "zod";
 import { LANGUAGES, type LanguageCode } from "../schemas/index.js";
 
-export const FEEDBACK_QUESTION = "How is YAXB doing this session?";
+export const FEEDBACK_QUESTION = "How is Anjal doing this session?";
 export const FEEDBACK_RATINGS = [
   { value: "bad", label: "Bad" },
   { value: "fine", label: "Fine" },

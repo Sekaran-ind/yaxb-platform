@@ -107,4 +107,11 @@ Guided services: a sequence of steps that ask the visitor something, run an on-d
 | LIB-57 | The kiosk is named "Anjal - Digital Kiosk (Your Own)". Sign in and Preferences sit beside Conversations in Ask Me. | Built |
 | LIB-58 | The kiosk keeps one height whatever screen it shows: Mini from the phone's height, Pod from the tablet's, Full from the window's; screens scroll inside, and drawers open inside it. | Built |
 | LIB-59 | The Service Catalogue has the same Ask Me (the conversation, its notebook, journeys and requests), and its Preferences (model, layout, theme, voice) open inside the catalogue, from Ask Me or the catalogue's player. | Built |
+| PRF-1 | A device may hold several profiles, as a streaming app does: "Who's using Anjal?" shows each profile, Visitor (no profile) and Add a profile. A profile opens with its passphrase; when it locks (by hand or after 10 quiet minutes) the picker comes back. | Built |
+| PRF-2 | Each profile has its own notebooks and conversations; without a profile, the device's. | Built |
+| RST-1 | Restricted Mode turns the kiosk into a public front desk for chosen services. Only staff turn it on, with a PIN of 4 to 8 digits (kept as a hash). | Built |
+| RST-2 | At the front desk visitors get Ask Me alone: the chosen services as tiles to start from, End session, and no profiles, conversations drawer, preferences, catalogue, Quick tools, notebook or site navigation (every address is the kiosk). The microphone and attaching files are each allowed or not. | Built |
+| RST-3 | Each service added to the kiosk has its own notebook of documents and SOPs, which staff manage (My notebook → Services → Documents and SOPs). The front desk answers from the chosen services' documents, which visitors read and never change. | Built |
+| RST-4 | A visit keeps nothing on the kiosk: its notebook and conversation live in session memory and nothing is saved on the server; End session, or a quiet spell (1 to 10 minutes), wipes it. What a visitor hands over goes to the service as a request with a reference. | Built |
+| RST-5 | Staff leave the front desk with the PIN (a discreet lock button in Ask Me); a wrong PIN is refused. | Built |
 

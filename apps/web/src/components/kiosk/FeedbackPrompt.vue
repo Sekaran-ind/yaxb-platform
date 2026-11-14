@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// "How is YAXB doing this session?" Bad, Fine, Good, then an optional comment (FBK-1). Closing it
+// "How is Anjal doing this session?" Bad, Fine, Good, then an optional comment (FBK-1). Closing it
 // counts as skipped, so it doesn't come back this session.
 import { FEEDBACK_COMMENT_CHARS, FEEDBACK_QUESTION, FEEDBACK_RATINGS } from "@sekaran-ind/yaxb-core/feedback";
 import { Frown, Meh, Smile, X } from "@lucide/vue";

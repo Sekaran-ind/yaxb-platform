@@ -51,6 +51,10 @@ const props = defineProps<{
   /** The notebook's conversations, for the drawer, and the one open now. */
   threads: ThreadRecord[];
   activeThreadId: string;
+  /** The front desk (Restricted Mode): no conversations drawer, model link or /staff; journeys only from its services. */
+  restricted?: boolean;
+  frontServices?: string[];
+  allowAttach?: boolean;
 }>();
 /** card: a command card's button (yes, no, start, sign-in, ask-assistant) for the shell to carry out. */
 const emit = defineEmits<{
@@ -131,7 +135,7 @@ const fileInput = ref<HTMLInputElement | null>(null);
 const MENU_ITEM = "flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-ink outline-none hover:bg-mist focus-visible:bg-mist focus-visible:ring-2 focus-visible:ring-brand/40";
 const SLASH = computed(() => [
   { cmd: "/journeys", label: "Start a journey here", icon: ListChecks },
-  ...(props.member ? [{ cmd: "/staff", label: "Staff journeys and requests waiting for you", icon: UserRoundCog }] : []),
+  ...(props.member && !props.restricted ? [{ cmd: "/staff", label: "Staff journeys and requests waiting for you", icon: UserRoundCog }] : []),
   { cmd: "/request", label: "Check a request by its reference", icon: Inbox },
 ]);
 /** Slash suggestions while the message starts with "/". */
@@ -254,14 +258,15 @@ function submit() {
   <!-- A reading width, however wide the kiosk: the conversation and its composer stay centred. -->
   <div :class="cn('relative mx-auto flex w-full max-w-4xl flex-col', heightClass ?? 'min-h-[min(62dvh,560px)]')">
     <div class="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
-      <RouterLink :to="{ path: '/kiosk', query: { prefs: answers === 'local' ? 'knowledge' : 'model' } }" class="chip hover:text-ink">
+      <span v-if="restricted" class="text-sm font-medium text-ink">Front desk</span>
+      <RouterLink v-else :to="{ path: '/kiosk', query: { prefs: answers === 'local' ? 'knowledge' : 'model' } }" class="chip hover:text-ink">
         <Settings2 class="size-3.5" aria-hidden="true" />
         <template v-if="answers === 'local'">Kiosk only · no AI model</template>
         <template v-else>{{ catalogError ? "Agent offline" : modelLabel ? `${provider?.label} · ${modelLabel}` : "Loading model…" }}{{ answers === "auto" ? " · curated answers on this device" : "" }}</template>
       </RouterLink>
       <div class="flex items-center gap-1">
-        <button v-if="turns.length" type="button" class="inline-flex h-9 items-center gap-1 rounded-full px-2 hover:bg-mist hover:text-ink" @click="emit('reset')"><RotateCcw class="size-3.5" aria-hidden="true" /> New</button>
-        <button type="button" class="inline-flex h-9 items-center gap-1 rounded-full px-2 hover:bg-mist hover:text-ink" :aria-expanded="drawer" aria-controls="threads-drawer" @click="drawer = !drawer">
+        <button v-if="turns.length && !restricted" type="button" class="inline-flex h-9 items-center gap-1 rounded-full px-2 hover:bg-mist hover:text-ink" @click="emit('reset')"><RotateCcw class="size-3.5" aria-hidden="true" /> New</button>
+        <button v-if="!restricted" type="button" class="inline-flex h-9 items-center gap-1 rounded-full px-2 hover:bg-mist hover:text-ink" :aria-expanded="drawer" aria-controls="threads-drawer" @click="drawer = !drawer">
           <MessagesSquare class="size-3.5" aria-hidden="true" /> Conversations<span v-if="threads.length" class="rounded-full bg-mist px-1.5 text-[11px] text-ink">{{ threads.length }}</span>
         </button>
         <slot name="actions" />
@@ -273,10 +278,11 @@ function submit() {
     </p>
 
 
-    <div ref="scroller" :class="cn('-mx-1 mt-2 flex-1 space-y-5 px-1', heightClass ? 'min-h-0 overflow-y-auto pb-36 [scrollbar-width:thin]' : 'pb-4')" aria-live="polite">
+    <div ref="scroller" :class="cn('relative -mx-1 mt-2 flex-1 space-y-5 px-1', heightClass ? 'min-h-0 overflow-y-auto pb-36 [scrollbar-width:thin]' : 'pb-4')" aria-live="polite">
       <div v-if="!turns.length" class="pt-16 text-center">
         <p class="text-lg font-medium tracking-tight text-ink">Ask a question, or tap the microphone.</p>
         <p class="mt-1 text-sm text-gray-500">Answers come from trusted sources, with references.</p>
+        <slot name="empty" />
       </div>
       <template v-for="t in turns" :key="t.id">
         <!-- A journey or a request loaded into the conversation, kept with it. -->
@@ -377,7 +383,7 @@ function submit() {
     <!-- The context loader slides up over the conversation. -->
     <Transition enter-from-class="translate-y-full opacity-0" leave-to-class="translate-y-full opacity-0" enter-active-class="transition duration-200 ease-out" leave-active-class="transition duration-150 ease-in">
       <div v-if="sheet" :class="cn('z-20 flex flex-col justify-end', heightClass ? 'absolute inset-x-0 top-10 bottom-0' : 'fixed inset-x-0 bottom-0 mx-auto max-h-[75dvh] w-full max-w-4xl px-2')">
-        <ContextSheet :key="sheet" :mode="sheet" class="max-h-full" @pick="onPick" @close="closeSheet" />
+        <ContextSheet :key="sheet" :mode="sheet" :only="restricted ? frontServices : undefined" class="max-h-full" @pick="onPick" @close="closeSheet" />
       </div>
     </Transition>
 

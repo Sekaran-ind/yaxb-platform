@@ -10,7 +10,14 @@ import type { ThreadState } from "@sekaran-ind/yaxb-core/stores";
 import type { StorageId } from "@sekaran-ind/yaxb-core/settings";
 import type { ChatTurn } from "@/lib/types";
 
-export type NotebookRecord = Notebook & { createdAt: string; updatedAt: string };
+export type NotebookRecord = Notebook & {
+  createdAt: string;
+  updatedAt: string;
+  /** The profile it belongs to (PRF-2); absent: this device's, for whoever uses it without a profile. */
+  owner?: string | null;
+  /** A service's kiosk notebook (its documents and SOPs, RST-3): the catalogue entry it belongs to. */
+  service?: string | null;
+};
 export type ThreadRecord = {
   id: string;
   notebookId: string;
@@ -154,9 +161,9 @@ export function storeFor(kind: StorageId, box?: BoxConnection | null): KioskStor
 export const newId = () => crypto.randomUUID().replace(/-/g, "").slice(0, 16);
 export const nowIso = () => new Date().toISOString();
 
-export function newNotebook(title = "My notebook"): NotebookRecord {
+export function newNotebook(title = "My notebook", extra: Pick<NotebookRecord, "owner" | "service"> = {}): NotebookRecord {
   const at = nowIso();
-  return { id: newId(), title, sources: [], memory: "", createdAt: at, updatedAt: at };
+  return { id: newId(), title, sources: [], memory: "", createdAt: at, updatedAt: at, ...extra };
 }
 
 export function withSource(n: NotebookRecord, source: Omit<NotebookSource, "id" | "addedAt"> & Partial<Pick<NotebookSource, "id">>): NotebookRecord {

@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory, createWebHistory, type RouteRecordRaw } from "vue-router";
 import { NATIVE } from "./lib/platform";
+import { settings } from "./composables/settings";
 
 // Pages load on demand, so the home page doesn't download the kiosk (or its models' code).
 // The native app (PLT-10) opens straight into the kiosk: its only pages are the kiosk and Settings.
@@ -44,6 +45,12 @@ export const router = createRouter({
     if (to.hash) return { el: to.hash, behavior: "smooth" };
     return { top: 0 };
   },
+});
+
+// At the front desk (Restricted Mode) every address is the kiosk (RST-4).
+router.beforeEach((to) => {
+  if (settings.restricted.on && to.path !== "/kiosk") return { path: "/kiosk" };
+  return true;
 });
 
 router.afterEach((to) => {
