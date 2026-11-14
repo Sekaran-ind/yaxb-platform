@@ -35,6 +35,8 @@ const props = defineProps<{
   embedded?: boolean;
   /** Where this run had got to when the conversation was kept. */
   initial?: RunSnapshot | null;
+  /** Its place in the conversation: the newest open form takes the message box's words. */
+  formOrder?: number;
 }>();
 const emit = defineEmits<{ close: []; speak: [text: string]; done: []; handed: [c: CaseSummary]; progress: [run: RunSnapshot, status: RunState["status"], result: RunState["result"]] }>();
 const uid = useId();
@@ -268,6 +270,7 @@ watch(
     if (status === "asking" && step && stepFields.value.some((f) => f.type !== "source")) {
       offerFormInput({
         id: uid,
+        order: props.formOrder ?? 0,
         label: props.journey.steps[step]?.label ?? props.journey.title,
         fill: async (text) => {
           said.value = text;

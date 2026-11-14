@@ -18,6 +18,8 @@ export type CatalogueService = {
   icon: string | null;
   revision: number | null;
   published_at: string | null;
+  /** The latest revision's state: only "accepted" services are offered to add to a kiosk. */
+  state?: string;
   roles: Role[];
   journeys: CatalogueJourney[];
   yaml: string;

@@ -17,6 +17,7 @@ import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { resolveLayout } from "@sekaran-ind/yaxb-core/screens";
 import CataloguePlayer from "@/components/catalogue/CataloguePlayer.vue";
+import CataloguePills from "@/components/catalogue/CataloguePills.vue";
 import KioskFrame from "@/components/site/KioskFrame.vue";
 import KioskPreferences from "@/components/kiosk/KioskPreferences.vue";
 import KioskShell from "@/components/kiosk/KioskShell.vue";
@@ -176,20 +177,11 @@ watch(signingIn, (v) => !v && void load());
   <div ref="root" class="w-full">
     <KioskFrame :layout="layout" :narrow-panel="Boolean(service)">
       <template #panel>
-        <CataloguePlayer
-          :variant="infoVariant"
-          :who="who"
-          :counts="counts"
-          :current="current"
-          :step="service ? designStep : null"
-          :loading="!overview && !error"
-          :signing-in="signingIn"
-          @new-service="go({ service: 'new' })"
-          @sign-in="signingIn = !signingIn"
-          @sign-out="signOut"
-        />
+        <CataloguePlayer :variant="infoVariant" :who="who" :counts="counts" :current="current" :step="service ? designStep : null" :loading="!overview && !error" />
       </template>
       <template #default="{ width: paneWidth }">
+        <!-- With a service or the preferences open there is no tab row: the pills sit above them. -->
+        <div v-if="service || prefs" class="mb-3 flex justify-end"><CataloguePills :who="who" :signing-in="signingIn" @new-service="go({ service: 'new', prefs: null })" @sign-in="signingIn = !signingIn" @sign-out="signOut" @prefs="go({ prefs: 'model' })" /></div>
         <ModeratorSignIn v-if="signingIn" class="mb-4" why="Sign in with your moderator key to see every service, review and manage roles." @signed-in="signingIn = false" />
         <p v-if="error" role="alert" class="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-red-800">{{ error }}</p>
 
@@ -209,6 +201,7 @@ watch(signingIn, (v) => !v && void load());
             @step="(st) => (designStep = st)"
           />
           <AdaptiveNav v-else :screens="navScreens" storage-key="catalogue" label="Catalogue screens" :active="view" :width="paneWidth" :fill="layout === 'full'" @update:active="(v) => go({ view: v === 'catalogue' ? null : v })">
+            <template #trail><CataloguePills :who="who" :signing-in="signingIn" @new-service="go({ service: 'new', prefs: null })" @sign-in="signingIn = !signingIn" @sign-out="signOut" @prefs="go({ prefs: 'model' })" /></template>
             <template #ask>
               <div :class="layout === 'full' ? 'h-full min-h-[30rem]' : 'h-[max(28rem,calc(100dvh-16rem))]'"><KioskShell embedded /></div>
             </template>

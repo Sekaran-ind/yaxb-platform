@@ -28,7 +28,7 @@ async function unlock() {
 </script>
 
 <template>
-  <div class="absolute inset-0 z-40 grid place-items-center bg-black/30 p-4" role="dialog" aria-modal="true" aria-labelledby="unlock-title" @keydown.esc="emit('close')">
+  <div class="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4" role="dialog" aria-modal="true" aria-labelledby="unlock-title" @keydown.esc="emit('close')">
     <form class="card w-full max-w-xs space-y-3 p-5" @submit.prevent="unlock">
       <div class="flex items-center justify-between">
         <h3 id="unlock-title" class="flex items-center gap-2 font-semibold text-ink"><Lock class="size-4 text-brand" aria-hidden="true" /> Staff: leave front desk</h3>

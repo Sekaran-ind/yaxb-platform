@@ -4,7 +4,7 @@
 // (docs/ux/patterns.md, Players). Its anatomy, top to bottom in the full variant:
 //   controls  the one personal button, top right (profile and preferences / staff sign-in)
 //   orb       the surface's mark, glowing; `#orb` is its icon
-//   eyebrow   the surface's name ("Yaxb AI Kiosk", "YAXB Service Catalogue")
+//   eyebrow   the surface's name ("Anjal - Digital Kiosk (Your Own)", "Anjal - Service Catalogue")
 //   status    the "now playing" line, live (role="status"): what is happening now
 //   body      full only: what this surface shows while idle (the voice bars; the catalogue's steps)
 //   meta      one quiet line that scrolls only when it doesn't fit (the notebook; the counts)

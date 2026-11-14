@@ -37,19 +37,17 @@ import PlayerPanel from "./PlayerPanel.vue";
 import ServicesScreen from "./ServicesScreen.vue";
 import TranscriptPane from "./TranscriptPane.vue";
 import KioskPreferences from "./KioskPreferences.vue";
-import ProfileButton from "./ProfileButton.vue";
 import TranslatePane from "./TranslatePane.vue";
 import KioskFrame from "@/components/site/KioskFrame.vue";
-import { SlidersHorizontal } from "@lucide/vue";
 import { NATIVE } from "@/lib/platform";
 import { endSession, restricted, sessionEnds } from "@/composables/restricted";
 import { serviceDocuments } from "@/composables/notebook";
 import { loadedServices } from "@/composables/library";
 import ProfilePicker from "@/components/account/ProfilePicker.vue";
 import RestrictedUnlock from "./RestrictedUnlock.vue";
+import AskMePills from "./AskMePills.vue";
 import type { NotebookSource } from "@sekaran-ind/yaxb-core/notebook";
 import type { StorageId } from "@sekaran-ind/yaxb-core/settings";
-import { LogOut, Lock } from "@lucide/vue";
 import { formInput } from "@/composables/form-input";
 
 /**
@@ -97,6 +95,8 @@ const frontJourneys = computed(() =>
     .flatMap((s) => s.journeys.filter((j) => !j.roles?.initiate?.length || j.roles.initiate.includes("visitor")).map((j) => ({ id: j.id, title: j.title, summary: j.summary ?? null, service: s.meta.title }))),
 );
 const unlocking = ref(false);
+/** The conversations drawer, opened from its pill in the tab row. */
+const threadsOpen = ref(false);
 // A visit ends (End session, idle, or the front desk turned on): nothing of it stays.
 watch(sessionEnds, async () => {
   voiceOut.cancel();
@@ -144,6 +144,8 @@ const feedback = useFeedback();
 const voiceOut = useSpeechOutput();
 const failed = ref(false);
 const screen = ref<string | null>(kioskContent.screens.defaultScreen ?? null);
+// The conversations drawer belongs to Ask Me.
+watch(screen, (sc) => sc !== "transcript" && (threadsOpen.value = false));
 const journey = ref<string | null>(null);
 const journeyBusy = ref(false);
 const offline = ref<OfflineProgress | null>(null);
@@ -610,7 +612,21 @@ const fixedHeight = computed(() => true);
 <template>
   <!-- Measure the full available width (not the mini card), so Auto can grow back out of mini. -->
   <!-- Embedded (the catalogue's Ask Me): the conversation alone; its host gives it a height. -->
-  <div v-if="embedded" class="h-full min-h-0">
+  <div v-if="embedded" class="flex h-full min-h-0 flex-col gap-2">
+    <div class="flex justify-end"><AskMePills
+      :restricted="restricted"
+      :on-ask-me="screen === 'transcript' || props.embedded"
+      :can-new="chat.turns.value.length > 0"
+      :threads="nb.threads.value.length"
+      :drawer-open="threadsOpen"
+      :nickname="account.profile.value?.nickname ?? null"
+      @new="chat.reset"
+      @conversations="(screen = 'transcript'), (threadsOpen = !threadsOpen)"
+      @profile="openPrefs('profile')"
+      @prefs="openPrefs('language')"
+      @end-session="endSession"
+      @unlock="unlocking = true"
+    /></div>
     <TranscriptPane
       :turns="chat.turns.value"
       :busy="chat.busy.value"
@@ -640,6 +656,7 @@ const fixedHeight = computed(() => true);
       @journey-done="(id) => void logActivity('journey.completed', { journey: id })"
       @speak="(t) => voiceOut.speak(t)"
       :threads="nb.threads.value"
+                v-model:drawer="threadsOpen"
       :restricted="restricted"
       :front-services="settings.restricted.services"
       :allow-attach="!restricted || settings.restricted.attach"
@@ -647,24 +664,6 @@ const fixedHeight = computed(() => true);
       @open-thread="(id) => chat.open(id)"
     >
       <!-- Beside Conversations: the visitor's profile (sign in) and the kiosk's preferences. -->
-      <template #actions>
-        <!-- The front desk: end the visit, and (staff) leave Restricted Mode. -->
-        <template v-if="restricted">
-          <button type="button" class="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-sm text-ink ring-1 ring-gray-200 hover:bg-mist" @click="endSession">
-            <LogOut class="size-4" aria-hidden="true" /> End session
-          </button>
-          <button type="button" class="grid size-9 place-items-center rounded-full text-gray-400 hover:bg-mist hover:text-ink" aria-label="Staff: leave the front desk" title="Staff" @click="unlocking = true">
-            <Lock class="size-4" aria-hidden="true" />
-          </button>
-          <RestrictedUnlock v-if="unlocking" @close="unlocking = false" @unlocked="unlocking = false" />
-        </template>
-        <template v-else>
-          <ProfileButton tone="light" :nickname="account.profile.value?.nickname ?? null" :open="false" @toggle="openPrefs('profile')" />
-          <button type="button" class="grid size-9 place-items-center rounded-full text-gray-500 ring-1 ring-gray-200 hover:bg-mist hover:text-ink" aria-label="Preferences" title="Preferences" @click="openPrefs('language')">
-            <SlidersHorizontal class="size-4" aria-hidden="true" />
-          </button>
-        </template>
-      </template>
       <!-- The front desk starts with its services. -->
       <template v-if="restricted && frontJourneys.length" #empty>
         <ul class="mx-auto mt-6 grid max-w-xl gap-2 text-left @lg:grid-cols-2">
@@ -722,6 +721,23 @@ const fixedHeight = computed(() => true);
         :body-class="fixedHeight ? MINI_BODY : ''"
         @update:active="setScreen"
       >
+            <!-- The kiosk's own controls, as pills at the end of the tab row. -->
+            <template #trail>
+              <AskMePills
+                :restricted="restricted"
+                :on-ask-me="screen === 'transcript' || props.embedded"
+                :can-new="chat.turns.value.length > 0"
+                :threads="nb.threads.value.length"
+                :drawer-open="threadsOpen"
+                :nickname="account.profile.value?.nickname ?? null"
+                @new="chat.reset"
+                @conversations="(screen = 'transcript'), (threadsOpen = !threadsOpen)"
+                @profile="openPrefs('profile')"
+                @prefs="openPrefs('language')"
+                @end-session="endSession"
+                @unlock="unlocking = true"
+              />
+            </template>
             <template v-for="s in navScreens" :key="s.id" #[s.id]>
               <TranscriptPane
                 v-if="componentOf(s.id) === 'transcript'"
@@ -753,6 +769,7 @@ const fixedHeight = computed(() => true);
                 @journey-done="(id) => void logActivity('journey.completed', { journey: id })"
                 @speak="(t) => voiceOut.speak(t)"
                 :threads="nb.threads.value"
+                v-model:drawer="threadsOpen"
                 :restricted="restricted"
                 :front-services="settings.restricted.services"
                 :allow-attach="!restricted || settings.restricted.attach"
@@ -760,24 +777,6 @@ const fixedHeight = computed(() => true);
                 @open-thread="(id) => chat.open(id)"
               >
                 <!-- Beside Conversations: the visitor's profile (sign in) and the kiosk's preferences. -->
-                <template #actions>
-                  <!-- The front desk: end the visit, and (staff) leave Restricted Mode. -->
-                  <template v-if="restricted">
-                    <button type="button" class="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-sm text-ink ring-1 ring-gray-200 hover:bg-mist" @click="endSession">
-                      <LogOut class="size-4" aria-hidden="true" /> End session
-                    </button>
-                    <button type="button" class="grid size-9 place-items-center rounded-full text-gray-400 hover:bg-mist hover:text-ink" aria-label="Staff: leave the front desk" title="Staff" @click="unlocking = true">
-                      <Lock class="size-4" aria-hidden="true" />
-                    </button>
-                    <RestrictedUnlock v-if="unlocking" @close="unlocking = false" @unlocked="unlocking = false" />
-                  </template>
-                  <template v-else>
-                    <ProfileButton tone="light" :nickname="account.profile.value?.nickname ?? null" :open="false" @toggle="openPrefs('profile')" />
-                    <button type="button" class="grid size-9 place-items-center rounded-full text-gray-500 ring-1 ring-gray-200 hover:bg-mist hover:text-ink" aria-label="Preferences" title="Preferences" @click="openPrefs('language')">
-                      <SlidersHorizontal class="size-4" aria-hidden="true" />
-                    </button>
-                  </template>
-                </template>
                 <!-- The front desk starts with its services. -->
                 <template v-if="restricted && frontJourneys.length" #empty>
                   <ul class="mx-auto mt-6 grid max-w-xl gap-2 text-left @lg:grid-cols-2">
@@ -817,4 +816,6 @@ const fixedHeight = computed(() => true);
       </template>
     </KioskFrame>
   </div>
+  <!-- Staff leaving the front desk: over everything. -->
+  <RestrictedUnlock v-if="unlocking" @close="unlocking = false" @unlocked="unlocking = false" />
 </template>

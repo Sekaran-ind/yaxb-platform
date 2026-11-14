@@ -108,6 +108,8 @@ for (const [name, make] of [
       const pub = await svc.published();
       expect(pub.services).toHaveLength(1);
       expect(pub.services[0]!.journeys.map((j) => j.title)).toEqual(["Check in", "Triage"]);
+      // The latest revision's state goes with it: kiosks offer only accepted services to add.
+      expect(pub.services[0]!.state).toBe("draft");
 
       const trail = await svc.auditTrail(reviewer, entry.id);
       expect(trail.map((e) => e.action)).toEqual(["library.entry_saved", "library.entry_accepted", "library.entry_submitted", "library.entry_created"]);
