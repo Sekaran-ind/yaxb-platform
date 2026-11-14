@@ -154,7 +154,7 @@ export class P2PChat extends PeerLink {
 
   constructor(
     peerId: string,
-    private on: { state: (s: ChatState, error: string) => void; message: (text: string) => void },
+    private on: { state: (s: ChatState, error: string) => void; message: (text: string) => void; data?: (data: unknown) => void },
   ) {
     super(peerId, "chat");
   }
@@ -197,12 +197,22 @@ export class P2PChat extends PeerLink {
     ch.addEventListener("close", () => this.state === "connected" && this.set("waiting"));
     ch.addEventListener("message", (e) => {
       try {
-        const { text } = JSON.parse(String(e.data)) as { text?: unknown };
-        if (typeof text === "string" && text.length <= 4000) this.on.message(text);
+        const raw = String(e.data);
+        const msg = JSON.parse(raw) as { text?: unknown; data?: unknown };
+        if (typeof msg.text === "string" && msg.text.length <= 4000) this.on.message(msg.text);
+        // Data beside the chat: a case handed over (LIB-43), and its acknowledgement.
+        else if (msg.data !== undefined && raw.length <= 512 * 1024) this.on.data?.(msg.data);
       } catch {
         /* not a chat message */
       }
     });
+  }
+
+  /** Data on the same channel (a case handed over); only while connected. */
+  sendData(data: unknown): boolean {
+    if (this.state !== "connected" || this.channelRef?.readyState !== "open") return false;
+    this.channelRef.send(JSON.stringify({ data }));
+    return true;
   }
 
   /** Only while connected: otherwise nothing is sent, and the caller says so (TEAM-12). */

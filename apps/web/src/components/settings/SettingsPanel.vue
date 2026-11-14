@@ -18,6 +18,7 @@ import { storeFor } from "@/lib/browser/store";
 import { cn } from "@/lib/cn";
 import { LANGUAGES } from "@/lib/languages";
 import BoxConnection from "./BoxConnection.vue";
+import { casesCaps } from "@/composables/case-network";
 import ChoiceGrid from "./ChoiceGrid.vue";
 import ToggleRow from "./ToggleRow.vue";
 
@@ -37,6 +38,16 @@ const SECTIONS = [
 // The section comes from the kiosk's address (/kiosk?prefs=model), so a kiosk command can open one (CMD-1).
 // fill: take the parent's height (the Full and Mini kiosks), so the section list stays put.
 defineProps<{ fill?: boolean }>();
+
+/** Where requests are kept: devices first; central storage in the cloud is the paid plan. */
+const CASE_STORAGE = computed(() => [
+  { id: "devices" as const, label: "On our devices", description: "Kept on the devices that work on each request, handed over device to device, by the box or the relay." },
+  {
+    id: "central" as const,
+    label: "In the cloud",
+    description: casesCaps.value.central ? "Kept centrally, so any device can open them. Part of the paid plan." : "Part of the paid plan: this kiosk doesn't have it.",
+  },
+]);
 const route = useRoute();
 const sectionFrom = (q: unknown) => (typeof q === "string" && SECTIONS.some((x) => x.id === q) ? q : "profile");
 const section = ref(sectionFrom(route.query.prefs));
@@ -286,6 +297,27 @@ async function clearBrowser() {
             <span v-if="cleared" role="status" class="text-sm text-gray-600">{{ cleared }}</span>
           </div>
         </section>
+        <!-- Requests (cases, LIB-42..48): devices first; the cloud keeps service data only on the paid plan. -->
+        <section v-if="caps" class="card mt-4 p-5">
+          <h2 class="text-lg font-semibold text-ink">Where requests are kept</h2>
+          <p class="mt-1 mb-4 text-sm text-gray-500">Requests are journeys handed between people. They stay on the devices that work on them and go straight to the next person's device when they are online.</p>
+          <ChoiceGrid name="cases-storage" :options="CASE_STORAGE" :value="settings.cases.storage" @change="(storage) => updateSettings({ cases: { ...settings.cases, storage } })" />
+          <div class="mt-4 space-y-2">
+            <ToggleRow
+              label="Leave them on the organisation's box"
+              :description="settings.box.url ? 'When nobody who can take one is online, the box keeps it until they collect it (up to 30 days).' : 'Set up the box connection (Storage: Box) to use it.'"
+              :checked="settings.cases.useBox"
+              @change="(useBox) => updateSettings({ cases: { ...settings.cases, useBox } })"
+            />
+            <ToggleRow
+              label="Pass them through the cloud relay"
+              :description="casesCaps.relay ? `Only when there is no box: the relay keeps a request until it is collected or for ${casesCaps.relayHours} hours, then deletes it. Nothing stays in the cloud.` : 'This server has no cloud relay.'"
+              :checked="settings.cases.useRelay && casesCaps.relay"
+              :locked="!casesCaps.relay"
+              @change="(useRelay) => updateSettings({ cases: { ...settings.cases, useRelay } })"
+            />
+          </div>
+        </section>
       </template>
 
       <template #kiosk>
@@ -313,7 +345,7 @@ async function clearBrowser() {
                   <option v-for="v in languageVoices" :key="v.name" :value="v.name">{{ v.name }} ({{ v.lang }})</option>
                 </select>
                 <p class="mt-1 text-xs text-gray-500">Voices for {{ kioskLanguage.label }}, installed in this browser and system.</p>
-                <p v-if="!languageVoices.length" role="status" class="mt-2 rounded-md bg-warning/30 px-3 py-2 text-xs text-ink">
+                <p v-if="!languageVoices.length" role="status" class="caution mt-2 px-3 py-2 text-xs">
                   No {{ kioskLanguage.label }} voice is installed here, so answers in {{ kioskLanguage.label }} are shown but may not be read aloud. Install one in the system's language settings
                   (Windows: Settings → Time &amp; Language → Language → add {{ kioskLanguage.label }} with speech), or use Microsoft Edge, which offers online voices for every kiosk language.
                 </p>

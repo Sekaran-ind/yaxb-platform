@@ -5,7 +5,7 @@ import PageSection from "@/components/site/PageSection.vue";
 <template>
   <PageSection size="normal" title-tag="h1" title="Terms of Service & Privacy Policy">
     <div class="mx-auto max-w-3xl space-y-6 leading-relaxed">
-      <p class="rounded-md bg-warning/30 px-4 py-3 text-sm text-ink">Placeholder: replace with your reviewed legal text before going live.</p>
+      <p class="caution px-4 py-3 text-sm">Placeholder: replace with your reviewed legal text before going live.</p>
       <h2 class="text-xl font-semibold text-ink">Use of the AI Kiosk</h2>
       <p>The kiosk provides general information from curated sources. It is not a substitute for professional medical, legal or financial advice. In an emergency, contact your local emergency services.</p>
       <h2 class="text-xl font-semibold text-ink">What we process</h2>

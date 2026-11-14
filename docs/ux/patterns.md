@@ -19,6 +19,8 @@ then **staff**.
 | Who does what | role | permission, group |
 | Where services are designed and published | Service catalogue | library (a library is a folder inside it) |
 | The device people use | kiosk | app, terminal |
+| A journey handed between people, waiting for someone | request (with its reference, R-7KQ4MX) | case, ticket |
+| A request's history of actions and notes | "What happened" | thread, log, events |
 
 - Buttons are verbs that say what happens: "Submit for review", "Accept and publish", "Load", "Open in a kiosk".
 - Use sentence case. Use no YAML or ids in a visitor's path.
@@ -75,7 +77,8 @@ The panel of every kiosk frame is a player: one component, `components/site/Cons
 | Views of the same item, or of one list | A segmented control (`role="group"`, `aria-pressed`) | `components/site/SegmentedControl.vue` (web), `.yj-segment` (package). ServiceWorkspace (Design, YAML, Preview…), the moderation queue and answer reviews |
 | Something shown beside the work, on or off | A toggle button with `aria-pressed` ("Show preview" / "Hide preview") | The designer's live preview |
 | To another surface | A link with an icon: `ExternalLink` (another page) or a kiosk icon | "Open in a kiosk", "Open the kiosk", "Design a service in the catalogue →" |
-| A journey's progress (visitor) | Chips for the screens done and the current one | `JourneyPanel.vue`, `JourneyRunner.vue` |
+| A journey's progress (visitor) | Chips for the screens done and the current one. Only screens that asked something and services that ran: decisions are the journey's workings and the result has its own card, so neither shows (`progressOf` in yaxb-journeys, also used by `summarizeRun`) | `JourneyPanel.vue`, `JourneyRunner.vue`, CaseView's "The answers so far" |
+| A request's next action | One card under the request's title: what is yours to do in a sentence, the one primary (Carry on, or Mark it done), and Decline quiet and last. Nothing to do: a mist note saying who has it now | `CaseView.vue` |
 
 ### The adaptive nav's modes
 
@@ -112,7 +115,9 @@ What each kiosk layout means for its screens: Full and Mini give the nav a fixed
 | A collection of things | Cards in a container-sized grid (`@lg:grid-cols-2`, `@4xl:grid-cols-3`). A card shows the title, then one line of facts, then a summary, then its actions. |
 | Facts about one thing | A definition list (`dl`): label, then value |
 | Records over time | A table, newest first (Audit), or a list of disclosures (History) |
-| State | A status chip with one word and one colour per state everywhere: Draft (mist), In review (info), Published (success), Rejected (danger), Archived (mist, muted). Component: `components/catalogue/EntryStatus.vue`. |
+| State | A status chip with one word and one colour per state everywhere: Draft (mist), In review (info), Published (success), Rejected (danger), Archived (mist, muted). Component: `components/catalogue/EntryStatus.vue`. Requests have their own four: Waiting (info), To close (info), Done (success), Declined (danger), `components/kiosk/RequestStatus.vue`; the chip is followed by where it stands in words, from the reader's side ("Waiting for you: Your T-shirt", "Waiting for Organiser"). |
+| A conversation (a request's "What happened", the Service Designer conversation) | Oldest first, like a chat, with the composer at its end: a visible label, a textarea at full width, then a row with the help line on the left and the send button (a verb: "Add the note", "Send") on the right. The person reading is "You"; a visitor is "Visitor", never "Guest". |
+| Requests on Services | Work waiting for a signed-in member's roles comes first on Services ("Waiting for you", with a count badge). Everything else about requests sits lower, after the catalogue's services: "Check a request" by reference (a visible label, an input sized to the reference) for anyone, then "You started" and "Other open requests" for members. A visitor never gets a list: kiosks are shared. Component: `RequestList.vue` (cards). |
 | Counts | Badges on nav items, stat tiles on summaries (`ServiceSummary`), and the player's meta line |
 | Who does what | Role chips. For assignments, a role × journey table (`RolesPanel`). |
 | Nothing yet | An empty state in `bg-mist` that says what to do next ("Nothing is published yet. Design a service and send it for review.") |
@@ -123,9 +128,11 @@ What each kiosk layout means for its screens: Full and Mini give the nav a fixed
 |---|---|
 | Guidance | Help text under the field (`.yj-help`, `text-xs text-gray-500`) |
 | An action's result | A note with `role="status"` ("Saved as a new revision.", "Sent for review.") |
+| A caution (something to know before going on, not an error) | The `caution` utility: a yellow bar and tint with ink text and an ink icon (`AlertTriangle`). Never yellow text or a yellow icon: pale yellow on a light surface fails contrast. `role="status"` when it appears after an action ("Some roles have nobody to act yet" before loading a service, with "Load anyway" and Cancel) |
 | An error | An alert box with `role="alert"` (`bg-danger/10 text-red-800`) that says what happened and how to fix it |
 | A problem in content | A list of problems with the level, the line and the message. Clicking one goes to it. |
 | A destructive action | An inline confirmation that names the thing ("Archive “Clinic visit”? It leaves the catalogue and every kiosk."): `ConfirmAction` from yaxb-journeys, everywhere (web and package). The button opens a panel in its place with the action (danger) and Cancel; focus moves to Cancel, Escape cancels and returns focus. `typeToConfirm` for what can't be undone and matters most (erasing a profile); `skip` when nothing would be lost. Never `window.confirm`. |
+| Declining or closing with a reason | An inline form in place of the buttons that names the thing ("Why you decline R-7KQ4MX"), the reason required for a decline, and Cancel. It counts as the confirmation; no second `ConfirmAction` |
 | Unavailable | Say why (sign in, the role needed, "Save first") instead of hiding the control. A disabled button gets a visible reason next to it (`aria-describedby`), not a tooltip. A hidden action gets a note: "Waiting for a reviewer. Your roles (Moderator, Curator) can't publish; ask an administrator for the Reviewer role.", "This is your own service: another reviewer publishes it.", "Only an administrator adds or removes organisation roles." |
 
 ## Controls
@@ -175,3 +182,10 @@ What each kiosk layout means for its screens: Full and Mini give the nav a fixed
   - The YAML editor is CodeMirror 6, lazy-loaded (not Ace: see `docs/ux/kiosk-and-catalogue.md`).
   - The kiosk and the catalogue stay two surfaces (see `docs/ux/kiosk-and-catalogue.md`).
   - Both frame panels are players (`ConsolePlayer`): the catalogue's information card became `CataloguePlayer`, with the open service as "now playing", the counts as meta, and New service / Open the kiosk as the player's controls.
+- 2026-11 (requests and the designer conversation):
+  - Requests on Services: "Waiting for you" first for members with work; "Check a request" and the other lists lower, after the services, so a visitor with nothing sees services first.
+  - One request status chip (`RequestStatus`) and one card (`RequestList`); one next-action card in CaseView with a single primary; Refresh beside the back link.
+  - One caution style (`caution`) replaces five tints of `bg-warning` (10 to 30%) and the yellow icons.
+  - Decisions never show as progress chips (they showed their id, "route").
+  - A journey that ends and goes to those who close it still shows its result to the visitor, above the reference.
+  - Conversations read oldest first with the composer at the end; the composer's button sits under the textarea, not beside it.

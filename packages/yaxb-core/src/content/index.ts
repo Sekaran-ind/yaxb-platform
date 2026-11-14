@@ -25,7 +25,10 @@ export const SCREEN_COMPONENTS = ["transcript", "services", "notebook", "account
 
 export type Skill = { name: string; description: string; markdown: string };
 
-const raw = contentJson as { skills: { name: string; markdown: string }[]; journeys: string[]; questionnaires?: string[]; catalogue?: string[]; services: string[]; screens: string };
+const raw = contentJson as { skills: { name: string; markdown: string }[]; journeys: string[]; questionnaires?: string[]; catalogue?: string[]; designer?: string[]; services: string[]; screens: string };
+
+/** A few-shot example for the Service Designer agent (content/designer): a narrative and the service YAML it becomes. */
+export type DesignerSeed = { id: string; narrative: string; yaml: string };
 
 /** A service the Service Catalogue is seeded with (content/catalogue): its YAML, and what it compiles to. */
 export type CatalogueSeed = { yaml: string; service: Service; journeys: Journey[] };
@@ -84,7 +87,20 @@ function build() {
     else problems.push(...b.problems.filter((p) => p.level === "error").map((p) => `catalogue: ${p.id ?? ""} ${p.message}`));
   }
 
-  return { skills, questionnaires, journeys, services, screens, catalogue, problems };
+  // The Service Designer's few-shot examples: each must compile like a catalogue service.
+  const designer: DesignerSeed[] = [];
+  for (const src of raw.designer ?? []) {
+    const doc = load(src) as { narrative?: unknown; service?: unknown } | null;
+    if (typeof doc?.narrative !== "string" || typeof doc.service !== "string") {
+      problems.push("designer: an example needs narrative and service, both text");
+      continue;
+    }
+    const b = compileBundle(doc.service, { services: JOURNEY_SERVICES });
+    if (b.ok && b.services[0]) designer.push({ id: b.services[0].id, narrative: doc.narrative.trim(), yaml: doc.service });
+    else problems.push(...b.problems.filter((p) => p.level === "error").map((p) => `designer: ${p.id ?? ""} ${p.message}`));
+  }
+
+  return { skills, questionnaires, journeys, services, screens, catalogue, designer, problems };
 }
 
 /** The compiled content. `problems` is empty for shippable content (a test checks it). */

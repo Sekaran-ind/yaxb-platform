@@ -126,6 +126,14 @@
     "./library": {
       "types": "./dist/library/index.d.ts",
       "default": "./dist/library/index.js"
+    },
+    "./designer": {
+      "types": "./dist/designer/index.d.ts",
+      "default": "./dist/designer/index.js"
+    },
+    "./cases": {
+      "types": "./dist/cases/index.d.ts",
+      "default": "./dist/cases/index.js"
     }
   },
   "files": [

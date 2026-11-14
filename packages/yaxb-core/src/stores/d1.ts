@@ -12,6 +12,8 @@ import {
 import { feedbackSchema, newFeedbackItem, type FeedbackItem, type FeedbackStore } from "../feedback/index.js";
 import type { AuditEvent, Moderator, ModeratorStore } from "../moderators/index.js";
 import type { CustomRole, EntryRevision, Library, LibraryEntry, LibraryStore } from "../library/index.js";
+import type { Beacon, Case, CaseEvent, CaseStore, CaseSummary, Envelope, Mailbox } from "../cases/index.js";
+import { MAX_LESSONS, MAX_THREAD, type DesignerStore, type DesignLesson, type DesignMessage, type DesignRun } from "../designer/index.js";
 import type { Kv, KvItem } from "./kv.js";
 
 export interface D1Like {
@@ -352,6 +354,183 @@ export function createD1LibraryStore(db: D1Like): LibraryStore {
         .prepare("INSERT INTO library_revisions (entry_id, revision, yaml, at, by_id, by_name, note) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")
         .bind(r.entry_id, r.revision, r.yaml, r.at, r.by_id, r.by_name, r.note)
         .run();
+    },
+  };
+}
+
+/** The Service Designer's drafts and lessons (migration 0008). */
+export function createD1DesignerStore(db: D1Like): DesignerStore {
+  const RUN_COLS = "id, owner_id, title, draft_yaml, ok, entry_id, outcome, created_at";
+  const LESSON_COLS = "id, text, source, decision, entry_id, run_id, created_at, created_by_name";
+  const run = (r: (Omit<DesignRun, "ok"> & { ok: number }) | null): DesignRun | null => (r ? { ...r, ok: Boolean(r.ok) } : null);
+  const MSG_COLS = "id, thread_id, entry_id, author_id, author_name, role, text, yaml, ok, run_id, created_at";
+  type MsgRow = Omit<DesignMessage, "ok"> & { ok: number | null };
+  return {
+    async addMessage(m) {
+      await db
+        .prepare(`INSERT INTO design_messages (${MSG_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`)
+        .bind(m.id, m.thread_id, m.entry_id, m.author_id, m.author_name, m.role, m.text, m.yaml, m.ok === null ? null : m.ok ? 1 : 0, m.run_id, m.created_at)
+        .run();
+    },
+    async messages(id) {
+      // In the order written (two messages can share a millisecond), the newest MAX_THREAD.
+      const rows = await db.prepare(`SELECT ${MSG_COLS} FROM design_messages WHERE thread_id = ?1 ORDER BY created_at, rowid`).bind(id).all<MsgRow>();
+      return rows.results.slice(-MAX_THREAD).map((r) => ({ ...r, ok: r.ok === null ? null : Boolean(r.ok) }));
+    },
+    threadOfEntry: async (entryId) => (await db.prepare("SELECT thread_id FROM design_messages WHERE entry_id = ?1 ORDER BY created_at LIMIT 1").bind(entryId).first<{ thread_id: string }>())?.thread_id ?? null,
+    async threadInfo(id) {
+      const r = await db
+        .prepare("SELECT (SELECT author_id FROM design_messages WHERE thread_id = ?1 ORDER BY created_at LIMIT 1) AS owner_id, (SELECT entry_id FROM design_messages WHERE thread_id = ?1 AND entry_id IS NOT NULL LIMIT 1) AS entry_id")
+        .bind(id)
+        .first<{ owner_id: string | null; entry_id: string | null }>();
+      return r?.owner_id ? { owner_id: r.owner_id, entry_id: r.entry_id } : null;
+    },
+    async linkThread(id, entryId) {
+      await db.prepare("UPDATE design_messages SET entry_id = ?2 WHERE thread_id = ?1").bind(id, entryId).run();
+    },
+    async putRun(r) {
+      await db
+        .prepare(
+          `INSERT INTO design_runs (${RUN_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT (id) DO UPDATE SET title = ?3, draft_yaml = ?4, ok = ?5, entry_id = ?6, outcome = ?7`,
+        )
+        .bind(r.id, r.owner_id, r.title, r.draft_yaml, r.ok ? 1 : 0, r.entry_id, r.outcome, r.created_at)
+        .run();
+    },
+    run: async (id) => run(await db.prepare(`SELECT ${RUN_COLS} FROM design_runs WHERE id = ?1`).bind(id).first()),
+    runForEntry: async (entryId) => run(await db.prepare(`SELECT ${RUN_COLS} FROM design_runs WHERE entry_id = ?1 ORDER BY created_at DESC LIMIT 1`).bind(entryId).first()),
+    async lessons(limit = MAX_LESSONS) {
+      return (await db.prepare(`SELECT ${LESSON_COLS} FROM design_lessons ORDER BY created_at DESC LIMIT ?1`).bind(limit).all<DesignLesson>()).results;
+    },
+    async putLesson(l) {
+      await db
+        .prepare(`INSERT INTO design_lessons (${LESSON_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT (id) DO UPDATE SET text = ?2`)
+        .bind(l.id, l.text, l.source, l.decision, l.entry_id, l.run_id, l.created_at, l.created_by_name)
+        .run();
+      // Keep the newest MAX_LESSONS.
+      await db.prepare("DELETE FROM design_lessons WHERE id NOT IN (SELECT id FROM design_lessons ORDER BY created_at DESC LIMIT ?1)").bind(MAX_LESSONS).run();
+    },
+    async removeLesson(id) {
+      const had = await db.prepare("SELECT id FROM design_lessons WHERE id = ?1").bind(id).first();
+      await db.prepare("DELETE FROM design_lessons WHERE id = ?1").bind(id).run();
+      return Boolean(had);
+    },
+  };
+}
+
+/** Cases and their threads (migration 0009). */
+export function createD1CaseStore(db: D1Like): CaseStore {
+  const SUMMARY =
+    "id, ref, entry_id, service_id, service_title, journey_id, journey_title, revision, status, waiting_step, waiting_role, finish_roles, roles, started_by, started_by_name, created_at, updated_at, closed_at, result, starter_device, assignee, assignee_name";
+  type Row = Omit<Case, "finish_roles" | "roles" | "result" | "run" | "journey"> & { finish_roles: string; roles: string; result: string | null; run?: string; journey?: string };
+  const summary = (r: Row): CaseSummary => {
+    const { run: _r, journey: _j, ...rest } = r;
+    return { ...rest, finish_roles: JSON.parse(r.finish_roles), roles: JSON.parse(r.roles), result: r.result ? JSON.parse(r.result) : null };
+  };
+  const full = (r: Row | null): Case | null => (r ? { ...summary(r), run: JSON.parse(r.run!), journey: JSON.parse(r.journey!) } : null);
+  return {
+    async put(c) {
+      await db
+        .prepare(
+          `INSERT INTO cases (${SUMMARY}, run, journey) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?22, ?23, ?24, ?20, ?21)
+           ON CONFLICT (id) DO UPDATE SET status = ?9, waiting_step = ?10, waiting_role = ?11, updated_at = ?17, closed_at = ?18, result = ?19, run = ?20, assignee = ?23, assignee_name = ?24`,
+        )
+        .bind(
+          c.id,
+          c.ref,
+          c.entry_id,
+          c.service_id,
+          c.service_title,
+          c.journey_id,
+          c.journey_title,
+          c.revision,
+          c.status,
+          c.waiting_step,
+          c.waiting_role,
+          JSON.stringify(c.finish_roles),
+          JSON.stringify(c.roles),
+          c.started_by,
+          c.started_by_name,
+          c.created_at,
+          c.updated_at,
+          c.closed_at,
+          c.result ? JSON.stringify(c.result) : null,
+          JSON.stringify(c.run),
+          JSON.stringify(c.journey),
+          c.starter_device ?? null,
+          c.assignee ?? null,
+          c.assignee_name ?? null,
+        )
+        .run();
+    },
+    get: async (id) => full(await db.prepare(`SELECT ${SUMMARY}, run, journey FROM cases WHERE id = ?1`).bind(id).first<Row>()),
+    byRef: async (ref) => full(await db.prepare(`SELECT ${SUMMARY}, run, journey FROM cases WHERE ref = ?1`).bind(ref).first<Row>()),
+    async list({ open, startedBy, limit }) {
+      const where = [open ? "status IN ('waiting', 'to_finish')" : null, startedBy !== undefined ? "started_by = ?2" : null].filter(Boolean).join(" AND ") || "1 = 1";
+      const q = db.prepare(`SELECT ${SUMMARY} FROM cases WHERE ${where} ORDER BY updated_at DESC LIMIT ?1`);
+      const rows = await (startedBy !== undefined ? q.bind(limit, startedBy) : q.bind(limit)).all<Row>();
+      return rows.results.map(summary);
+    },
+    async addEvent(e) {
+      await db
+        .prepare("INSERT INTO case_events (id, case_id, at, actor_id, actor_name, kind, step, text) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)")
+        .bind(e.id, e.case_id, e.at, e.actor_id, e.actor_name, e.kind, e.step, e.text)
+        .run();
+    },
+    events: async (caseId) => (await db.prepare("SELECT id, case_id, at, actor_id, actor_name, kind, step, text FROM case_events WHERE case_id = ?1 ORDER BY at, rowid").bind(caseId).all<CaseEvent>()).results,
+  };
+}
+
+/**
+ * The cloud relay (migration 0011), transient: an envelope stays only until it is picked up or
+ * expires. Every call first deletes what has expired; picking one up deletes its body at once,
+ * keeping a stub (who took it) only until it would have expired, so its sender can see it arrived.
+ */
+export function createD1Relay(db: D1Like, now = () => new Date()): Mailbox {
+  const purge = async () => {
+    const t = now().toISOString();
+    await db.prepare("DELETE FROM relay_envelopes WHERE expires_at <= ?1").bind(t).run();
+    await db.prepare("DELETE FROM relay_beacons WHERE expires_at <= ?1").bind(t).run();
+  };
+  type Row = { id: string; kind: string; to_roles: string | null; to_member: string | null; to_device: string | null; body: string | null; picked_by: string | null; expires_at: string };
+  return {
+    async post(e) {
+      await purge();
+      await db
+        .prepare("INSERT INTO relay_envelopes (id, kind, to_roles, to_member, to_device, from_id, case_id, body, created_at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)")
+        .bind(e.id, e.kind, e.to.roles ? JSON.stringify(e.to.roles) : null, e.to.member ?? null, e.to.device ?? null, e.from.id, e.case_id, JSON.stringify(e), e.created_at, e.expires_at)
+        .run();
+    },
+    async inbox(to) {
+      await purge();
+      const rows = await db.prepare("SELECT id, kind, to_roles, to_member, to_device, body, picked_by, expires_at FROM relay_envelopes WHERE picked_by IS NULL ORDER BY created_at LIMIT 200").all<Row>();
+      return rows.results
+        .filter((r) => (r.to_member && r.to_member === to.member) || (r.to_device && r.to_device === to.device) || (r.to_roles && (JSON.parse(r.to_roles) as string[]).some((x) => to.roles.includes(x))))
+        .map((r) => JSON.parse(r.body!) as Envelope);
+    },
+    async pick(id, by) {
+      await purge();
+      const r = await db.prepare("SELECT picked_by FROM relay_envelopes WHERE id = ?1").bind(id).first<{ picked_by: string | null }>();
+      if (!r || r.picked_by) return false;
+      await db.prepare("UPDATE relay_envelopes SET picked_by = ?2, body = NULL WHERE id = ?1 AND picked_by IS NULL").bind(id, by).run();
+      return true;
+    },
+    async status(ids) {
+      const out: Record<string, { state: "waiting" | "delivered" | "expired"; picked_by: string | null }> = {};
+      for (const id of ids.slice(0, 100)) {
+        const r = await db.prepare("SELECT picked_by, expires_at FROM relay_envelopes WHERE id = ?1").bind(id).first<{ picked_by: string | null; expires_at: string }>();
+        out[id] = !r ? { state: "expired", picked_by: null } : r.picked_by ? { state: "delivered", picked_by: r.picked_by } : r.expires_at <= now().toISOString() ? { state: "expired", picked_by: null } : { state: "waiting", picked_by: null };
+      }
+      return out;
+    },
+    async putBeacon(b) {
+      await db
+        .prepare("INSERT INTO relay_beacons (case_id, body, updated_at, expires_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (case_id) DO UPDATE SET body = ?2, updated_at = ?3, expires_at = ?4")
+        .bind(b.case_id, JSON.stringify(b), b.updated_at, b.expires_at)
+        .run();
+    },
+    async beacons() {
+      await purge();
+      return (await db.prepare("SELECT body FROM relay_beacons ORDER BY updated_at LIMIT 500").all<{ body: string }>()).results.map((r) => JSON.parse(r.body) as Beacon);
     },
   };
 }

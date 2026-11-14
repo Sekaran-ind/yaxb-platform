@@ -141,7 +141,7 @@ onMounted(async () => {
             </div>
           </div>
           <div class="pointer-events-none absolute inset-x-4 bottom-4 bg-linear-to-t from-surface from-60% to-transparent pt-8">
-            <p v-if="notice" role="alert" class="pointer-events-auto mb-2 rounded-lg bg-warning/25 px-3 py-1.5 text-xs text-ink">{{ notice }}</p>
+            <p v-if="notice" role="alert" class="caution pointer-events-auto mb-2 px-3 py-1.5 text-xs">{{ notice }}</p>
             <form class="pointer-events-auto flex items-center gap-1.5 rounded-[1.75rem] border border-gray-200 bg-surface py-1.5 pr-1.5 pl-5 shadow-[var(--shadow-lift)] focus-within:border-gray-400" @submit.prevent="submit">
               <label for="team-message" class="sr-only">Message {{ peer.name }}</label>
               <input id="team-message" v-model="draft" class="min-w-0 flex-1 bg-transparent py-2.5 text-ink outline-none placeholder:text-gray-400" :placeholder="`Message ${peer.name}`" maxlength="4000" autocomplete="off" />

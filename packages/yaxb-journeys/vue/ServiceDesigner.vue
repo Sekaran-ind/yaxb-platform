@@ -44,15 +44,15 @@ watch(
   { deep: true },
 );
 watch(d, (v) => emit("update:modelValue", clone(v)), { deep: true });
-// A new service's id follows its name until someone sets it (under "More").
+// A new service's id follows its name until someone sets it (under "More"). Set in the same edit as
+// the name: a separate watcher could be undone by the parent's copy coming back.
 const fresh = props.modelValue.id === "new-service";
-watch(
-  () => d.value.title,
-  (title, before) => {
-    if (!fresh || props.readonly) return;
-    if (d.value.id === "new-service" || d.value.id === idFromName(before ?? "")) d.value.id = idFromName(title) || "new-service";
-  },
-);
+function setTitle(title: string) {
+  const before = d.value.title;
+  d.value.title = title;
+  if (!fresh || props.readonly) return;
+  if (d.value.id === "new-service" || d.value.id === idFromName(before)) d.value.id = idFromName(title) || "new-service";
+}
 
 // ---- sizes: the designer measures itself (it sits in any host) -------------------------------
 const root = ref<HTMLElement | null>(null);
@@ -205,7 +205,7 @@ const badge = (k: StepKey) => (k === "journeys" ? String(d.value.journeys.length
           <div class="yj-form-grid">
             <div class="yj-span-2">
               <label :for="id('title')" class="yj-field-label">Service name <span class="yj-required" aria-hidden="true">*</span></label>
-              <input :id="id('title')" v-model="d.title" class="yj-input" placeholder="Clinic visit" />
+              <input :id="id('title')" :value="d.title" class="yj-input" placeholder="Clinic visit" @input="setTitle(($event.target as HTMLInputElement).value)" />
             </div>
             <div class="yj-span-2">
               <label :for="id('summary')" class="yj-field-label">What people can do with it</label>

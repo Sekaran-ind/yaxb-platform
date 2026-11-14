@@ -3,7 +3,10 @@
 // side panel), or edit its YAML; try it in the preview; read its summary, audit trail and history.
 // Its author (or an editor) saves, submits and archives it; reviewers accept or reject it. The YAML
 // is what is saved: the designer writes it. A published service someone else owns opens read-only,
-// from the catalogue.
+// from the catalogue. The Service Designer agent is a conversation kept with the service
+// (DesignerChat, LIB-39..41): a new service can start from a description, and any service can be
+// changed by asking, during review too. The entry created from a draft remembers it, so the agent
+// learns from its review. A new service not created yet is kept in this browser until it is.
 import { JOURNEY_SERVICES } from "@sekaran-ind/yaxb-core/content";
 import type { EntryRevision, Library, LibraryEntry, LibraryPermissions } from "@sekaran-ind/yaxb-core/library";
 import {
@@ -22,6 +25,7 @@ import {
 import { ConfirmAction, FlowPreview, ServiceDesigner, ServiceSummary, YamlEditor } from "@sekaran-ind/yaxb-journeys/vue";
 import { Archive, ArchiveRestore, ArrowLeft, Check, ExternalLink, History, Loader2, Save, Send, X } from "@lucide/vue";
 import { computed, ref, shallowRef, watch } from "vue";
+import DesignerChat from "./DesignerChat.vue";
 import EntryStatus from "./EntryStatus.vue";
 import ServiceAudit from "./ServiceAudit.vue";
 import SegmentedControl from "@/components/site/SegmentedControl.vue";
@@ -55,6 +59,53 @@ const error = ref<string | null>(null);
 const notice = ref<string | null>(null);
 const busy = ref(false);
 
+// ---- the Service Designer conversation ------------------------------------------------------------
+/** The draft the editor holds, so the entry created from it is linked to it. */
+const draftRun = ref<string | null>(null);
+/** A new service's conversation, linked to the entry when it is created. */
+const threadId = ref<string | null>(null);
+const STARTER = serviceTemplate("new-service");
+function applyDraft(next: string, run: string | null) {
+  yaml.value = next;
+  if (run) draftRun.value = run;
+  openView(view.value === "design" || view.value === "yaml" || view.value === "preview" ? view.value : "design");
+}
+
+// A new service isn't lost on a reload: it is kept in this browser (with its conversation) until created.
+const UNSAVED = "yaxb.catalogue.unsaved";
+type Unsaved = { yaml: string; thread: string | null; run: string | null };
+function readUnsaved(): Unsaved | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(UNSAVED) ?? "null") as Unsaved | null;
+    return v && typeof v.yaml === "string" ? v : null;
+  } catch {
+    return null;
+  }
+}
+function keepUnsaved() {
+  if (props.entryId || readOnlyCopy.value) return;
+  try {
+    if (yaml.value === STARTER && !threadId.value) localStorage.removeItem(UNSAVED);
+    else localStorage.setItem(UNSAVED, JSON.stringify({ yaml: yaml.value, thread: threadId.value, run: draftRun.value } satisfies Unsaved));
+  } catch {
+    /* private mode */
+  }
+}
+const forgetUnsaved = () => {
+  try {
+    localStorage.removeItem(UNSAVED);
+  } catch {
+    /* private mode */
+  }
+};
+function startOver() {
+  forgetUnsaved();
+  yaml.value = STARTER;
+  threadId.value = draftRun.value = null;
+  notice.value = null;
+  openView("design");
+}
+
 type View = "design" | "yaml" | "preview" | "summary" | "audit" | "history";
 const view = ref<View>("design");
 const dirty = computed(() => yaml.value !== saved.value);
@@ -67,8 +118,12 @@ async function load() {
     entry.value = null;
     revisions.value = [];
     saved.value = "";
-    yaml.value = serviceTemplate("new-service");
+    const kept = readUnsaved();
+    yaml.value = kept?.yaml ?? STARTER;
+    threadId.value = kept?.thread ?? null;
+    draftRun.value = kept?.run ?? null;
     mayChange.value = true;
+    if (kept && kept.yaml !== STARTER) notice.value = "Your new service is as you left it: it stays in this browser until you create it.";
     openView("design");
     return;
   }
@@ -148,8 +203,14 @@ async function act(fn: () => Promise<void>, done?: string) {
 const save = () =>
   act(async () => {
     if (!entry.value) {
-      const r = await api<{ entry: LibraryEntry }>("/api/library/services", { yaml: yaml.value, library: libraryChoice.value });
+      const r = await api<{ entry: LibraryEntry }>("/api/library/services", {
+        yaml: yaml.value,
+        library: libraryChoice.value,
+        ...(draftRun.value ? { design: draftRun.value } : {}),
+        ...(threadId.value ? { thread: threadId.value } : {}),
+      });
       saved.value = yaml.value;
+      forgetUnsaved();
       emit("created", r.entry.id);
       return;
     }
@@ -226,6 +287,10 @@ const VIEWS = computed<{ value: View; label: string }[]>(() => [
   ...(entry.value ? [{ value: "audit" as const, label: "Audit" }, { value: "history" as const, label: `History (${revisions.value.length})` }] : []),
 ]);
 
+watch([yaml, threadId], keepUnsaved);
+/** Reviewers of a service in review can talk to the designer too (suggestions); so can whoever may change it. */
+const showChat = computed(() => !readOnlyCopy.value && (editable.value || canReview.value));
+
 // Last: load() fills refs declared above (an immediate watcher runs during setup).
 watch(
   () => props.entryId,
@@ -265,6 +330,21 @@ watch(
     <div v-if="me.guest && !entry && !readOnlyCopy" class="rounded-lg bg-mist px-3 py-2 text-sm text-gray-700">
       You're designing as a guest: your services stay with this browser. A reviewer publishes them for kiosks.
     </div>
+
+    <!-- The Service Designer: a conversation kept with the service (new, draft, sent back or in review). -->
+    <DesignerChat
+      v-if="showChat"
+      :entry-id="entry?.id ?? null"
+      :thread-id="entry ? null : threadId"
+      :yaml="yaml"
+      :pristine="yaml === STARTER"
+      :editable="editable"
+      @apply="applyDraft"
+      @thread="(id) => (threadId = id)"
+    />
+    <p v-if="!entry && editable && !readOnlyCopy && (yaml !== STARTER || threadId)" class="-mt-2 text-right">
+      <button type="button" class="btn-ghost h-7 px-2 text-xs" @click="startOver">Start over</button>
+    </p>
 
     <div class="flex flex-wrap items-center justify-between gap-2">
       <SegmentedControl :model-value="view" :options="VIEWS" label="View" @update:model-value="openView" />

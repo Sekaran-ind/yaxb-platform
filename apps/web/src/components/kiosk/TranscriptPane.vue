@@ -86,7 +86,7 @@ function submit() {
       <button v-if="turns.length" type="button" class="inline-flex items-center gap-1 hover:text-ink" @click="emit('reset')"><RotateCcw class="size-3.5" aria-hidden="true" /> New conversation</button>
     </div>
 
-    <p v-if="noProvider" role="alert" class="mb-3 rounded-md bg-warning/30 px-3 py-2 text-sm text-ink">
+    <p v-if="noProvider" role="alert" class="caution mb-3 px-3 py-2 text-sm">
       No AI provider is configured. Add a provider key as a Worker secret (locally: <code>apps/web/.dev.vars</code>).
     </p>
 

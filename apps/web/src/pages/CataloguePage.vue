@@ -7,6 +7,7 @@
 //   Review         what is waiting for a reviewer
 //   Roles          the built-in roles, the organisation's, and those services define
 //   Libraries      how members organise services
+//   Designer       what the Service Designer agent has learnt (administrators)
 // Place in the page is in the address: ?view=…&service=<id>|new.
 import type { Library, LibraryEntry, LibraryPermissions } from "@sekaran-ind/yaxb-core/library";
 import { roleLabel, type Role } from "@sekaran-ind/yaxb-journeys";
@@ -19,6 +20,7 @@ import CataloguePlayer from "@/components/catalogue/CataloguePlayer.vue";
 import KioskFrame from "@/components/site/KioskFrame.vue";
 import EntryStatus from "@/components/catalogue/EntryStatus.vue";
 import { useWidth } from "@/composables/width";
+import DesignerLessons from "@/components/catalogue/DesignerLessons.vue";
 import ServiceWorkspace from "@/components/catalogue/ServiceWorkspace.vue";
 import ModeratorSignIn from "@/components/moderation/ModeratorSignIn.vue";
 import { catalogue, loadCatalogue, roleCatalogue, type CatalogueService } from "@/composables/library";
@@ -42,7 +44,7 @@ const signingIn = ref(false);
 
 const q = (k: string) => (typeof route.query[k] === "string" ? (route.query[k] as string) : null);
 const service = computed(() => q("service"));
-const VIEWS = ["catalogue", "mine", "review", "roles", "libraries"] as const;
+const VIEWS = ["catalogue", "mine", "review", "roles", "libraries", "designer"] as const;
 type View = (typeof VIEWS)[number];
 const view = computed<View>(() => ((VIEWS as readonly string[]).includes(q("view") ?? "") ? (q("view") as View) : "catalogue"));
 function go(patch: Record<string, string | null>) {
@@ -143,6 +145,7 @@ const navScreens = computed<NavScreen[]>(() => [
   ...(can.value?.view ? [{ id: "review", label: "Review", icon: "message-square", badge: overview.value?.queue.length ? String(overview.value.queue.length) : undefined }] : []),
   { id: "roles", label: "Roles", icon: "user-round" },
   ...(can.value?.view ? [{ id: "libraries", label: "Libraries", icon: "notebook" }] : []),
+  ...(can.value?.manage ? [{ id: "designer", label: "AI designer", icon: "sparkles" }] : []),
 ]);
 const who = computed(() => (me.value ? { name: me.value.name, guest: me.value.guest, roles: me.value.roles.map((r) => roleLabel(r, allRoles.value)).join(", ") } : null));
 const counts = computed(() => ({ published: catalogue.value.length, mine: overview.value?.services.length ?? 0, review: can.value?.view ? (overview.value?.queue.length ?? 0) : null }));
@@ -352,6 +355,9 @@ watch(signingIn, (v) => !v && void load());
             <p v-else class="text-xs text-gray-500">Moderators, curators and administrators create and rename libraries.</p>
             <p v-if="can.edit && !can.manage" class="text-xs text-gray-500">Only an administrator archives or restores a library.</p>
           </section>
+            </template>
+            <template #designer>
+              <DesignerLessons v-if="can.manage" />
             </template>
           </AdaptiveNav>
         </template>

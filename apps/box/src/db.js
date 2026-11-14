@@ -3,6 +3,9 @@
 //   records   notebooks and conversations: (collection, id) -> JSON, with an optional parent
 //             (a conversation's notebook) for listing
 //   kv        a LangGraph store for Deep Agents' StoreBackend: (namespace, key) -> JSON value
+//   mailbox   cases on their way between devices (LIB-42..48): kept until someone with the role
+//             picks one up or it expires; picking it up deletes its body
+//   beacons   who holds which case, for moderators: a reference, titles, a role; never answers
 //
 // WAL mode is required twice over (as in clinux-box): concurrent readers alongside one writer, and
 // Litestream only replicates WAL-mode databases. busy_timeout makes a second writer wait instead of
@@ -32,6 +35,24 @@ const MIGRATIONS = [
      created_at TEXT NOT NULL,
      updated_at TEXT NOT NULL,
      PRIMARY KEY (namespace, key)
+   );`,
+  `CREATE TABLE mailbox (
+     id TEXT PRIMARY KEY,
+     kind TEXT NOT NULL,
+     to_roles TEXT,
+     to_member TEXT,
+     to_device TEXT,
+     body TEXT,
+     created_at TEXT NOT NULL,
+     expires_at TEXT NOT NULL,
+     picked_by TEXT
+   );
+   CREATE INDEX mailbox_expires ON mailbox (expires_at);
+   CREATE TABLE beacons (
+     case_id TEXT PRIMARY KEY,
+     body TEXT NOT NULL,
+     updated_at TEXT NOT NULL,
+     expires_at TEXT NOT NULL
    );`,
 ];
 
@@ -69,6 +90,20 @@ export function openDb(path) {
     kvSearch: db.prepare(`SELECT namespace, key, value, created_at, updated_at FROM kv
       WHERE namespace = ? OR substr(namespace, 1, length(?) + 1) = ? || '.' ORDER BY updated_at DESC LIMIT ? OFFSET ?`),
     kvNamespaces: db.prepare('SELECT DISTINCT namespace FROM kv ORDER BY namespace LIMIT ? OFFSET ?'),
+    mbPurge: db.prepare('DELETE FROM mailbox WHERE expires_at <= ?'),
+    bcPurge: db.prepare('DELETE FROM beacons WHERE expires_at <= ?'),
+    mbPut: db.prepare('INSERT OR IGNORE INTO mailbox (id, kind, to_roles, to_member, to_device, body, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
+    mbOpen: db.prepare('SELECT id, to_roles, to_member, to_device, body FROM mailbox WHERE picked_by IS NULL ORDER BY created_at LIMIT 500'),
+    mbGet: db.prepare('SELECT picked_by, expires_at FROM mailbox WHERE id = ?'),
+    mbPick: db.prepare('UPDATE mailbox SET picked_by = ?, body = NULL WHERE id = ? AND picked_by IS NULL'),
+    bcPut: db.prepare(`INSERT INTO beacons (case_id, body, updated_at, expires_at) VALUES (?, ?, ?, ?)
+      ON CONFLICT(case_id) DO UPDATE SET body = excluded.body, updated_at = excluded.updated_at, expires_at = excluded.expires_at`),
+    bcList: db.prepare('SELECT body FROM beacons ORDER BY updated_at LIMIT 500'),
+  };
+  const purge = () => {
+    const at = new Date().toISOString();
+    s.mbPurge.run(at);
+    s.bcPurge.run(at);
   };
 
   const record = (r) => {
@@ -123,6 +158,37 @@ export function openDb(path) {
     /** Items in a namespace and every namespace below it. */
     kvSearch: (prefix, { limit = 100, offset = 0 } = {}) => s.kvSearch.all(prefix, prefix, prefix, limit, offset).map(item).filter(Boolean),
     kvNamespaces: ({ limit = 100, offset = 0 } = {}) => s.kvNamespaces.all(limit, offset).map((r) => r.namespace.split('.')),
+    /** An envelope (LIB-42..48), kept until picked up or expired. */
+    mailboxPost: (e) => {
+      purge();
+      s.mbPut.run(e.id, e.kind, e.to.roles ? JSON.stringify(e.to.roles) : null, e.to.member ?? null, e.to.device ?? null, JSON.stringify(e), e.created_at, e.expires_at);
+    },
+    mailboxInbox: ({ roles = [], member, device }) => {
+      purge();
+      return s.mbOpen
+        .all()
+        .filter((r) => (r.to_member && r.to_member === member) || (r.to_device && r.to_device === device) || (r.to_roles && JSON.parse(r.to_roles).some((x) => roles.includes(x))))
+        .map((r) => JSON.parse(r.body));
+    },
+    mailboxPick: (id, by) => {
+      purge();
+      return s.mbPick.run(by, id).changes > 0;
+    },
+    mailboxStatus: (ids) => {
+      const now = new Date().toISOString();
+      return Object.fromEntries(
+        ids.map((id) => {
+          const r = s.mbGet.get(id);
+          const state = !r ? 'expired' : r.picked_by ? 'delivered' : r.expires_at <= now ? 'expired' : 'waiting';
+          return [id, { state, picked_by: r?.picked_by ?? null }];
+        }),
+      );
+    },
+    beaconPut: (b) => s.bcPut.run(b.case_id, JSON.stringify(b), b.updated_at, b.expires_at),
+    beaconList: () => {
+      purge();
+      return s.bcList.all().map((r) => JSON.parse(r.body));
+    },
     close: () => db.close(),
   };
 }

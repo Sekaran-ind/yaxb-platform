@@ -156,7 +156,7 @@ export function compileBundle(source: string | string[], options: BundleOptions 
     p.meta.ok = false;
     // In a nested service, a journey's steps are its screens.
     // The expansion already explains unknown roles, so the compiler's own message for them is dropped.
-    const messages = p.nested ? list.filter((m) => !/^roles\.(initiate|complete): no role /.test(m)).map((m) => m.replace(/\bstep '/g, "screen '")) : list;
+    const messages = p.nested ? list.filter((m) => !/^(roles\.(initiate|complete)|step '[^']+'): no role /.test(m)).map((m) => m.replace(/\bstep '/g, "screen '")) : list;
     for (const message of messages) problems.push({ level: "error", line: problemLine(p.chunk, message), kind: p.meta.kind, id: p.meta.id, message });
   };
   const ofKind = (kind: BundleKind) => parsed.filter((p) => p.doc.kind === kind);

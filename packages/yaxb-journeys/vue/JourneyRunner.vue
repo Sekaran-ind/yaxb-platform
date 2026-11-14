@@ -2,7 +2,9 @@
 // Runs a journey: progress, the current questions (a questionnaire's sections in the adaptive
 // nav), services as they run, and the result. Handlers are the host's (or the studio's stand-ins).
 // It starts again whenever the journey's definition changes, so an editor's preview stays live.
-import { createRunner, fieldProblem, fieldVisible, type Journey, type RunState, type Runner, type Scope, type ServiceHandler } from "@sekaran-ind/yaxb-journeys/journeys";
+// With an `actor`, it stops where someone else answers (a screen with another role) and says who
+// has it now; "Continue as" hands it to them in place (the preview's way to try a hand-over).
+import { createRunner, fieldProblem, fieldVisible, progressOf, roleLabel, type Journey, type Role, type RunActor, type RunState, type Runner, type Scope, type ServiceHandler } from "@sekaran-ind/yaxb-journeys/journeys";
 import type { NavMode } from "@sekaran-ind/yaxb-journeys/screens";
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import Glyph from "./Glyph.vue";
@@ -24,8 +26,16 @@ const props = defineProps<{
   lockMode?: boolean;
   sources?: SourceOption[];
   languages?: LanguageOption[];
+  /** Who is running it; absent: one person answers every screen. */
+  actor?: RunActor;
+  /** Role names, for "Waiting for …". */
+  roles?: readonly Role[];
+  /** The name of the person who started it (the preview: "Visitor"). */
+  starterLabel?: string;
 }>();
-const emit = defineEmits<{ close: []; done: [state: RunState] }>();
+const emit = defineEmits<{ close: []; done: [state: RunState]; continueAs: [role: string | null] }>();
+const nameOf = (role: string | null) => (role ? roleLabel(role, props.roles) : (props.starterLabel ?? "the person who started it"));
+const finishers = computed(() => (props.journey.roles?.complete ?? []).filter((r) => r !== "visitor"));
 
 const state = shallowRef<RunState | null>(null);
 const values = ref<Record<string, unknown>>({});
@@ -57,10 +67,17 @@ function onChange(s: RunState) {
 function start() {
   if (runner?.state.status === "running") runner.stop();
   shown = "";
-  runner = createRunner(props.journey, { services: props.services ?? {}, context: props.context ?? {}, onChange });
+  runner = createRunner(props.journey, { services: props.services ?? {}, context: props.context ?? {}, onChange, ...(props.actor ? { actor: props.actor } : {}) });
   void runner.start();
 }
 watch(() => JSON.stringify(props.journey), start, { immediate: true });
+// The host switched who is acting (the preview's "View as"): a waiting run carries on as them.
+watch(
+  () => JSON.stringify(props.actor ?? null),
+  () => {
+    if (runner && props.actor && state.value?.status === "waiting") void runner.continueAs(props.actor);
+  },
+);
 onBeforeUnmount(() => {
   if (runner?.state.status === "running") runner.stop();
 });
@@ -107,10 +124,19 @@ async function copy() {
     </div>
 
     <ol v-if="state && (state.trail.length || state.status === 'running' || state.status === 'asking')" class="yj-row" aria-label="Progress">
-      <li v-for="(t, i) in state.trail" :key="`${t.step}-${i}`" class="yj-chip" :class="t.ok ? 'yj-chip-ok' : 'yj-chip-bad'"><Glyph :name="t.ok ? 'check' : 'cross'" />{{ t.label }}</li>
+      <li v-for="(t, i) in progressOf(journey, state.trail)" :key="`${t.step}-${i}`" class="yj-chip" :class="t.ok ? 'yj-chip-ok' : 'yj-chip-bad'"><Glyph :name="t.ok ? 'check' : 'cross'" />{{ t.label }}</li>
       <li v-if="state.status === 'running'" class="yj-chip yj-chip-busy"><Glyph name="spinner" />{{ currentLabel }}</li>
-      <li v-if="state.status === 'asking'" class="yj-chip"><Glyph name="circle" />{{ currentLabel }}</li>
+      <li v-if="state.status === 'asking' || state.status === 'waiting'" class="yj-chip"><Glyph name="circle" />{{ currentLabel }}</li>
     </ol>
+
+    <!-- Handed over: someone else answers this screen. -->
+    <div v-if="state?.status === 'waiting' && state.waiting" class="yj-card yj-stack yj-handover" role="status">
+      <p class="yj-title">Handed over to {{ nameOf(state.waiting.role) }}</p>
+      <p class="yj-small yj-muted">
+        “{{ currentLabel }}” is answered by {{ nameOf(state.waiting.role) }}. In the kiosk the journey is kept as a request with a reference, and waits in their work queue{{ state.waiting.role ? "" : " until they come back with the reference" }}.
+      </p>
+      <div class="yj-row"><button type="button" class="yj-btn yj-btn-primary" @click="emit('continueAs', state.waiting.role)">Continue as {{ nameOf(state.waiting.role) }}</button></div>
+    </div>
 
     <form v-if="state?.status === 'asking' && state.prompt" class="yj-card yj-stack" novalidate @submit.prevent="submit">
       <p class="yj-title">{{ state.prompt.text }}</p>
@@ -145,6 +171,7 @@ async function copy() {
         <button type="button" class="yj-btn" @click="start">Start again</button>
         <button v-if="closable" type="button" class="yj-btn yj-btn-primary yj-push" @click="emit('close')">Done</button>
       </div>
+      <p v-if="actor && finishers.length" class="yj-note yj-small">In the kiosk it now goes to {{ finishers.map((r) => nameOf(r)).join(" or ") }}, who closes it.</p>
       <slot name="result" :state="state" />
     </div>
 

@@ -1,7 +1,7 @@
 // Journey summaries (docs/specs/05-journeys-and-forms.md, JRN-20..22): what a journey does, built
 // from its definition so it is always current, and what a finished run did.
 import { LANGUAGES } from "../schemas/index.js";
-import type { Field, Journey, RunState, Step } from "./index.js";
+import { journeyRolesNeeded, progressOf, type Field, type Journey, type RunState, type Step } from "./index.js";
 
 /** Where a service's work happens, for the visitor. */
 export type ServiceWhere = "device" | "assistant" | "notebook";
@@ -77,9 +77,16 @@ export function summarizeJourney(journey: Journey): JourneySummary {
   });
   const asks = [...new Set(steps.flatMap((s) => s.asks))];
   const uses = steps.flatMap((s) => (s.service ? [s.service] : [])).filter((u, i, all) => all.findIndex((x) => x.name === u.name) === i);
-  const leavesDevice = uses.some((u) => u.where === "assistant");
+  const toAssistant = uses.some((u) => u.where === "assistant");
+  // A journey other people answer or finish is handed over: its answers are kept as a request (a case).
+  const handedTo = [...new Set(journeyRolesNeeded(journey).filter((n) => n.for.includes("answer") || n.for.includes("finish")).map((n) => n.role))];
+  const leavesDevice = toAssistant || handedTo.length > 0;
   const parts = [asks.length ? `Asks for ${list(asks.map((a) => a.toLowerCase()))}` : "Asks for nothing", uses.length ? `uses ${list(uses.map((u) => u.label))}` : null].filter(Boolean);
-  const privacy = `${parts.join(", ")}. ${leavesDevice ? "What you give it is sent to the AI assistant." : "Nothing leaves this device."}`;
+  const where = [
+    toAssistant ? "What you give it is sent to the AI assistant." : null,
+    handedTo.length ? "Your answers go, as a request with a reference, to the staff who take it from you." : null,
+  ].filter(Boolean);
+  const privacy = `${parts.join(", ")}. ${where.length ? where.join(" ") : "Nothing leaves this device."}`;
   return { id: journey.id, title: journey.title, summary: journey.summary ?? null, icon: journey.icon ?? null, category: journey.category ?? null, steps, asks, uses, leavesDevice, privacy };
 }
 
@@ -124,8 +131,8 @@ function display(field: Field, value: unknown): string {
 
 /** What a finished run did, from its state, to show and save (JRN-22). */
 export function summarizeRun(journey: Journey, state: RunState): RunSummary {
-  // The final step is the result, shown on its own.
-  const steps = state.trail.filter((t) => !journey.steps[t.step]?.final).map((t) => ({ label: t.label, ok: t.ok }));
+  // Decisions are the journey's own workings, and the result is shown on its own (progressOf).
+  const steps = progressOf(journey, state.trail).map((t) => ({ label: t.label, ok: t.ok }));
   const answers: RunSummary["answers"] = [];
   for (const t of state.trail) {
     const step = journey.steps[t.step];

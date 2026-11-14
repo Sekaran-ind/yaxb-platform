@@ -4,7 +4,7 @@
 // journeys are offered to those who may start them: visitors get the ones open to anyone; a
 // signed-in member also gets the ones their roles start (the server says which, `allowed`).
 import { JOURNEY_SERVICES, kioskContent } from "@sekaran-ind/yaxb-core/content";
-import { compileBundle, DEFAULT_ROLES, roleLabel, type Journey, type Role, type Service } from "@sekaran-ind/yaxb-journeys";
+import { compileBundle, DEFAULT_ROLES, journeyRolesNeeded, roleLabel, type Journey, type Role, type RunActor, type Service } from "@sekaran-ind/yaxb-journeys";
 import { computed, ref, shallowRef } from "vue";
 import { api } from "@/lib/api";
 
@@ -22,7 +22,10 @@ export type CatalogueService = {
   journeys: CatalogueJourney[];
   yaml: string;
 };
-type Published = { roles: Role[]; services: CatalogueService[] };
+/** Whether the team has someone for a role: signed in, invited (not yet signed in), or nobody (LIB-37). */
+export type Staffing = "ready" | "invited" | "nobody";
+type Viewer = { roles: string[]; member: boolean; admin: boolean; id?: string; name?: string };
+type Published = { roles: Role[]; services: CatalogueService[]; staffing?: Record<string, Staffing>; viewer?: Viewer };
 
 const KEY = "yaxb.kiosk.catalogue";
 function readLoaded(): string[] {
@@ -43,6 +46,8 @@ function saveLoaded(ids: string[]) {
 
 const published = shallowRef<CatalogueService[]>([]);
 const roles = shallowRef<Role[]>([...DEFAULT_ROLES]);
+const staffing = shallowRef<Record<string, Staffing>>({});
+const viewer = shallowRef<Viewer>({ roles: [], member: false, admin: false });
 const loadedIds = ref<string[]>(readLoaded());
 const ready = ref(false);
 let loading: Promise<void> | null = null;
@@ -54,6 +59,8 @@ export function loadCatalogue(): Promise<void> {
       const p = await api<Published>("/api/library/published");
       published.value = p.services;
       roles.value = p.roles;
+      staffing.value = p.staffing ?? {};
+      if (p.viewer) viewer.value = p.viewer;
     } catch {
       /* no network or no Worker: built-in content only */
     } finally {
@@ -99,3 +106,42 @@ export const kioskJourneys = computed<Journey[]>(() => {
 
 export const roleCatalogue = computed(() => roles.value);
 export const roleName = (id: string) => roleLabel(id, roles.value);
+
+/** Who is at this kiosk, for a catalogue journey's runner: the person starting it, with their roles. */
+export const kioskActor = computed<RunActor>(() => ({ starter: true, roles: viewer.value.roles }));
+export const viewerIsMember = computed(() => viewer.value.member);
+
+/** The catalogue entry a journey comes from (null for a built-in journey). */
+export function entryOfJourney(journeyId: string): string | null {
+  return loadedServices.value.find((s) => s.journeys.some((j) => j.id === journeyId))?.meta.entry_id ?? null;
+}
+
+export type RoleNeed = { role: string; label: string; staffing: Staffing; why: string[] };
+
+/**
+ * The roles a service needs people for (LIB-37): who starts its journeys (other than visitors),
+ * who answers their screens and who finishes them, and whether the team has someone for each.
+ */
+export function needsOf(entryId: string): RoleNeed[] {
+  const meta = published.value.find((s) => s.entry_id === entryId);
+  if (!meta) return [];
+  const journeys = compileBundle(meta.yaml, { services: JOURNEY_SERVICES }).journeys;
+  const out = new Map<string, Set<string>>();
+  const WHY = { start: "start", answer: "answer a screen of", finish: "finish" } as const;
+  for (const j of journeys)
+    for (const n of journeyRolesNeeded(j)) {
+      if (!out.has(n.role)) out.set(n.role, new Set());
+      for (const f of n.for) out.get(n.role)!.add(`${WHY[f]} ${j.title}`);
+    }
+  return [...out].map(([role, why]) => ({ role, label: roleLabel(role, roles.value), staffing: staffing.value[role] ?? "nobody", why: [...why] }));
+}
+
+/** Who is at this kiosk: a signed-in member (id, name, roles), or nobody (a visitor). */
+export const kioskViewer = computed(() => viewer.value);
+
+/** A published catalogue journey, compiled, with its service (for cases kept on this device). */
+export function publishedJourney(entryId: string, journeyId: string) {
+  const meta = published.value.find((s) => s.entry_id === entryId);
+  const journey = meta && compileBundle(meta.yaml, { services: JOURNEY_SERVICES }).journeys.find((j) => j.id === journeyId);
+  return meta && journey ? { journey, entry_id: meta.entry_id, service_id: meta.id, service_title: meta.title, revision: meta.revision } : null;
+}

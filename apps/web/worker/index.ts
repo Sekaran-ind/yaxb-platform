@@ -9,11 +9,13 @@ import { createMemoryRateLimiter } from "@sekaran-ind/yaxb-core/stores";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { settings, stringEnv, type Bindings } from "./env";
-import { catalogue, kiosk, library, moderators, reviews } from "./kiosk";
-import { ADMIN_ACTOR_ID, LibraryError, MAX_ENTRY_BYTES, type LibraryActor } from "@sekaran-ind/yaxb-core/library";
+import { cases, catalogue, designer, kiosk, library, moderators, relay, reviews } from "./kiosk";
+import { beaconSchema, CaseError, envelopeSchema, MAX_CASE_RUN, MAX_ENVELOPE, mayReassign, RELAY_MAX_HOURS, staffingOf, type Envelope } from "@sekaran-ind/yaxb-core/cases";
+import { DesignerError, historyOf, LESSONS_IN_MEMORY, MAX_NARRATIVE } from "@sekaran-ind/yaxb-core/designer";
+import { ADMIN_ACTOR_ID, LibraryError, MAX_ENTRY_BYTES, permissionsOf, type LibraryActor } from "@sekaran-ind/yaxb-core/library";
 import { proposalEntry, ReviewError, type Reviewer } from "@sekaran-ind/yaxb-core/reviews";
 import { auditEvent, looksLikeKey, MODERATOR_ROLES, statusOf, TeamRuleError } from "@sekaran-ind/yaxb-core/moderators";
-import { AVAILABILITY, roomName, teamMember } from "@sekaran-ind/yaxb-core/team";
+import { AVAILABILITY, memberStatus, roomName, teamMember } from "@sekaran-ind/yaxb-core/team";
 import { HUB_HEADERS } from "./team";
 
 export { TeamHub } from "./team";
@@ -92,7 +94,7 @@ app.use("/api/*", async (c, next) => {
       headers: {
         "Access-Control-Allow-Origin": c.req.header("origin")!,
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE",
-        "Access-Control-Allow-Headers": "Content-Type, X-Yaxb-Session",
+        "Access-Control-Allow-Headers": "Content-Type, X-Yaxb-Session, X-Yaxb-Device",
         "Access-Control-Max-Age": "600",
         Vary: "Origin",
       },
@@ -220,8 +222,11 @@ app.get("/api/agent/:resource", async (c) => {
   switch (c.req.param("resource")) {
     case "providers":
       return c.json(k.providers());
-    case "capabilities":
-      return c.json(k.capabilities());
+    case "capabilities": {
+      // Where cases may be kept here (LIB-42..48): central storage only on the paid plan.
+      const s = settings(c.env);
+      return c.json({ ...k.capabilities(), cases: { central: s.CASES_CENTRAL === "on", relay: s.CASES_RELAY === "on", relayHours: s.RELAY_HOURS } });
+    }
     case "sources":
       return c.json({ sources: k.sources() });
     case "curated":
@@ -523,7 +528,7 @@ async function libraryCall(c: Context<AppEnv>, fn: (a: LibraryActor, body: unkno
   try {
     return c.json((await fn(actor, body)) ?? { ok: true });
   } catch (e) {
-    if (e instanceof LibraryError) return jsonError(c, e.status, e.message);
+    if (e instanceof LibraryError || e instanceof DesignerError) return jsonError(c, e.status, e.message);
     throw e;
   }
 }
@@ -534,8 +539,127 @@ async function libraryCall(c: Context<AppEnv>, fn: (a: LibraryActor, body: unkno
  */
 app.get("/api/library/published", async (c) => {
   const actor = await libraryActor(c);
-  return c.json(await (await catalogue(c.env)).published(actor.roles, { all: actor.admin }));
+  const out = await (await catalogue(c.env)).published(actor.roles, { all: actor.admin });
+  // Whether the team has someone for each role (LIB-37), so a kiosk loading a service can say
+  // which of its journeys would wait with nobody to act. Yes, invited or no; never who, or how many.
+  const members = (await moderators(c.env).store.list()).map((m) => ({ roles: m.roles, status: memberStatus(m) }));
+  return c.json({ ...out, staffing: staffingOf(out.roles.map((r) => r.id), members), viewer: { roles: actor.roles, member: !actor.guest, admin: actor.admin, ...(actor.guest ? {} : { id: actor.id, name: actor.name }) } });
 });
+
+// ---- cases: journeys handed between people (LIB-33..38) ----------------------------------------------
+
+/**
+ * Run a case action as the catalogue's actor (a member with their roles, the administrator, or a
+ * visitor by their session). Changes are same origin; starting one is rate limited like a form.
+ */
+async function caseCall(c: Context<AppEnv>, fn: (a: LibraryActor, body: unknown) => Promise<unknown>, { limited = false } = {}) {
+  if (c.req.method !== "GET" && !sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  // Central storage of cases is the paid plan; otherwise they live on devices and the box.
+  if (settings(c.env).CASES_CENTRAL !== "on") return jsonError(c, 402, "Keeping requests in the cloud is part of the paid plan. This kiosk keeps them on its devices and box.");
+  const actor = await libraryActor(c);
+  // Starting a case is limited like a form. A visitor opens cases by reference, so every call of
+  // theirs counts too (like chat: a visit takes a few), and references (30^6) can't be guessed.
+  if (limited && !(await withinLimit("form", c.env.FORM_LIMITER, `case:${actor.id}`))) return jsonError(c, 429, "Too many requests. Please wait a minute.");
+  if (actor.guest && !(await withinLimit("chat", c.env.CHAT_LIMITER, `case:${actor.id}`))) return jsonError(c, 429, "Too many requests. Please wait a minute.");
+  const body = c.req.method === "GET" ? null : (await readJson(c, MAX_CASE_RUN + 8192)).body;
+  try {
+    return c.json(await fn(actor, body));
+  } catch (e) {
+    if (e instanceof CaseError) return jsonError(c, e.status, e.message);
+    throw e;
+  }
+}
+/** A case id, or a reference as typed ("r-7kq4mx" works too). */
+const caseKey = (c: Context<AppEnv>) => {
+  const k = (c.req.param("id") ?? "").trim();
+  return /^r-/i.test(k) ? k.toUpperCase() : k;
+};
+app.post("/api/cases", (c) => caseCall(c, (a, body) => cases(c.env).start(a, body), { limited: true }));
+app.get("/api/cases", (c) => caseCall(c, (a) => cases(c.env).list(a)));
+app.get("/api/cases/:id", (c) => caseCall(c, (a) => cases(c.env).get(a, caseKey(c))));
+app.post("/api/cases/:id/act", (c) => caseCall(c, (a, body) => cases(c.env).act(a, caseKey(c), body)));
+app.post("/api/cases/:id/notes", (c) => caseCall(c, (a, body) => cases(c.env).note(a, caseKey(c), body)));
+app.post("/api/cases/:id/finish", (c) => caseCall(c, (a, body) => cases(c.env).finish(a, caseKey(c), body)));
+
+// ---- the cloud relay: transient envelopes between devices (LIB-44..48) -----------------------------
+
+/** A device's id: the SHA-256 of the secret it keeps (X-Yaxb-Device), so only it can read its envelopes. */
+async function deviceOf(c: Context<AppEnv>): Promise<string | null> {
+  const secret = c.req.header("X-Yaxb-Device") ?? "";
+  if (secret.length < 32 || secret.length > 128) return null;
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+  return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 40);
+}
+/** Who is asking: their roles and member id (signed in), and their device. */
+async function relayReader(c: Context<AppEnv>) {
+  const a = await libraryActor(c);
+  return { a, to: { roles: a.guest ? [] : [...a.roles], member: a.guest ? undefined : a.id, device: (await deviceOf(c)) ?? undefined } };
+}
+class RelayError extends Error {
+  constructor(
+    readonly status: 403 | 404 | 413 | 422,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+async function relayCall(c: Context<AppEnv>, fn: (r: Awaited<ReturnType<typeof relayReader>>) => Promise<unknown>) {
+  if (settings(c.env).CASES_RELAY !== "on") return jsonError(c, 404, "This kiosk has no cloud relay.");
+  if (c.req.method !== "GET" && !sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  const r = await relayReader(c);
+  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, `relay:${r.to.device ?? r.a.id}`))) return jsonError(c, 429, "Too many requests. Please wait a minute.");
+  try {
+    return c.json(await fn(r));
+  } catch (e) {
+    if (e instanceof RelayError) return jsonError(c, e.status, e.message);
+    throw e;
+  }
+}
+/** Leave an envelope for someone who isn't online: kept until picked up or expired (at most RELAY_HOURS). */
+app.post("/api/relay", (c) =>
+  relayCall(c, async ({ a, to }) => {
+    const { body, tooLarge } = await readJson(c, MAX_ENVELOPE);
+    if (tooLarge) throw new RelayError(413, "That request is too large to relay.");
+    const parsed = envelopeSchema.safeParse(body);
+    if (!parsed.success) throw new RelayError(422, parsed.error.issues[0]?.message ?? "That isn't an envelope.");
+    const hours = settings(c.env).RELAY_HOURS;
+    const latest = new Date(Date.now() + Math.min(hours, RELAY_MAX_HOURS) * 3_600_000).toISOString();
+    // The sender is who the session says, never what the envelope claims.
+    const e = { ...parsed.data, from: { ...parsed.data.from, id: a.id, device: to.device ?? parsed.data.from.device }, expires_at: parsed.data.expires_at > latest ? latest : parsed.data.expires_at } as Envelope;
+    if (e.kind === "reassign" && !mayReassign(a)) throw new RelayError(403, "Only a moderator or an administrator can reassign a case.");
+    await relay(c.env).post(e);
+    return { id: e.id, expires_at: e.expires_at };
+  }),
+);
+/** Envelopes for my roles, me, or this device. */
+app.get("/api/relay", (c) => relayCall(c, async ({ to }) => ({ items: to.roles.length || to.member || to.device ? await relay(c.env).inbox({ roles: to.roles, member: to.member, device: to.device }) : [] })));
+/** Take one that is for me: the relay deletes it. */
+app.post("/api/relay/:id/pick", (c) =>
+  relayCall(c, async ({ a, to }) => {
+    const mine = await relay(c.env).inbox({ roles: to.roles, member: to.member, device: to.device });
+    if (!mine.some((e) => e.id === c.req.param("id"))) throw new RelayError(404, "That envelope isn't for you, or it is gone.");
+    return { picked: await relay(c.env).pick(c.req.param("id"), a.guest ? "a kiosk" : a.name) };
+  }),
+);
+/** Did my envelopes arrive? (Their ids are random: only their sender knows them.) */
+app.get("/api/relay/status", (c) => relayCall(c, async () => ({ status: await relay(c.env).status((c.req.query("ids") ?? "").split(",").filter(Boolean).slice(0, 100)) })));
+/** Who holds which case: devices keep it current; moderators and administrators read it. */
+app.put("/api/relay/beacons", (c) =>
+  relayCall(c, async () => {
+    const parsed = beaconSchema.safeParse((await readJson(c, MAX_FORM_BODY)).body);
+    if (!parsed.success) throw new RelayError(422, "That isn't a beacon.");
+    const hours = settings(c.env).RELAY_HOURS;
+    const latest = new Date(Date.now() + hours * 3_600_000).toISOString();
+    await relay(c.env).putBeacon({ ...parsed.data, expires_at: parsed.data.expires_at > latest ? latest : parsed.data.expires_at });
+    return { ok: true };
+  }),
+);
+app.get("/api/relay/beacons", (c) =>
+  relayCall(c, async ({ a }) => {
+    if (!mayReassign(a)) throw new RelayError(403, "Moderators and administrators only.");
+    return { items: await relay(c.env).beacons() };
+  }),
+);
 
 /** Every other catalogue route: same origin for changes. Who may do what is the core's decision. */
 app.use("/api/library/*", async (c, next) => {
@@ -569,16 +693,136 @@ app.patch("/api/library/libraries/:id", (c) => libraryCall(c, (a, body) => libra
 app.post("/api/library/libraries/:id/:action{archive|restore}", (c) =>
   libraryCall(c, (a) => library(c.env).setLibraryStatus(a, c.req.param("id"), c.req.param("action") === "archive" ? "archived" : "active")),
 );
-/** A new service: { yaml, library? } (the default library when absent). */
+/** A new service: { yaml, library?, design? } (the default library when absent; `design`: the Service Designer draft it came from). */
 app.post("/api/library/services", (c) =>
   libraryCall(
     c,
-    (a, body) => {
-      const { library: lib, ...rest } = (body ?? {}) as { library?: unknown };
-      return library(c.env).createEntry(a, typeof lib === "string" ? lib : null, rest);
+    async (a, body) => {
+      const { library: lib, design, thread, ...rest } = (body ?? {}) as { library?: unknown; design?: unknown; thread?: unknown };
+      const created = await library(c.env).createEntry(a, typeof lib === "string" ? lib : null, rest);
+      // Only the draft's own author links it, once; the agent then learns from this entry's review,
+      // and the design conversation stays with the service.
+      if (typeof design === "string" && design.length <= 64) await designer(c.env).link(design, created.entry.id, a.id);
+      if (typeof thread === "string" && thread.length <= 64) await designer(c.env).linkThread(thread, created.entry.id, a.id);
+      return created;
     },
     { limited: true },
   ),
+);
+
+/**
+ * The Service Designer agent (LIB-27..32): a draft service from a narrative, with few-shot examples
+ * from the published catalogue and the lessons reviewers taught it. Nothing is saved but the draft
+ * (never the narrative); the author creates the entry, which is reviewed as usual. Anyone who may
+ * design may ask; it counts as a chat turn, and guests are also held to the form limit.
+ */
+const designRequestSchema = z.strictObject({
+  narrative: z.string().max(MAX_NARRATIVE + 200),
+  provider: z.string().min(1).max(60),
+  model: z.string().min(1).max(160),
+  /** The catalogue entry being designed, or a new service's thread (LIB-39..41). */
+  entry: z.string().min(1).max(64).optional(),
+  thread: z.string().min(1).max(64).optional(),
+  /** The service in the editor now. */
+  current: z.string().max(MAX_ENTRY_BYTES).optional(),
+});
+
+/**
+ * Where a design conversation is, and whether this person may talk in it: a new service's thread
+ * is its starter's; an entry's thread is read by whoever may see the entry, and its editors, or a
+ * reviewer while it is in review (who gets suggestions, not changes), talk in it.
+ */
+async function designThread(c: Context<AppEnv>, a: LibraryActor, key: { entry?: string; thread?: string }) {
+  if (key.entry) {
+    const { entry, canChange } = await library(c.env).entry(a, key.entry);
+    const reviewer = permissionsOf(a).review && entry.status === "in_review";
+    const thread = await designer(c.env).thread({ entry: entry.id });
+    return { entry, thread, mayTalk: canChange || reviewer, applies: canChange };
+  }
+  const thread = key.thread ? await designer(c.env).thread({ thread: key.thread }) : null;
+  if (thread && (thread.owner_id !== a.id || thread.entry_id)) throw new LibraryError("That conversation isn't yours, or it belongs to a service now: open the service.", 404);
+  return { entry: null, thread, mayTalk: true, applies: true };
+}
+
+/** A design conversation: GET ?entry= or ?thread=. */
+app.get("/api/library/design", (c) =>
+  libraryCall(c, async (a) => {
+    const entry = c.req.query("entry") || undefined;
+    const thread = c.req.query("thread") || undefined;
+    const t = await designThread(c, a, { entry, thread });
+    return { thread: t.thread?.id ?? null, messages: t.thread?.messages ?? [], mayTalk: t.mayTalk, applies: t.applies };
+  }),
+);
+
+/**
+ * The Service Designer agent (LIB-27..32, LIB-39..41): one turn of a design conversation. The first
+ * turn of a new service drafts it from the description; later turns, and every turn on an existing
+ * service, change the service in the editor. Rate limited like chat, and like a form for guests.
+ */
+app.post("/api/library/design", async (c) => {
+  await catalogue(c.env);
+  const actor = await libraryActor(c);
+  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, `design:${actor.id}`))) return jsonError(c, 429, "Too many requests in a short time. Please wait a minute.");
+  if (actor.guest && !(await withinLimit("form", c.env.FORM_LIMITER, `design:${actor.id}`))) return jsonError(c, 429, "Too many drafts in a short time. Please wait a minute.");
+  const parsed = designRequestSchema.safeParse((await readJson(c, MAX_ENTRY_BYTES + MAX_FORM_BODY)).body);
+  if (!parsed.success) return jsonError(c, 422, parsed.error.issues[0]?.message ?? "Invalid request.");
+  const { narrative, provider, model, entry: entryId, thread: threadId, current } = parsed.data;
+  let t: Awaited<ReturnType<typeof designThread>>;
+  try {
+    t = await designThread(c, actor, { entry: entryId, thread: threadId });
+  } catch (e) {
+    if (e instanceof LibraryError) return jsonError(c, e.status, e.message);
+    throw e;
+  }
+  if (!t.mayTalk) return jsonError(c, 403, "Only its designer or an editor, or a reviewer while it is in review, can ask the Service Designer about this service.");
+  const [{ services, roles }, lessons] = await Promise.all([library(c.env).published([], { all: true }), designer(c.env).lessons(LESSONS_IN_MEMORY)]);
+  const history = historyOf(t.thread?.messages ?? []);
+  const editing = current ?? t.entry?.yaml;
+  const out = await kiosk(c.env).design(
+    {
+      narrative,
+      // A first description starts from nothing; every later turn changes the service in the editor.
+      ...(editing && (t.entry || history.length) ? { current: editing } : {}),
+      ...(history.length ? { history } : {}),
+      ...(t.entry?.status === "rejected" && t.entry.review_note ? { review: t.entry.review_note } : {}),
+      selection: { provider, model, temperature: 0.2 },
+      published: services,
+      lessons,
+      roles: roles.map((r) => r.id),
+    },
+    { signal: c.req.raw.signal },
+  );
+  if ("error" in out) return jsonError(c, 422, out.error);
+  const run = await designer(c.env).recorded(actor.id, out, t.entry?.id ?? null);
+  const thread = t.thread?.id ?? crypto.randomUUID();
+  const errors = out.problems.filter((p) => p.level === "error").length;
+  const reply = [out.notes, errors ? `The draft has ${errors} problem${errors === 1 ? "" : "s"} to fix.` : null].filter(Boolean).join(" ") || (history.length ? "Changed as you asked." : "Drafted the service.");
+  const messages = await designer(c.env).turn(thread, t.entry?.id ?? null, { id: actor.id, name: actor.guest ? "You" : actor.name }, narrative.trim(), { text: reply, result: out, run: run.id });
+  return c.json({ ...out, run: run.id, thread, messages, applies: t.applies });
+});
+
+/** What the Service Designer has learnt (administrators): read, add and delete lessons. */
+const mustManage = (a: LibraryActor) => {
+  if (!permissionsOf(a).manage) throw new LibraryError("Only administrators can change what the Service Designer has learnt.", 403);
+};
+app.get("/api/library/lessons", (c) =>
+  libraryCall(c, async (a) => {
+    mustManage(a);
+    return { lessons: await designer(c.env).lessons() };
+  }),
+);
+app.post("/api/library/lessons", (c) =>
+  libraryCall(c, async (a, body) => {
+    mustManage(a);
+    return { lesson: await designer(c.env).addLesson(body, a.name) };
+  }),
+);
+app.delete("/api/library/lessons/:id", (c) =>
+  libraryCall(c, async (a) => {
+    mustManage(a);
+    if (!(await designer(c.env).removeLesson(c.req.param("id")))) throw new LibraryError("That lesson isn't there any more.", 404);
+    return { removed: true };
+  }),
 );
 app.get("/api/library/entries/:id", (c) => libraryCall(c, (a) => library(c.env).entry(a, c.req.param("id"))));
 app.get("/api/library/entries/:id/audit", (c) => libraryCall(c, async (a) => ({ events: await library(c.env).auditTrail(a, c.req.param("id")) })));
