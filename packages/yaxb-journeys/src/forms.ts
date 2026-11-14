@@ -338,6 +338,8 @@ export type ServiceDesign = {
   /** The roles this service defines (the designer's side panel). */
   roles: Role[];
   journeys: JourneyDesign[];
+  /** The service's own days (SCH-3): title and date (YYYY-MM-DD), optional time. */
+  dates: { id: string; title: string; date: string; time: string }[];
 };
 
 export const newScreen = (id = "", kind: StepKind = "ask"): StepForm => ({ ...newStep(id, kind), then: "step", next: "" });
@@ -355,7 +357,7 @@ export const newJourneyDesign = (id = "new-journey", title = "New journey"): Jou
     { ...newScreen("done", "final"), label: "Done", resultTitle: "Thank you" },
   ],
 });
-export const newServiceDesign = (id = "new-service"): ServiceDesign => ({ id, title: "New service", summary: "", icon: "", order: null, roles: [], journeys: [newJourneyDesign()] });
+export const newServiceDesign = (id = "new-service"): ServiceDesign => ({ id, title: "New service", summary: "", icon: "", order: null, roles: [], journeys: [newJourneyDesign()], dates: [] });
 
 /** A nested service document as a design; screens that combine kinds are named in `unsupported`. */
 export function designFromDoc(doc: Record<string, unknown>): { design: ServiceDesign; unsupported: string[] } {
@@ -398,7 +400,19 @@ export function designFromDoc(doc: Record<string, unknown>): { design: ServiceDe
     return { id: str(j.id), title: str(j.title), summary: str(j.summary), icon: str(j.icon), initiate: strs(jr.initiate), complete: strs(jr.complete), start: str(j.start), screens };
   });
   return {
-    design: { id: str(doc.id), title: str(doc.title), summary: str(doc.summary), icon: str(doc.icon), order: typeof doc.order === "number" ? doc.order : null, roles, journeys },
+    design: {
+      id: str(doc.id),
+      title: str(doc.title),
+      summary: str(doc.summary),
+      icon: str(doc.icon),
+      order: typeof doc.order === "number" ? doc.order : null,
+      roles,
+      journeys,
+      dates: (Array.isArray(doc.dates) ? doc.dates : []).map((raw: unknown) => {
+        const d = (raw ?? {}) as Record<string, unknown>;
+        return { id: str(d.id), title: str(d.title), date: str(d.date), time: str(d.time) };
+      }),
+    },
     unsupported,
   };
 }
@@ -447,6 +461,7 @@ export function designToDoc(d: ServiceDesign): { ok: true; doc: Record<string, u
       icon: d.icon.trim(),
       order: d.order ?? undefined,
       roles: d.roles.map((r) => compact({ id: r.id, label: r.label, description: r.description })),
+      dates: d.dates.length ? d.dates.map((x) => compact({ id: x.id.trim() || idFromName(x.title) || "date", title: x.title.trim(), date: x.date.trim(), time: x.time.trim() })) : undefined,
       journeys,
     }),
   };

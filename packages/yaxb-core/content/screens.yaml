@@ -13,3 +13,4 @@ screens:
   - { id: notebook, label: My notebook, icon: notebook, component: notebook }
   - { id: records, label: Sources, icon: library, component: records, layouts: [pod, full] }
   - { id: translate, label: Translate, icon: languages, component: translate, hidden: true }
+  - { id: scheduler, label: Scheduler, icon: calendar, component: scheduler, hidden: true }

@@ -170,3 +170,31 @@ journeys:
     expect(screens.find((s) => s.id === "about-you")!.role).toBeUndefined();
   });
 });
+
+describe("a service's key dates (SCH-3)", () => {
+  const withDates = (dates: string) => `kind: service
+id: s
+title: S
+dates:
+${dates}
+journeys:
+  - id: j
+    title: J
+    screens:
+      - { id: q, title: Q, questions: [{ id: x, type: text, label: X }] }
+`;
+  it("keeps them through the catalogue's checks and the designer", () => {
+    const good = withDates(`  - { id: race-day, title: Race day, date: "2027-02-14", time: "06:00" }\n  - { id: bib-day, title: Bib collection, date: "2027-02-13" }`);
+    expect(checkDocument(good, []).problems.filter((p) => p.level === "error")).toEqual([]);
+    const p = parseDocument(good);
+    if (!p.ok) throw new Error("parse");
+    const { design } = designFromDoc(p.doc);
+    expect(design.dates.map((d) => `${d.id} ${d.date} ${d.time}`)).toEqual(["race-day 2027-02-14 06:00", "bib-day 2027-02-13 "]);
+    const back = designToDoc(design);
+    expect(back.ok && (back.doc.dates as { id: string }[]).map((d) => d.id)).toEqual(["race-day", "bib-day"]);
+  });
+  it("refuses a date that isn't a day", () => {
+    const bad = withDates(`  - { id: race-day, title: Race day, date: "14 Feb" }`);
+    expect(checkDocument(bad, []).problems.map((p) => p.message).join()).toMatch(/YYYY-MM-DD/);
+  });
+});

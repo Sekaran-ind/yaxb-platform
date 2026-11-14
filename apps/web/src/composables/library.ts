@@ -20,6 +20,8 @@ export type CatalogueService = {
   published_at: string | null;
   /** The latest revision's state: only "accepted" services are offered to add to a kiosk. */
   state?: string;
+  /** Where it records events (MET-1): none, box or server. */
+  storage?: "none" | "box" | "server";
   roles: Role[];
   journeys: CatalogueJourney[];
   yaml: string;

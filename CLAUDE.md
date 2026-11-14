@@ -283,6 +283,19 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
   - Beacons (`Beacon`: reference, titles, role, holder, copies; never answers) on the box or the relay, for moderators' board; `reassign` envelopes go to the devices with a copy. A moderator reassigns without reading the case (`service.reassign`).
   - Settings `cases`: `storage` (devices | central, central only when the server offers it), `useBox`, `useRelay`.
 
+## Service storage and events (LIB-60..62, MET-1..2)
+
+- **Core** `metrics/` (export `./metrics`): `SERVICE_STORAGE` (none, box, server), `EVENT_KINDS`, `serviceEventSchema` (strict: facts only), `newEvent`, `EventStore` (memory; D1 `createD1EventStore`, migration 0012 `service_events`), `serviceMetrics(events, journeys)` (starts, finishes, completion, hand-overs, open/closed/declined requests, weeks, and per journey a funnel, median time, waits per role, reassignments, failures, forms filled from words) and `activityLog`. Library entries carry `storage` (migration 0012), set by `setEntryStorage` (administrators); `published()` gives each service's `state` and `storage`.
+- **Box**: `/v1/events` (POST a batch, GET `?service=&since=`).
+- **Worker**: `PUT /api/library/entries/:id/storage` (server needs `CASES_CENTRAL`, the paid plan), `POST /api/events` (only for services stored on the server), `GET /api/events?service=` (administrators, moderators, reviewers).
+- **Web**: `composables/service-events.ts` (`recordEvent`, batched, kept offline) fed by `JourneyPanel` (started, screen reached, finished, handed, stopped, step failed, form filled from words, a member's answer) and request actions (`CaseView`: picked up, closed, declined; `RequestBoard`: reassigned). `AddServiceFlow.vue` (Add, People, Storage) in My notebook → Services, and "People and storage" on a loaded service.
+
+## The Scheduler (SCH-1..8)
+
+- **Core** `schedule/` (export `./schedule`): `scheduleItemSchema` (kinds todo, birthday, anniversary, event; `repeat` none/weekly/monthly/yearly; `person`; `owner`), `occurrences(items, from, to, services)` (yearly from 29 February falls on 28 February; `years`), `upcoming(items, today, days, services)` → `{ dated, overdue, undated }`, `parseScheduleText(text, today)` (on-device reading of dates, weekdays, "tomorrow", "next Friday", times), and `SCHEDULE_FORM`/`scheduleFields()`/`draftFromFills` for the model pass: `kiosk.extract()` takes the Scheduler's form and tells the model today's date.
+- **Service dates**: nested services may carry `dates: [{ id, title, date: YYYY-MM-DD, time?: HH:MM }]` (yaxb-journeys `serviceDates`, checked in `expandService`); `ServiceDesign.dates` and the "Key dates" fieldset on ServiceDesigner's Service step.
+- **Web**: `composables/schedule.ts` (`useSchedule`: IndexedDB `yaxb-schedule`, per profile owner; services' dates from loaded catalogue services; `draft()` reads on the device, then the model; `pendingScheduleText`), `SchedulerScreen.vue` inside Quick tools (`/kiosk?screen=services&tool=scheduler`; the `scheduler` screen in `screens.yaml` is hidden, and its Quick tools item opens the tool), `ComingUp.vue` in Ask Me's empty state. In the composer, `/schedule <words>` and `/qt` (the `ContextSheet` mode `qt`, picks of kind `tool`, `KioskShell.openTool`); neither at the front desk.
+
 ## Journey summaries
 
 - `journeys/summary.ts`:

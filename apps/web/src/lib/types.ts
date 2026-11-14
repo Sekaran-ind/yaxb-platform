@@ -82,4 +82,8 @@ export type KioskStatus = "Ready" | "Listening" | "Fetching" | "Thinking" | "Pla
 export const SETTINGS_STORAGE_KEY = "yaxb.settings.v1";
 
 /** What the conversation's context loader picked (/journeys, /staff). */
-export type ContextPick = { kind: "journey"; id: string; title: string } | { kind: "request"; ref: string };
+export type ContextPick =
+  | { kind: "journey"; id: string; title: string }
+  | { kind: "request"; ref: string }
+  /** A Quick tools item (/qt): it opens a journey, a screen (the Scheduler, Translate) or a staff section. */
+  | { kind: "tool"; label: string; journey?: string; screen?: string; staff?: string };

@@ -15,6 +15,8 @@
 //   POST   /v1/mailbox/:id/pick  { by }                  take one (its body is deleted)
 //   GET    /v1/mailbox-status?ids=a,b                     waiting, delivered or expired
 //   GET    /v1/beacons    PUT /v1/beacons/:caseId         who holds which case (moderators' board)
+//   POST   /v1/events  (body: [event])                   a service's events (MET-2): facts, never answers
+//   GET    /v1/events?service=&since=                    a service's events, oldest first
 //
 // Auth: `Authorization: Bearer <YAXB_BOX_TOKEN>`, compared in constant time. Bearer tokens, not
 // cookies, so CORS can't be used to ride a session; origins are still limited to the kiosk's own
@@ -202,6 +204,21 @@ export function createBoxServer(config, { db = openDb(config.dbPath) } = {}) {
     if (resource === 'mailbox-status' && req.method === 'GET') {
       const ids = (url.searchParams.get('ids') || '').split(',').filter((x) => ID.test(x)).slice(0, 100);
       return send(res, 200, { status: db.mailboxStatus(ids) });
+    }
+    if (resource === 'events') {
+      if (req.method === 'POST') {
+        const body = await readJson(req);
+        const ok = Array.isArray(body) && body.length > 0 && body.length <= 200 && body.every((e) => plainObject(e) && ID.test(String(e.id)) && typeof e.service === 'string' && typeof e.kind === 'string' && typeof e.at === 'string' && !('answers' in e));
+        if (!ok) throw new HttpError(400, 'That is not a batch of events.');
+        db.eventsAdd(body);
+        return send(res, 204);
+      }
+      if (req.method === 'GET') {
+        const service = url.searchParams.get('service') || '';
+        if (!ID.test(service)) throw new HttpError(400, 'Which service?');
+        return send(res, 200, { items: db.eventsList(service, url.searchParams.get('since') || '', Math.min(Number(url.searchParams.get('limit') || 10000), 10000)) });
+      }
+      throw new HttpError(405, 'Method not allowed.');
     }
     if (resource === 'beacons') {
       if (!a && req.method === 'GET') return send(res, 200, { items: db.beaconList() });

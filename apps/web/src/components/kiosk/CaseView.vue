@@ -11,6 +11,7 @@ import JourneyPanel from "./JourneyPanel.vue";
 import RequestStatus from "./RequestStatus.vue";
 import { addNote, deliveryText, finishCase, openCase, refreshQueue, resendCase, statusText, type CaseDetail } from "@/composables/cases";
 import { roleName } from "@/composables/library";
+import { recordEvent } from "@/composables/service-events";
 import type { NotebookRecord } from "@/lib/browser/store";
 
 const props = defineProps<{
@@ -34,6 +35,7 @@ async function load() {
   error.value = null;
   try {
     detail.value = await openCase(props.caseKey);
+    pickedUp();
   } catch (e) {
     detail.value = null;
     error.value = (e as Error).message;
@@ -76,8 +78,23 @@ const sendNote = () =>
     await addNote(key.value, note.value);
     note.value = "";
   }, () => "Your note is added.");
+/** A member opening a request that is theirs now: picked up (once per request, on this device), with the wait. */
+function pickedUp() {
+  const d = detail.value;
+  if (!d?.turn || d.actor.starter) return;
+  const k = `yaxb.picked.${d.case.id}.${d.case.updated_at}`;
+  try {
+    if (localStorage.getItem(k)) return;
+    localStorage.setItem(k, "1");
+  } catch {
+    /* private mode: may count twice */
+  }
+  recordEvent(d.case.entry_id, { journey: d.case.journey_id, kind: "request.picked_up", run: d.case.id, step: d.case.waiting_step, role: d.case.waiting_role ?? d.case.finish_roles[0] ?? null, ms: Date.now() - Date.parse(d.case.updated_at), staff: true });
+}
 const close = () =>
   act(async () => {
+    const d = detail.value!.case;
+    recordEvent(d.entry_id, { journey: d.journey_id, kind: closing.value === "done" ? "request.closed" : "request.declined", run: d.id, role: d.waiting_role ?? d.finish_roles[0] ?? null, staff: true });
     await finishCase(key.value, closing.value!, closeNote.value);
     closeNote.value = "";
   }, () => {

@@ -5,7 +5,7 @@
 // conversation; a request's reference (R-XXXXXX) shows where that request is. Journeys and
 // references stay in the conversation, so opening it later shows where they are.
 import { MAX_MESSAGE_CHARS } from "@sekaran-ind/yaxb-core/schemas";
-import { ArrowUp, Bot, CheckCircle2, HardDrive, Circle, CircleDot, Inbox, ListChecks, Loader2, Mic, MicOff, Paperclip, Plus, ShieldCheck, UserRoundCog, Wrench } from "@lucide/vue";
+import { ArrowUp, Bot, CalendarDays, CheckCircle2, Circle, CircleDot, HardDrive, Inbox, LayoutGrid, ListChecks, Loader2, Mic, MicOff, Paperclip, Plus, ShieldCheck, UserRoundCog, Wrench } from "@lucide/vue";
 import type { ServiceHandler } from "@sekaran-ind/yaxb-core/journeys";
 import { CASE_REF } from "@sekaran-ind/yaxb-core/cases";
 import { ACCEPTED_FILES } from "@/lib/browser/documents";
@@ -72,6 +72,10 @@ const emit = defineEmits<{
   journeyDone: [journeyId: string];
   speak: [text: string];
   openThread: [id: string];
+  /** The Scheduler, with words for it to read (or none). */
+  schedule: [text: string];
+  /** A Quick tools item picked from /qt. */
+  tool: [pick: Extract<ContextPick, { kind: "tool" }>];
 }>();
 /** The conversations drawer: opened from the Conversations pill in the tab row (the shell). */
 const drawer = defineModel<boolean>("drawer", { default: false });
@@ -130,7 +134,7 @@ onMounted(() => {
 onBeforeUnmount(() => sizes.disconnect());
 
 // ---- loading context: + and slash commands (LIB-49) ----------------------------------------------
-const sheet = ref<"journeys" | "staff" | null>(null);
+const sheet = ref<"journeys" | "staff" | "qt" | null>(null);
 const menu = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
 const MENU_ITEM = "flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-ink outline-none hover:bg-mist focus-visible:bg-mist focus-visible:ring-2 focus-visible:ring-brand/40";
@@ -138,7 +142,16 @@ const SLASH = computed(() => [
   { cmd: "/journeys", label: "Start a journey here", icon: ListChecks },
   ...(props.member && !props.restricted ? [{ cmd: "/staff", label: "Staff journeys and requests waiting for you", icon: UserRoundCog }] : []),
   { cmd: "/request", label: "Check a request by its reference", icon: Inbox },
+  // Quick tools and the Scheduler (not at the front desk).
+  ...(props.restricted
+    ? []
+    : [
+        { cmd: "/qt", label: "Quick tools: the Scheduler, translation, the notebook's tools", icon: LayoutGrid },
+        { cmd: "/schedule", label: "Scheduler: a to-do, a birthday, an event (/schedule Mum's birthday on 3 March)", icon: CalendarDays },
+      ]),
 ]);
+/** Other ways people type them. */
+const ALIASES: Record<string, string> = { "/quick-tools": "/qt", "/tools": "/qt", "/quicktools": "/qt", "/calendar": "/schedule", "/scheduler": "/schedule", "/todo": "/schedule", "/remind": "/schedule" };
 /** Slash suggestions while the message starts with "/". */
 const suggestions = computed(() => (draft.value.startsWith("/") && !draft.value.includes(" ") ? SLASH.value.filter((s) => s.cmd.startsWith(draft.value.toLowerCase())) : []));
 /** A reference typed on its own, or after /request. */
@@ -161,6 +174,8 @@ function runSlash(cmd: string) {
   closeMenu(false);
   if (cmd === "/journeys") sheet.value = "journeys";
   else if (cmd === "/staff") sheet.value = "staff";
+  else if (cmd === "/qt") sheet.value = "qt";
+  else if (cmd === "/schedule") emit("schedule", "");
   else {
     draft.value = "/request ";
     void nextTick(() => input.value?.focus());
@@ -224,6 +239,7 @@ function closeSheet() {
 }
 function onPick(p: ContextPick) {
   sheet.value = null;
+  if (p.kind === "tool") return void emit("tool", p);
   if (p.kind === "journey") emit("journey", p.id, p.title);
   else emit("request", p.ref, true);
 }
@@ -246,7 +262,14 @@ function submit() {
     draft.value = "";
     return void emit("request", ref);
   }
-  const slash = SLASH.value.find((s) => s.cmd === q.toLowerCase());
+  // "/schedule Mum's birthday on 3 March": the Scheduler reads the rest.
+  const sched = q.match(/^\/(schedule|scheduler|calendar|remind|todo)\s+(.+)$/i);
+  if (sched && !props.restricted) {
+    draft.value = "";
+    return void emit("schedule", sched[2]!);
+  }
+  const typed = ALIASES[q.toLowerCase()] ?? q.toLowerCase();
+  const slash = SLASH.value.find((s) => s.cmd === typed);
   if (slash) return runSlash(slash.cmd);
   if (suggestions.value.length === 1) return runSlash(suggestions.value[0]!.cmd);
   if (!props.canAsk && !formInput.value) return;
@@ -257,7 +280,7 @@ function submit() {
 
 <template>
   <!-- A reading width, however wide the kiosk: the conversation and its composer stay centred. -->
-  <div :class="cn('relative flex w-full flex-col', heightClass ?? 'min-h-[min(62dvh,560px)]')">
+  <div :class="cn('relative flex w-full min-w-0 flex-col overflow-x-clip', heightClass ?? 'min-h-[min(62dvh,560px)]')">
     <p v-if="noProvider" role="alert" class="caution mb-3 px-3 py-2 text-sm">
       No AI provider is configured. Add a provider key as a Worker secret (locally: <code>apps/web/.dev.vars</code>).
     </p>

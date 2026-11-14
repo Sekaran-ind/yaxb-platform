@@ -19,6 +19,7 @@ import { speechLangFor } from "@/lib/languages";
 import JourneyField from "./JourneyField.vue";
 import { kioskActor, roleName } from "@/composables/library";
 import { offerFormInput, withdrawFormInput } from "@/composables/form-input";
+import { recordEvent } from "@/composables/service-events";
 import { actCase, deliveryText, resendCase, startCase, type CaseDetail } from "@/composables/cases";
 import type { CaseSummary, Delivery } from "@sekaran-ind/yaxb-core/cases";
 
@@ -74,6 +75,10 @@ async function handOver() {
       r = await actCase(props.resume, answers, steps);
     } else r = await startCase(props.entry!, props.journey.id, snap.answers, snap.steps);
     handed.value = r.case;
+    // From now on this run is the request: its hand-over, and (a member carrying on) their answer.
+    runId = r.case.id;
+    if (props.resume) record("request.answered", { step: props.resume.case.waiting_step, role: props.resume.case.waiting_role, staff: true });
+    if (r.case.status === "waiting" || r.case.status === "to_finish") record("journey.handed", { step: r.case.waiting_step, role: r.case.waiting_role ?? r.case.finish_roles[0] ?? null });
     delivery.value = r.delivery;
     emit("handed", r.case);
   } catch (e) {
@@ -175,6 +180,7 @@ async function fillFromWords() {
   try {
     const m = await matchOnDevice(stepFields.value, text, settings.agent);
     const n = applyFills(m.fills);
+    if (n) record("form.words", { step: promptStep.value });
     confirms.value = m.confirm;
     missing.value = m.missing.filter((id) => isEmpty(values.value[id]));
     slotNote.value =
@@ -221,6 +227,36 @@ const voice = useSpeechInput(
   () => speechLangFor(settings.agent.language),
 );
 
+// ---- the service's records (MET-2): facts about this run, for its dashboard ----------------------
+/** The catalogue entry this journey belongs to (a case keeps it). */
+const metricsEntry = computed(() => props.resume?.case.entry_id ?? props.entry ?? null);
+/** A run: a request's id once it is one; otherwise a random id for this visit only. */
+let runId = props.resume?.case.id ?? crypto.randomUUID();
+let runStarted = Date.now();
+let lastStep: string | null = null;
+let finishedRun = false;
+const record = (kind: Parameters<typeof recordEvent>[1]["kind"], extra: Omit<Parameters<typeof recordEvent>[1], "journey" | "kind" | "run"> = {}) =>
+  recordEvent(metricsEntry.value, { journey: props.journey.id, kind, run: runId, ...extra });
+watch(
+  () => [state.value?.status, state.value?.prompt?.step ?? state.value?.current] as const,
+  ([s, step]) => {
+    if (s === "asking" && step && step !== lastStep) {
+      if (lastStep === null && !props.resume && !props.initial) record("journey.started");
+      lastStep = step;
+      record("screen.reached", { step });
+    }
+    if (s === "failed" && state.value?.current) record("step.failed", { step: state.value.current });
+    if (s === "done" && !finishedRun) {
+      finishedRun = true;
+      record("journey.finished", { ms: Date.now() - runStarted, ok: state.value?.result?.ok ?? null, staff: Boolean(props.resume) });
+    }
+  },
+);
+onBeforeUnmount(() => {
+  // Left part-way (not handed over, not finished): where people stop.
+  if (!finishedRun && !handed.value && lastStep && state.value?.status === "asking") record("journey.stopped", { step: lastStep, ms: Date.now() - runStarted });
+});
+
 // Tell the shell when the journey finishes (the activity log records that a service was used), and
 // hand it over when it now needs someone else.
 watch(
@@ -254,6 +290,12 @@ function keptSnapshot(): RunSnapshot {
   return snap;
 }
 const restart = (fresh = true) => {
+  if (fresh) {
+    runId = crypto.randomUUID();
+    runStarted = Date.now();
+    lastStep = null;
+    finishedRun = false;
+  }
   handed.value = null;
   delivery.value = null;
   handError.value = null;

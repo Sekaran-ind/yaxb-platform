@@ -40,6 +40,9 @@ export type Envelope =
 export type Beacon = {
   case_id: string;
   ref: string;
+  /** The service (catalogue entry) and journey, for its records (MET-2). */
+  entry_id?: string;
+  journey_id?: string;
   journey_title: string;
   service_title: string;
   status: Case["status"];
@@ -92,6 +95,8 @@ export const envelopeSchema = z.discriminatedUnion("kind", [
 export const beaconSchema = z.strictObject({
   case_id: z.string().max(64),
   ref: z.string().max(16),
+  entry_id: z.string().max(80).optional(),
+  journey_id: z.string().max(80).optional(),
   journey_title: z.string().max(200),
   service_title: z.string().max(200),
   status: z.enum(["waiting", "to_finish", "done", "declined"]),
@@ -132,6 +137,8 @@ export function beaconOf(c: Case, holder: Address, holderName: string | null, co
   return {
     case_id: c.id,
     ref: c.ref,
+    entry_id: c.entry_id,
+    journey_id: c.journey_id,
     journey_title: c.journey_title,
     service_title: c.service_title,
     status: c.status,

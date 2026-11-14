@@ -132,3 +132,14 @@ test('beacons: who holds which case, until they expire', async () => {
   const list = await (await call('/v1/beacons')).json();
   assert.deepEqual(list.items.map((x) => x.ref), ['R-ZZZZZZ']);
 });
+
+test('events: a service keeps its journeys facts, once each, and lists them since a time', async () => {
+  const e = (id, at) => ({ id, service: 'svc-1', journey: 'j', kind: 'journey.started', step: null, role: null, run: 'r', at, ms: null, ok: null, actor: null });
+  assert.equal((await call('/v1/events', { method: 'POST', body: [{ id: 'x' }] })).status, 400);
+  assert.equal((await call('/v1/events', { method: 'POST', body: [e('ev-1', '2026-11-16T09:00:00Z'), e('ev-2', '2026-11-16T10:00:00Z')] })).status, 204);
+  assert.equal((await call('/v1/events', { method: 'POST', body: [e('ev-1', '2026-11-16T09:00:00Z')] })).status, 204);
+  const all = await (await call('/v1/events?service=svc-1')).json();
+  assert.deepEqual(all.items.map((x) => x.id), ['ev-1', 'ev-2']);
+  const later = await (await call('/v1/events?service=svc-1&since=2026-11-16T09:30:00Z')).json();
+  assert.deepEqual(later.items.map((x) => x.id), ['ev-2']);
+});

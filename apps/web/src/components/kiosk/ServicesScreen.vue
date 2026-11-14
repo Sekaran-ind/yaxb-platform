@@ -20,6 +20,7 @@ import { NATIVE } from "@/lib/platform";
 import RequestList from "./RequestList.vue";
 import JourneySummaryCard from "./JourneySummaryCard.vue";
 import KioskStaff from "./KioskStaff.vue";
+import SchedulerScreen from "./SchedulerScreen.vue";
 import {
   catalogue,
   kioskJourneys,
@@ -63,8 +64,11 @@ const summaryOf = (item: ServiceItem) => item.summary ?? (item.journey ? journey
 
 /** A staff section open inside Services (/kiosk?screen=services&staff=team). */
 const staffSection = computed(() => (!NATIVE && typeof route.query.staff === "string" ? route.query.staff : null));
+/** A tool open inside Quick tools (the Scheduler). */
+const tool = computed(() => (typeof route.query.tool === "string" ? route.query.tool : null));
 function open(item: ServiceItem) {
   if (item.staff) return void router.push({ path: "/kiosk", query: { screen: "services", staff: item.staff } });
+  if (item.screen === "scheduler") return void router.push({ path: "/kiosk", query: { screen: "services", tool: "scheduler" } });
   if (item.journey) return emit("openJourney", item.journey);
   if (item.screen) emit("openScreen", item.screen);
 }
@@ -86,6 +90,9 @@ const otherGroups = computed(() =>
 
 <template>
   <KioskStaff v-if="staffSection" @back="backToServices" />
+
+  <!-- The Scheduler opens here, inside Quick tools (/kiosk?screen=services&tool=scheduler). -->
+  <SchedulerScreen v-else-if="tool === 'scheduler'" @back="backToServices" />
 
   <div v-else class="@container space-y-7">
     <!-- Work waiting for this member's roles comes first. -->

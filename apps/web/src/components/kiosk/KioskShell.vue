@@ -45,6 +45,8 @@ import { serviceDocuments } from "@/composables/notebook";
 import { loadedServices } from "@/composables/library";
 import ProfilePicker from "@/components/account/ProfilePicker.vue";
 import RestrictedUnlock from "./RestrictedUnlock.vue";
+import ComingUp from "./ComingUp.vue";
+import { pendingScheduleText } from "@/composables/schedule";
 import AskMePills from "./AskMePills.vue";
 import type { NotebookSource } from "@sekaran-ind/yaxb-core/notebook";
 import type { StorageId } from "@sekaran-ind/yaxb-core/settings";
@@ -417,6 +419,19 @@ watch(
   },
   { immediate: true },
 );
+/** The Scheduler (SCH-7), from /schedule: with words, it reads them into an entry to confirm. */
+function openScheduler(text: string) {
+  pendingScheduleText.value = text;
+  setScreen("services");
+  void router.push({ path: "/kiosk", query: { screen: "services", tool: "scheduler" } });
+}
+/** A Quick tools item picked from /qt: a journey runs here; a screen or a staff section opens. */
+function openTool(t: { journey?: string; screen?: string; staff?: string }) {
+  if (t.journey) return void startJourney(t.journey);
+  if (t.staff) return void router.push({ path: "/kiosk", query: { screen: "services", staff: t.staff } });
+  if (t.screen === "scheduler") return openScheduler("");
+  if (t.screen) setScreen(t.screen);
+}
 /** Files attached in the conversation become notebook sources, which answers can then cite. */
 async function attachFiles(files: File[]) {
   screen.value = "transcript";
@@ -613,7 +628,10 @@ const fixedHeight = computed(() => true);
   <!-- Measure the full available width (not the mini card), so Auto can grow back out of mini. -->
   <!-- Embedded (the catalogue's Ask Me): the conversation alone; its host gives it a height. -->
   <div v-if="embedded" class="flex h-full min-h-0 flex-col gap-2">
-    <div class="flex justify-end"><AskMePills
+    <!-- Its New and Conversations join the catalogue's pills (the catalogue has its own sign-in and
+         Preferences), so there is one row of controls. -->
+    <Teleport defer to="#catalogue-ask-pills"><AskMePills
+      conversation-only
       :restricted="restricted"
       :on-ask-me="screen === 'transcript' || props.embedded"
       :can-new="chat.turns.value.length > 0"
@@ -626,7 +644,7 @@ const fixedHeight = computed(() => true);
       @prefs="openPrefs('language')"
       @end-session="endSession"
       @unlock="unlocking = true"
-    /></div>
+    /></Teleport>
     <TranscriptPane
       :turns="chat.turns.value"
       :busy="chat.busy.value"
@@ -662,11 +680,13 @@ const fixedHeight = computed(() => true);
       :allow-attach="!restricted || settings.restricted.attach"
       :active-thread-id="chat.threadId.value"
       @open-thread="(id) => chat.open(id)"
+      @schedule="openScheduler"
+      @tool="openTool"
     >
-      <!-- Beside Conversations: the visitor's profile (sign in) and the kiosk's preferences. -->
       <!-- The front desk starts with its services. -->
-      <template v-if="restricted && frontJourneys.length" #empty>
-        <ul class="mx-auto mt-6 grid max-w-xl gap-2 text-left @lg:grid-cols-2">
+      <template #empty>
+                  <ComingUp v-if="!restricted && !embedded" @open="openScheduler('')" />
+        <ul v-if="restricted && frontJourneys.length" class="mx-auto mt-6 grid max-w-xl gap-2 text-left @lg:grid-cols-2">
           <li v-for="j in frontJourneys" :key="j.id">
             <button type="button" class="card flex min-h-16 w-full flex-col items-start p-4 text-left transition hover:border-gray-300" @click="startJourney(j.id)">
               <span class="text-base font-medium text-ink">{{ j.title }}</span>
@@ -775,11 +795,13 @@ const fixedHeight = computed(() => true);
                 :allow-attach="!restricted || settings.restricted.attach"
                 :active-thread-id="chat.threadId.value"
                 @open-thread="(id) => chat.open(id)"
+                @schedule="openScheduler"
+                @tool="openTool"
               >
-                <!-- Beside Conversations: the visitor's profile (sign in) and the kiosk's preferences. -->
                 <!-- The front desk starts with its services. -->
-                <template v-if="restricted && frontJourneys.length" #empty>
-                  <ul class="mx-auto mt-6 grid max-w-xl gap-2 text-left @lg:grid-cols-2">
+                <template #empty>
+                  <ComingUp v-if="!restricted" @open="openScheduler('')" />
+                  <ul v-if="restricted && frontJourneys.length" class="mx-auto mt-6 grid max-w-xl gap-2 text-left @lg:grid-cols-2">
                     <li v-for="j in frontJourneys" :key="j.id">
                       <button type="button" class="card flex min-h-16 w-full flex-col items-start p-4 text-left transition hover:border-gray-300" @click="startJourney(j.id)">
                         <span class="text-base font-medium text-ink">{{ j.title }}</span>

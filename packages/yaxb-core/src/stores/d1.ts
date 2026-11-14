@@ -13,6 +13,7 @@ import { feedbackSchema, newFeedbackItem, type FeedbackItem, type FeedbackStore 
 import type { AuditEvent, Moderator, ModeratorStore } from "../moderators/index.js";
 import type { CustomRole, EntryRevision, Library, LibraryEntry, LibraryStore } from "../library/index.js";
 import type { Beacon, Case, CaseEvent, CaseStore, CaseSummary, Envelope, Mailbox } from "../cases/index.js";
+import type { EventStore, ServiceEvent } from "../metrics/index.js";
 import { MAX_LESSONS, MAX_THREAD, type DesignerStore, type DesignLesson, type DesignMessage, type DesignRun } from "../designer/index.js";
 import type { Kv, KvItem } from "./kv.js";
 
@@ -298,7 +299,7 @@ export function createD1ModeratorStore(db: D1Like): ModeratorStore {
 /** The journey library on D1 (migrations/0006_library.sql). */
 export function createD1LibraryStore(db: D1Like): LibraryStore {
   const ENTRY_COLS =
-    "id, library_id, kind, doc_id, title, yaml, status, revision, published_yaml, published_revision, owner_id, owner_name, submitted_by, submitted_by_name, submitted_at, reviewed_by, reviewed_by_name, reviewed_at, review_note, created_at, updated_at, updated_by_name";
+    "id, library_id, kind, doc_id, title, yaml, status, revision, published_yaml, published_revision, owner_id, owner_name, submitted_by, submitted_by_name, submitted_at, reviewed_by, reviewed_by_name, reviewed_at, review_note, created_at, updated_at, updated_by_name, storage";
   const role = (r: { id: string; label: string; description: string | null; created_at: string }): CustomRole => ({ id: r.id, label: r.label, created_at: r.created_at, ...(r.description ? { description: r.description } : {}) });
   return {
     async roles() {
@@ -531,6 +532,28 @@ export function createD1Relay(db: D1Like, now = () => new Date()): Mailbox {
     async beacons() {
       await purge();
       return (await db.prepare("SELECT body FROM relay_beacons ORDER BY updated_at LIMIT 500").all<{ body: string }>()).results.map((r) => JSON.parse(r.body) as Beacon);
+    },
+  };
+}
+
+/** A service's events on the server (MET-2, migration 0012): the paid plan's storage. */
+export function createD1EventStore(db: D1Like): EventStore {
+  const COLS = "id, service, journey, kind, step, role, run, at, ms, ok, actor";
+  type Row = Omit<ServiceEvent, "ok"> & { ok: number | null };
+  return {
+    async add(events) {
+      for (const e of events)
+        await db
+          .prepare(`INSERT OR IGNORE INTO service_events (${COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`)
+          .bind(e.id, e.service, e.journey, e.kind, e.step, e.role, e.run, e.at, e.ms, e.ok === null ? null : e.ok ? 1 : 0, e.actor)
+          .run();
+    },
+    async list(service, { since, limit = 10_000 } = {}) {
+      const rows = await db
+        .prepare(`SELECT ${COLS} FROM (SELECT ${COLS} FROM service_events WHERE service = ?1 AND at >= ?2 ORDER BY at DESC LIMIT ?3) ORDER BY at`)
+        .bind(service, since ?? "", limit)
+        .all<Row>();
+      return rows.results.map((r) => ({ ...r, ok: r.ok === null ? null : Boolean(r.ok) }));
     },
   };
 }
