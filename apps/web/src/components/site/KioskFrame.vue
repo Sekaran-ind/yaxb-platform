@@ -15,13 +15,23 @@ import type { Layout } from "@sekaran-ind/yaxb-core/screens";
 import { useWidth } from "@/composables/width";
 import { cn } from "@/lib/cn";
 import { NATIVE } from "@/lib/platform";
+import { SITE_WIDTH } from "@/lib/site-width";
 
 // chromeless: no site navbar above it (the native app, and the front desk).
-const props = defineProps<{ layout: Layout; miniHeight?: string; podHeight?: string; narrowPanel?: boolean; chromeless?: boolean }>();
-const { el: screens, width } = useWidth(900);
+const props = defineProps<{
+  layout: Layout;
+  miniHeight?: string;
+  podHeight?: string;
+  narrowPanel?: boolean;
+  chromeless?: boolean;
+  /** Pod and Mini scroll their screens area themselves, as Full does (the catalogue: an open service has no nav to scroll in). */
+  scroll?: boolean;
+}>();
+const { el: screens, width: screensWidth } = useWidth(900);
 // The full frame's height: the window less the site's navbar and the page padding (no navbar in the app).
 const fullHeight = () => (NATIVE || props.chromeless ? "h-[calc(100dvh-2.5rem)]" : "h-[calc(100dvh-6.5rem)]");
-const outer = () => cn("mx-auto px-3 py-5 sm:px-5", props.layout === "mini" ? "max-w-md" : props.layout === "pod" ? "max-w-5xl" : "max-w-[110rem]");
+// Full takes the site's width (the navbar and footer line up with it); Pod and Mini are cards in it.
+const outer = () => cn("mx-auto py-5", props.layout === "mini" ? "max-w-md px-3 sm:px-5" : props.layout === "pod" ? "max-w-5xl px-3 sm:px-5" : SITE_WIDTH);
 </script>
 
 <template>
@@ -40,14 +50,16 @@ const outer = () => cn("mx-auto px-3 py-5 sm:px-5", props.layout === "mini" ? "m
         ref="screens"
         :class="
           cn(
-            'min-w-0',
+            // A named size container: the controls on the tab row drop their words when it is narrow.
+            'min-w-0 @container/screens',
             layout === 'full' && 'min-h-0 overflow-y-auto px-3 pt-3 pb-3 [scrollbar-width:thin]',
             layout === 'pod' && cn('px-3 pt-2 pb-3', podHeight),
             layout === 'mini' && cn('px-1.5 pt-1 pb-2', miniHeight),
+            scroll && layout !== 'full' && 'overflow-y-auto [scrollbar-width:thin]',
           )
         "
       >
-        <slot :width="width" />
+        <slot :width="screensWidth" />
       </div>
     </div>
   </div>

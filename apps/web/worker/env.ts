@@ -14,6 +14,8 @@ const schema = z.object({
   MODERATOR_TOKEN: z.string().min(24, "MODERATOR_TOKEN must be at least 24 characters").optional(),
   /** The administrator signs in to /kiosk/admin with this, to issue and manage moderator keys. Unset = no administration. */
   ADMIN_TOKEN: z.string().min(24, "ADMIN_TOKEN must be at least 24 characters").optional(),
+  /** The helpdesk Worker the contact form goes to (as ClinüxFlow's does): `{ type: "email", name, clinic, email, message }` → `{ success }`. Unset = Airtable. */
+  HELPDESK_URL: z.url({ protocol: /^https$/ }).optional(),
   AIRTABLE_API_TOKEN: z.string().optional(),
   AIRTABLE_BASE_ID: z.string().regex(/^app[A-Za-z0-9]+$/).optional(),
   AIRTABLE_TABLE_NAME: z.string().default("Contacts"),

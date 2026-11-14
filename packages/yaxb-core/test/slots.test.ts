@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createKiosk } from "../src/agent/index.js";
 import { journeyById } from "../src/content/index.js";
 import type { Embed } from "../src/knowledge/semantic.js";
-import { checkExtracted, clausesOf, fieldProblem, fieldsJsonSchema, matchFields, mergeEntities, type Entity } from "../src/journeys/index.js";
+import { checkExtracted, clausesOf, fieldProblem, fieldsJsonSchema, matchFields, mergeEntities, type Entity, type TypedValue } from "../src/journeys/index.js";
 import { LANGUAGES } from "../src/schemas/index.js";
 import { createMemoryModerationStore, createMemoryThreadStore } from "../src/stores/index.js";
 import { ScriptedModel } from "./scripted-model.js";
@@ -94,6 +94,30 @@ describe("slot filling", () => {
     expect(fieldProblem(days, "three")).toBe("How many days must be a number.");
     expect(fieldProblem(date, "2026-11-12")).toBeNull();
     expect(fieldProblem(date, "12/11/2026")).toBe("Visit date must be a date.");
+  });
+});
+
+describe("typed values (JRN-16)", () => {
+  it("fills phone, money, measure and web address fields from the recogniser, whatever the language", async () => {
+    const found: TypedValue[] = [
+      { kind: "phone", text: "+91 98765 43210", value: "+91 98765 43210" },
+      { kind: "money", text: "₹500", value: 500, unit: "INR" },
+      { kind: "measure", text: "21 km", value: 21, unit: "Kilometer" },
+    ];
+    const fields = [
+      { id: "mobile", type: "text", label: "Mobile", entity: "phone" },
+      { id: "fee", type: "number", label: "Fee paid", entity: "money" },
+      { id: "distance", type: "text", label: "Distance", entity: "measure" },
+      { id: "site", type: "text", label: "Website", entity: "url" },
+    ] as const;
+    const r = await matchFields(fields as never, "என் எண் +91 98765 43210, கட்டணம் ₹500, தூரம் 21 km, https://example.org/run", { values: async () => found });
+    const v = Object.fromEntries(r.fills.map((f) => [f.field, f.value]));
+    expect(v).toEqual({ mobile: "+919876543210", fee: 500, distance: "21 km", site: "https://example.org/run" });
+  });
+  it("falls back to the simple patterns without a recogniser, and survives one that fails", async () => {
+    const fields = [{ id: "mobile", type: "text", label: "Mobile", entity: "phone" }] as const;
+    const r = await matchFields(fields as never, "call 98765 43210", { values: async () => Promise.reject(new Error("offline")) });
+    expect(r.fills[0]?.value).toBe("9876543210");
   });
 });
 

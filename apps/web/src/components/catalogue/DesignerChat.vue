@@ -22,6 +22,8 @@ const props = defineProps<{
   pristine: boolean;
   /** This person can change the service (else: a reviewer, who gets suggestions). */
   editable: boolean;
+  /** A description to start the first message with (the home page's ideas, `?idea=`); never sent until the person sends it. */
+  idea?: string;
 }>();
 const emit = defineEmits<{ apply: [yaml: string, run: string | null]; thread: [id: string] }>();
 
@@ -63,6 +65,14 @@ async function load() {
 watch(() => [props.entryId, props.threadId], load, { immediate: true });
 
 const first = computed(() => !props.entryId && !messages.value.length && props.pristine);
+// An idea fills an empty first message once; the person reads it, changes it, then sends it.
+watch(
+  () => [props.idea, first.value] as const,
+  ([idea, isFirst]) => {
+    if (idea && isFirst && !text.value) text.value = idea.slice(0, MAX_NARRATIVE);
+  },
+  { immediate: true },
+);
 const minLength = computed(() => (first.value ? 20 : 2));
 const placeholder = computed(() =>
   first.value

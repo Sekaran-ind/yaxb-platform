@@ -33,6 +33,8 @@ import { checkExtracted, fieldsJsonSchema, type SlotFill } from "../journeys/slo
 import { journeysText } from "../journeys/summary.js";
 import { PROFILE_FORM, profileFields } from "../commands/index.js";
 import { SCHEDULE_FORM, scheduleFields } from "../schedule/index.js";
+import { checkRewrite, consentFacts, draftConsent, GUARDIAN_PROMPT, GUARDIAN_SCHEMA, guardianFlags, type ConsentFacts, type GuardianFlag } from "../guardian/index.js";
+import { parseDocument, serviceConsent, type Role, type ServiceConsent } from "@sekaran-ind/yaxb-journeys";
 import { offeringsText, servicesFor } from "../services/index.js";
 import { capabilities, effectiveSettings, isOn, languageName, SUBAGENT_OPTIONS, type AgentSettings } from "../settings/index.js";
 import { createPassedRetriever, EMBEDDING_MODELS, embeddingModelFor, resolveRetrieved, type Embed } from "../knowledge/semantic.js";
@@ -305,6 +307,55 @@ export function createKiosk(deps: KioskDeps) {
   }
 
   /**
+   * The Legal Guardian (CON-1..8): consent forms for a service, one per role, from what the service
+   * really does (consentFacts), with the flags a reviewer should see. With a model, it rewrites the
+   * draft in plainer words, one point for one (checkRewrite), else the draft stands. The version goes
+   * up when the wording differs from the service's current forms. Nothing is stored.
+   */
+  async function guardian(
+    input: { yaml: unknown; storage?: unknown; relayHours?: unknown; roles?: readonly Role[]; selection?: Selection | null },
+    { signal }: { signal?: AbortSignal } = {},
+  ): Promise<{ consent: ServiceConsent; facts: ConsentFacts; flags: GuardianFlag[]; via: "assistant" | "draft"; note: string | null } | { error: string }> {
+    if (typeof input.yaml !== "string" || !input.yaml.trim() || input.yaml.length > 200_000) return { error: "Send the service's YAML." };
+    const parsed = parseDocument(input.yaml);
+    if (!parsed.ok) return { error: parsed.error };
+    const storage = input.storage === "box" || input.storage === "server" ? input.storage : "none";
+    const relayHours = typeof input.relayHours === "number" && input.relayHours > 0 && input.relayHours <= 168 ? input.relayHours : 48;
+    const facts = consentFacts(parsed.doc, { storage, relayHours, roles: input.roles ?? [] });
+    const flags = guardianFlags(facts);
+    const current = serviceConsent(parsed.doc.consent, null);
+    const bump = (c: ServiceConsent): ServiceConsent => {
+      if (!current) return { ...c, version: 1 };
+      return JSON.stringify(current.forms) === JSON.stringify(c.forms) ? { ...c, version: current.version } : { ...c, version: current.version + 1 };
+    };
+    const draft = draftConsent(facts);
+    if (!input.selection) return { consent: bump(draft), facts, flags, via: "draft", note: null };
+    try {
+      resolveSelection(deps.env, input.selection);
+      const model = await (deps.modelFactory ? deps.modelFactory(input.selection) : createChatModel(deps.env, input.selection));
+      const messages = [new SystemMessage(GUARDIAN_PROMPT), new HumanMessage(`<consent_forms>
+${JSON.stringify({ forms: draft.forms }, null, 1)}
+</consent_forms>`)];
+      let raw: unknown;
+      try {
+        raw = await model.withStructuredOutput(GUARDIAN_SCHEMA as unknown as Record<string, unknown>, { name: "consent_forms", method: "jsonSchema" }).invoke(messages, { signal });
+      } catch (e) {
+        if (signal?.aborted) throw e;
+        const reply = await model.invoke([...messages, new HumanMessage('Reply with only a JSON object: { "forms": [ { "role", "title", "points", "agree" } ] }')], { signal });
+        const body = typeof reply.content === "string" ? reply.content : JSON.stringify(reply.content);
+        const json = body.match(/\{[\s\S]*\}/)?.[0];
+        raw = json ? JSON.parse(json) : null;
+      }
+      const r = checkRewrite(draft, raw);
+      return { consent: bump(r.consent), facts, flags, via: r.rewritten ? "assistant" : "draft", note: r.rewritten < draft.forms.length ? "Some forms kept the plain draft: the assistant's version left out or added points." : null };
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      if (!(e instanceof ProviderError)) deps.onError?.(e, { where: "guardian", provider: input.selection.provider, model: input.selection.model });
+      return { consent: bump(draft), facts, flags, via: "draft", note: "The assistant wasn't available: this is the plain draft." };
+    }
+  }
+
+  /**
    * The Service Designer agent (designer/): a draft nested service from a narrative, with few-shot
    * examples from content/designer and the published catalogue (`published`), and the reviewers'
    * lessons as its memory. The draft is checked with the catalogue's compiler; nothing is saved here.
@@ -573,6 +624,7 @@ export function createKiosk(deps: KioskDeps) {
     vectorEnabled: knowledge.vectorEnabled,
     extract,
     design,
+    guardian,
     /** Record a session's feedback (validated; nothing identifying). */
     addFeedback: async (input: unknown) => feedback.add(feedbackSchema.parse(input)),
     /** Totals and comments for moderators (MOD-40). */

@@ -7,6 +7,7 @@ import { matchFields, MEANING_THRESHOLDS, type Field, type SlotFill, type SlotMa
 import { LANGUAGES, type AgentSettings } from "@sekaran-ind/yaxb-core/settings";
 import { embedTexts, recognizeEntities } from "./offline";
 import { modelFor } from "./semantic";
+import { recognizeValues } from "./recognizers";
 
 /** Read `text` against a step's fields, on this device. */
 export async function matchOnDevice(fields: readonly Field[], text: string, settings: Pick<AgentSettings, "knowledge" | "language">, signal?: AbortSignal): Promise<SlotMatch> {
@@ -16,6 +17,7 @@ export async function matchOnDevice(fields: readonly Field[], text: string, sett
     embed: (texts) => embedTexts(model, texts, signal),
     meaning: MEANING_THRESHOLDS[model],
     ner: wantsNer ? (t) => recognizeEntities(t, signal) : undefined,
+    values: recognizeValues,
     languages: LANGUAGES,
   });
 }

@@ -11,6 +11,9 @@
 //     - { id: nurse, label: Nurse, description: Ward nurse }
 //   dates:                                   the service's own days (a race day), for calendars
 //     - { id: race-day, title: Race day, date: 2027-02-14, time: "06:00" }
+//   consent:                                 a short consent form per role (consent.ts; the Legal
+//     version: 1                             Guardian drafts it, the reviewer accepts it)
+//     forms: [{ role: visitor, title: Before you start, points: [...], agree: I agree }]
 //   journeys:
 //     - id: check-in
 //       title: Check in
@@ -37,11 +40,12 @@
 // doesn't end it gets an ending ("Thank you"). Journeys may name the service's roles, the built-in
 // ones (administrator, moderator, reviewer) and `visitor` (anyone at the kiosk).
 import { DEFAULT_ROLES, ROLE_ID, VISITOR_ROLE, type Role } from "./roles.js";
+import { serviceConsent } from "./consent.js";
 
 export const isNestedService = (doc: unknown): doc is Record<string, unknown> =>
   Boolean(doc && typeof doc === "object" && !Array.isArray(doc) && (doc as Record<string, unknown>).kind === "service" && (doc as Record<string, unknown>).journeys !== undefined);
 
-const SERVICE_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "order", "layouts", "hidden", "roles", "journeys", "dates"]);
+const SERVICE_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "order", "layouts", "hidden", "roles", "journeys", "dates", "consent"]);
 const JOURNEY_KEYS = new Set(["id", "title", "summary", "icon", "category", "version", "roles", "start", "screens"]);
 const SCREEN_KEYS = new Set(["id", "title", "ask", "questions", "submitLabel", "service", "with", "onError", "decide", "next", "result", "stage", "icon", "role"]);
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
@@ -120,6 +124,7 @@ export function expandService(doc: Record<string, unknown>): Expanded {
   for (const k of Object.keys(doc)) if (!SERVICE_KEYS.has(k)) problems.push(k === "items" ? "a service with journeys lists no items: each journey is one" : `unknown key '${k}'`);
   const roles = serviceRoles(doc.roles, problems);
   const known = new Set<string>([VISITOR_ROLE, ...DEFAULT_ROLES.map((r) => r.id), ...roles.map((r) => r.id)]);
+  serviceConsent(doc.consent, known, problems);
 
   const list = Array.isArray(doc.journeys) ? (doc.journeys as unknown[]) : [];
   if (!Array.isArray(doc.journeys)) problems.push("journeys must be a list");

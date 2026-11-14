@@ -23,7 +23,7 @@ watch(
   <dialog
     ref="dialog"
     :aria-label="title"
-    class="m-auto w-[min(56rem,calc(100%-2rem))] rounded-xl p-0 shadow-2xl backdrop:bg-black/50"
+    class="m-auto w-[min(56rem,calc(100%-2rem))] rounded-xl bg-surface p-0 text-body shadow-2xl backdrop:bg-black/50"
     @close="emit('close')"
     @click="(e) => e.target === dialog && emit('close')"
   >

@@ -18,7 +18,8 @@
 import { conditionPaths, conditionProblem, holds, type Scope } from "./expressions.js";
 
 export const FIELD_TYPES = ["text", "textarea", "password", "select", "boolean", "number", "date", "source", "language"] as const;
-export const FIELD_ENTITIES = ["person", "location", "organization", "email", "phone"] as const;
+/** What a field holds, for slot filling: names (NER) and typed values (email, phone, web address, money, a measure). */
+export const FIELD_ENTITIES = ["person", "location", "organization", "email", "phone", "url", "money", "measure"] as const;
 export type FieldEntity = (typeof FIELD_ENTITIES)[number];
 export type FieldType = (typeof FIELD_TYPES)[number];
 

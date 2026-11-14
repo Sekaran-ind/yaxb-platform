@@ -361,7 +361,7 @@ async function clearBrowser() {
                 <input id="rate" v-model.number="settings.speechRate" type="range" min="0.6" max="1.6" step="0.1" class="mt-3 w-full accent-brand" />
               </div>
             </div>
-            <button type="button" class="btn-light mt-4" @click="voice.speak('Hello, I am YAXB. How may I help you?', { voiceName: settings.voiceName, rate: settings.speechRate })">Test voice</button>
+            <button type="button" class="btn-light mt-4" @click="voice.speak('Hello, I am Anjal. How may I help you?', { voiceName: settings.voiceName, rate: settings.speechRate })">Test voice</button>
           </section>
         </div>
       </template>

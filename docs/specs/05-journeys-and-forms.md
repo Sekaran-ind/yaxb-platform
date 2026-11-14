@@ -23,6 +23,7 @@ Guided services: a sequence of steps that ask the visitor something, run an on-d
 | JRN-13 | Values must be read, in order: from field labels used as keys ("temperature 38.5"); from patterns (dates, phone numbers, emails, option names); from named entities found by a local model (people, places, organisations); and by meaning, matching what was said against each field's description. | Built |
 | JRN-14 | For required fields still empty, the visitor may ask the assistant to fill the rest. The model's answer must be constrained to the fields' types and options (a JSON schema, compiled to a grammar by local models), and checked again before it is shown. | Built |
 | JRN-15 | The fields for that request are looked up by the server from the journey content; a client cannot send its own form. | Built |
+| JRN-16 | Typed values are read the same in every language: a field may hold an email, phone number, web address, money or a measure (`entity`), and the kiosk finds them in what the visitor says or types with Microsoft Recognizers-Text, on the device, loaded only when a form needs it (digits and symbols; money written as a word in another language is left to the other passes). | Built |
 
 ## Journey summaries
 
@@ -128,3 +129,11 @@ Guided services: a sequence of steps that ask the visitor something, run an on-d
 | SCH-6 | "Tell the Scheduler": a sentence ("Mum's birthday on 3 March", "remind me to renew the passport next Friday at 10am") is read on the device first; when the day or the title is missing and a model is available, the assistant fills the same form, told today's date. Either way the person checks the entry before it is added. | Built |
 | SCH-7 | In Ask Me, `/schedule <words>` (also `/calendar`, `/remind`, `/todo`) opens the Scheduler with the words read; `/qt` (also `/tools`, `/quick-tools`) lists the Quick tools. Neither is offered at the front desk. | Built |
 | SCH-8 | Coming up: before a conversation starts, Ask Me shows up to four entries from the next seven days and how many to-dos wait, with a link to the Scheduler. | Built |
+| CON-1 | Every service may carry consent forms (`consent:`), one per role: for anyone starting a journey (visitor), and for each staff role that takes part. They are part of the service, so the reviewer accepts them with it; a new version asks people to agree again. | Built |
+| CON-2 | The Legal Guardian drafts the forms from what the service really does: what each role is asked or will see, who else sees it, where it is kept (the service's storage, the relay's hours), which answers go to the AI assistant, and how to withdraw. Staff forms are their duties. | Built |
+| CON-3 | With an AI model, the Guardian rewrites each point in plainer words, one for one; a rewrite that drops or adds points is refused and the draft stays. Without a model, the draft is used. | Built |
+| CON-4 | The Guardian flags what a reviewer should look at: ID numbers, health details, card or bank details (an error: never in a form), dates of birth, passwords, and children (a parent or guardian agrees). | Built |
+| CON-5 | In the Service Catalogue a service's Consent view shows the flags and the forms as people see them; its editors ask the Guardian, change any point, and use the forms (written into the service). | Built |
+| CON-6 | Before a catalogue journey starts, or a staff member carries on their part, the kiosk shows the form for their role; they tick "I have read this" and agree, or decline and nothing is asked or sent. | Built |
+| CON-7 | A staff member who finishes requests agrees to their role's duties before the request opens. | Built |
+| CON-8 | Agreements are kept on the device for the open profile, by service, role and version (at the front desk only for the visit); agreeing or declining is a service event (role and version, never who) when the service records events. | Built |

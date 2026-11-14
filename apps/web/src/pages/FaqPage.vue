@@ -2,10 +2,10 @@
 import PageSection from "@/components/site/PageSection.vue";
 
 const FAQ = [
-  { q: "What is the YAXB AI Kiosk?", a: "A self-service assistant you can talk to by voice or text. It answers from a curated, moderated knowledge base and your own notebook, and escalates sensitive questions to people." },
-  { q: "Which AI model does the kiosk use?", a: "Your choice. On the Settings page you can pick any provider and model your administrator has enabled, such as Claude, GPT, Gemini, Cloudflare Workers AI or a local model." },
+  { q: "What is Anjal.ai?", a: "A self-service assistant you can talk to by voice or text. It answers from a curated, moderated knowledge base and your own notebook, and escalates sensitive questions to people." },
+  { q: "Which AI model does the kiosk use?", a: "Your choice. On the Preferences → Model you can pick any provider and model your administrator has enabled, such as Claude, GPT, Gemini, Cloudflare Workers AI or a local model." },
   { q: "Does the kiosk give medical advice?", a: "No. It provides general information from curated sources and directs you to a clinician for personal medical decisions, or to emergency services when needed." },
-  { q: "Where is my conversation stored?", a: "Where you choose in Settings → Storage: this browser, this session only, your own yaxb-box on the local network, or the server. Questions escalated for review are visible to moderators." },
+  { q: "Where is my conversation stored?", a: "Where you choose in Preferences → Storage: this browser, this session only, your own box on the local network, or the server. Questions escalated for review are visible to moderators." },
   { q: "Can it translate?", a: "Yes. Translation runs entirely in your browser, so the text you translate is not sent to our servers." },
 ];
 </script>

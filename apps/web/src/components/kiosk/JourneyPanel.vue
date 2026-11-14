@@ -22,6 +22,8 @@ import { offerFormInput, withdrawFormInput } from "@/composables/form-input";
 import { recordEvent } from "@/composables/service-events";
 import { actCase, deliveryText, resendCase, startCase, type CaseDetail } from "@/composables/cases";
 import type { CaseSummary, Delivery } from "@sekaran-ind/yaxb-core/cases";
+import { useConsent } from "@/composables/consent";
+import ConsentGate from "./ConsentGate.vue";
 
 const props = defineProps<{
   journey: Journey;
@@ -324,7 +326,31 @@ watch(
 );
 onBeforeUnmount(() => withdrawFormInput(uid));
 
-onMounted(() => restart(false));
+// ---- consent (CON-6): the service's form for this person's part, before anything is asked -----
+const consent = useConsent();
+const consentEntry = props.resume?.case.entry_id ?? props.entry ?? null;
+const gate = shallowRef(
+  !consentEntry
+    ? null
+    : props.resume
+      ? consent.pending(consentEntry, props.resume.actor.roles, props.resume.case.status === "waiting" ? (props.resume.case.waiting_role ? [props.resume.case.waiting_role] : []) : props.resume.case.finish_roles)
+      : props.initial
+        ? null // carried on in the conversation: agreed when it started
+        : consent.pending(consentEntry, kioskActor.value.roles, props.journey.roles?.initiate ?? []),
+);
+const declined = ref(false);
+function onConsent(agreed: boolean) {
+  if (!gate.value || !consentEntry) return;
+  consent.answer(consentEntry, gate.value, agreed, props.journey.id, runId, Boolean(props.resume));
+  gate.value = null;
+  if (agreed) return restart(false);
+  declined.value = true;
+  if (!props.embedded) emit("close");
+}
+
+onMounted(() => {
+  if (!gate.value) restart(false);
+});
 onBeforeUnmount(() => {
   if (runner.state.status === "running") runner.stop();
 });
@@ -340,6 +366,9 @@ onBeforeUnmount(() => {
       <p :class="embedded ? 'text-xs text-gray-500' : 'mt-1 text-xs text-gray-500'">{{ embedded && journey.summary ? `${journey.summary} ` : "" }}{{ about.privacy }}</p>
     </div>
 
+    <ConsentGate v-if="gate" :form="gate.form" :service="gate.title" :version="gate.version" @agree="onConsent(true)" @decline="onConsent(false)" />
+    <p v-else-if="declined" class="rounded-xl bg-mist px-3 py-2 text-sm text-gray-600">Stopped: you didn't agree, so nothing was asked or sent.</p>
+    <template v-else>
     <ol v-if="state && (state.trail.length || state.status === 'running' || state.status === 'asking')" class="flex flex-wrap gap-2 text-xs" aria-label="Progress">
       <li v-for="(t, i) in progressOf(journey, state.trail)" :key="`${t.step}-${i}`" :class="cn('inline-flex items-center gap-1 rounded-full px-2.5 py-1', t.ok ? 'bg-success/10 text-ink' : 'bg-danger/10 text-red-800')">
         <CheckCircle2 v-if="t.ok" class="size-3.5" aria-hidden="true" /><XCircle v-else class="size-3.5" aria-hidden="true" />{{ t.label }}
@@ -459,5 +488,6 @@ onBeforeUnmount(() => {
       <p>{{ state.error }}</p>
       <button type="button" class="btn-light" @click="restart()"><RotateCcw class="size-4" aria-hidden="true" /> Start again</button>
     </div>
+    </template>
   </div>
 </template>

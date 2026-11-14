@@ -47,6 +47,8 @@
   // AIRTABLE_*, MAILCHIMP_*) are set with `npx wrangler secret put <NAME>`, and locally in .dev.vars.
   "vars": {
     "AIRTABLE_TABLE_NAME": "Contacts",
+    // The contact form's messages go to the helpdesk Worker (shared with ClinüxFlow), which emails helpdesk@yaxb.ai.
+    "HELPDESK_URL": "https://helpdesk.tsekaran1949.workers.dev",
     // yaxb-box addresses the kiosk page may call (Storage: Local box), space separated.
     "KIOSK_BOX_ORIGINS": "https://192.168.1.14:47870"
   }

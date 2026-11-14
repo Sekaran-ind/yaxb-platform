@@ -18,7 +18,7 @@ export const router = createRouter({
   // The app's pages are files on the device: hash URLs need no server.
   history: NATIVE ? createWebHashHistory() : createWebHistory(),
   routes: NATIVE ? NATIVE_ROUTES : [
-    { path: "/", component: () => import("./pages/HomePage.vue"), meta: { title: "Meet YAXB" } },
+    { path: "/", component: () => import("./pages/HomePage.vue"), meta: { title: "Anjal.ai" } },
     { path: "/kiosk", component: () => import("./pages/KioskPage.vue"), meta: { title: "AI Kiosk" } },
     // The staff pages live inside the kiosk (Services → For staff); their old addresses open the section.
     { path: "/kiosk/curate", redirect: staff("moderation") },
@@ -55,5 +55,5 @@ router.beforeEach((to) => {
 
 router.afterEach((to) => {
   const title = to.meta.title as string | undefined;
-  document.title = NATIVE ? "YAXB Kiosk" : !title || title === "Meet YAXB" ? "Meet YAXB" : `${title} | YAXB`;
+  document.title = NATIVE ? "Anjal" : !title || title === "Anjal.ai" ? "Anjal.ai" : `${title} | Anjal.ai`;
 });

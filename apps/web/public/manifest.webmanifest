@@ -1,6 +1,6 @@
 {
-  "name": "YAXB AI Kiosk",
-  "short_name": "YAXB",
+  "name": "Anjal.ai Kiosk",
+  "short_name": "Anjal",
   "start_url": "/kiosk",
   "display": "standalone",
   "background_color": "#ffffff",

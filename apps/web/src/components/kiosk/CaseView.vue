@@ -8,6 +8,8 @@ import type { ServiceHandler } from "@sekaran-ind/yaxb-core/journeys";
 import { ArrowLeft, Check, CheckCircle2, Loader2, MessageSquare, Play, RotateCcw, Send, XCircle } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 import JourneyPanel from "./JourneyPanel.vue";
+import ConsentGate from "./ConsentGate.vue";
+import { useConsent } from "@/composables/consent";
 import RequestStatus from "./RequestStatus.vue";
 import { addNote, deliveryText, finishCase, openCase, refreshQueue, resendCase, statusText, type CaseDetail } from "@/composables/cases";
 import { roleName } from "@/composables/library";
@@ -24,6 +26,19 @@ const props = defineProps<{
 const emit = defineEmits<{ back: []; speak: [text: string] }>();
 
 const detail = ref<CaseDetail | null>(null);
+// A staff member about to finish a request sees what people gave: their role's duties first (CON-7).
+const consent = useConsent();
+const duties = computed(() => {
+  const d = detail.value;
+  if (!d || d.actor.starter || !d.mayFinish) return null;
+  return consent.pending(d.case.entry_id, d.actor.roles, d.case.finish_roles);
+});
+function onDuties(agreed: boolean) {
+  const d = detail.value;
+  if (!d || !duties.value) return;
+  consent.answer(d.case.entry_id, duties.value, agreed, d.case.journey_id, d.case.id, true);
+  if (!agreed) emit("back");
+}
 const error = ref<string | null>(null);
 const busy = ref(false);
 const continuing = ref(false);
@@ -175,6 +190,7 @@ const when = (iso: string) => new Date(iso).toLocaleString([], { dateStyle: "med
     <p v-if="error && !c" role="alert" class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-red-800">{{ error }}</p>
     <p v-else-if="!c" role="status" class="flex items-center gap-2 text-sm text-gray-600"><Loader2 class="size-4 animate-spin" aria-hidden="true" /> Opening the request…</p>
 
+    <ConsentGate v-else-if="duties" :form="duties.form" :service="c.service_title" :version="duties.version" @agree="onDuties(true)" @decline="onDuties(false)" />
     <template v-else>
       <div>
         <p class="text-xs text-gray-500">{{ c.service_title }} · Reference <span class="font-mono font-medium text-ink">{{ c.ref }}</span></p>
