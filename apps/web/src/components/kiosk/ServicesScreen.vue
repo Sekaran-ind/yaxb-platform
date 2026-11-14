@@ -20,6 +20,7 @@ import { NATIVE } from "@/lib/platform";
 import RequestList from "./RequestList.vue";
 import JourneySummaryCard from "./JourneySummaryCard.vue";
 import KioskStaff from "./KioskStaff.vue";
+import { useChildMode } from "@/composables/child";
 import SchedulerScreen from "./SchedulerScreen.vue";
 import {
   catalogue,
@@ -56,14 +57,16 @@ onMounted(async () => {
   }
 });
 // The native app is for visitors: staff work in the web kiosk, where their sign-in is a cookie.
-const offered = computed(() => servicesFor(kioskContent.services, { layout: props.layout, journeys: kioskJourneys.value.map((j) => j.id) }).filter((s) => !(NATIVE && s.id === "staff") && s.id !== "ask"));
+// The child safety lock hides the staff sections (CHL-5).
+const childMode = useChildMode();
+const offered = computed(() => servicesFor(kioskContent.services, { layout: props.layout, journeys: kioskJourneys.value.map((j) => j.id) }).filter((s) => !((NATIVE || childMode.on.value) && s.id === "staff") && s.id !== "ask"));
 const journeyOf = (item: ServiceItem) => (item.journey ? kioskJourneys.value.find((j) => j.id === item.journey) : undefined);
 const about = ref<string | null>(null);
 const showAll = ref(false);
 const summaryOf = (item: ServiceItem) => item.summary ?? (item.journey ? journeyOf(item)?.summary : undefined);
 
 /** A staff section open inside Services (/kiosk?screen=services&staff=team). */
-const staffSection = computed(() => (!NATIVE && typeof route.query.staff === "string" ? route.query.staff : null));
+const staffSection = computed(() => (!NATIVE && !childMode.on.value && typeof route.query.staff === "string" ? route.query.staff : null));
 /** A tool open inside Quick tools (the Scheduler). */
 const tool = computed(() => (typeof route.query.tool === "string" ? route.query.tool : null));
 function open(item: ServiceItem) {

@@ -36,6 +36,8 @@ export type KioskSettings = {
    * PIN's SHA-256; staff unlock with it (or their own key).
    */
   restricted: { on: boolean; services: string[]; idleMinutes: number; mic: boolean; attach: boolean; pinHash: string | null };
+  /** The child safety lock (CHL-1): a parent's PIN, kept only as a hash. */
+  child: { on: boolean; pinHash: string | null };
 };
 
 const DEFAULTS: KioskSettings = {
@@ -52,13 +54,14 @@ const DEFAULTS: KioskSettings = {
   box: { url: "", token: "" },
   cases: { storage: "devices", useBox: true, useRelay: true },
   restricted: { on: false, services: [], idleMinutes: 3, mic: true, attach: false, pinHash: null },
+  child: { on: false, pinHash: null },
 };
 
 function load(): KioskSettings {
   try {
     const saved = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) ?? "{}") as Partial<KioskSettings>;
     if (!isThemeChoice(saved.theme)) delete saved.theme;
-    return { ...DEFAULTS, ...saved, agent: { ...DEFAULT_AGENT_SETTINGS, ...saved.agent, knowledge: { ...DEFAULT_AGENT_SETTINGS.knowledge, ...saved.agent?.knowledge } }, box: { ...DEFAULTS.box, ...saved.box }, cases: { ...DEFAULTS.cases, ...saved.cases }, restricted: { ...DEFAULTS.restricted, ...saved.restricted } };
+    return { ...DEFAULTS, ...saved, agent: { ...DEFAULT_AGENT_SETTINGS, ...saved.agent, knowledge: { ...DEFAULT_AGENT_SETTINGS.knowledge, ...saved.agent?.knowledge } }, box: { ...DEFAULTS.box, ...saved.box }, cases: { ...DEFAULTS.cases, ...saved.cases }, restricted: { ...DEFAULTS.restricted, ...saved.restricted }, child: { ...DEFAULTS.child, ...saved.child } };
   } catch {
     return structuredClone(DEFAULTS);
   }

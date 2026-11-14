@@ -142,6 +142,11 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
   - `logActivity()` does nothing while no profile is open. It is called by chat turns (`question.asked`, `web.searched`, `question.escalated`), journeys (`journey.completed`) and the notebook composable.
   - UI: `components/account/` (`AccountScreen` sign-in, `AccountSetup` the diary-style steps, `AccountPanel` suggestions, activity log, passphrase, export, erase), the `account` screen in `screens.yaml`, the header chip, and the "For you" section on Services.
 
+## Child safety lock (CHL-1..8)
+
+- Core: `agentSettings.child` (schemas); with it `ask()` never searches the web or loads MCP tools, and `turnPromptAddendum` adds `CHILD_RULES` (prompts.ts).
+- Web: `composables/child.ts` (`useChildMode().on`: `settings.child.on`, a parent's PIN hashed with the prefix `yaxb-child:`, or an open profile with `ageRange: "under-18"`; `enableChildLock`, `disableChildLock`). `KioskShell` sends `child: true`, `mcp: []`, web off, skips Kiosk only's web answers and refuses knowledge changes by command; `ServicesScreen`, `ContextSheet`, `/staff`, the navbar and the router hide staff sections and the catalogue; Preferences shows only profile, language, kiosk and `child` (`ChildLockSetup.vue`); `AskMePills` shows a Child lock pill.
+
 ## Moderators, keys and administration
 
 - `moderators/` (core):

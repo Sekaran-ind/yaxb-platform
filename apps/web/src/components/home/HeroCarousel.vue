@@ -5,27 +5,7 @@
 // It moves on by itself only while nobody is pointing at it or focused in it, and never for people
 // who prefer reduced motion; it can be paused, stepped with the arrows or the dots, and swiped.
 // Every slide sits in the same grid cell, so the panel keeps the tallest slide's height.
-import {
-  ArrowLeft,
-  ArrowRight,
-  ArrowRightLeft,
-  Bike,
-  BookOpen,
-  CalendarHeart,
-  HardDrive,
-  Languages,
-  LayoutGrid,
-  MessagesSquare,
-  Pause,
-  Play,
-  ShieldCheck,
-  Smartphone,
-  Sparkles,
-  UserRound,
-  WifiOff,
-  Workflow,
-  type LucideIcon,
-} from "@lucide/vue";
+import { ArrowLeft, ArrowRight, ArrowRightLeft, Baby, Bike, BookOpen, CalendarHeart, HardDrive, Languages, LayoutGrid, MessagesSquare, Pause, Play, ShieldCheck, Smartphone, Sparkles, UserRound, WifiOff, Workflow, type LucideIcon } from "@lucide/vue";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import BaseModal from "@/components/site/BaseModal.vue";
 import { cn } from "@/lib/cn";
@@ -42,6 +22,7 @@ const FEATURES: { icon: LucideIcon; title: string; short: string; body: string }
   { icon: ArrowRightLeft, title: "Requests between people", short: "Handed to the right person", body: "A customer starts, staff finish. Each request gets a reference and moves to the right person's device, with its status in the conversation." },
   { icon: Sparkles, title: "Service Catalogue and AI designer", short: "Services from a description", body: "Describe a service in plain words. The designer drafts its journeys, screens and roles; a reviewer publishes it for any kiosk." },
   { icon: CalendarHeart, title: "Scheduler", short: "Birthdays and key dates", body: "Birthdays, anniversaries, to-dos and every service's key dates in one place. \"Next Friday at 4\" is understood on the device." },
+  { icon: Baby, title: "Child safety lock", short: "Safe for children", body: "A parent turns it on with a PIN, or a profile is set as under 18. Answers are written for a child, nothing for adults, no web search, and worrying questions go to a trusted adult and the moderators. Settings and staff areas stay locked." },
   { icon: UserRound, title: "Profiles and the front desk", short: "Private profiles, a locked kiosk", body: "\"Who's using Anjal?\" keeps each person's notebook apart, encrypted. Restricted Mode locks a shared kiosk to Ask Me behind a staff PIN." },
   { icon: ShieldCheck, title: "Quality you can measure", short: "Moderated and measured", body: "Moderators check flagged answers and rate them. Each notebook gets an F1 score week by week, with the weakest answers listed first." },
 ];

@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory, createWebHistory, type RouteRecordRaw } from "vue-router";
 import { NATIVE } from "./lib/platform";
+import { useChildMode } from "@/composables/child";
 import { settings } from "./composables/settings";
 
 // Pages load on demand, so the home page doesn't download the kiosk (or its models' code).
@@ -48,8 +49,11 @@ export const router = createRouter({
 });
 
 // At the front desk (Restricted Mode) every address is the kiosk (RST-4).
+const childMode = useChildMode().on;
 router.beforeEach((to) => {
   if (settings.restricted.on && to.path !== "/kiosk") return { path: "/kiosk" };
+  // The child safety lock (CHL-5): no Service Catalogue, no staff sections.
+  if (childMode.value && (to.path.startsWith("/catalogue") || to.path.startsWith("/studio") || (to.path === "/kiosk" && to.query.staff))) return { path: "/kiosk", query: { screen: "services" } };
   return true;
 });
 

@@ -79,6 +79,11 @@ export const agentSettingsSchema = z.strictObject({
   /** The language the visitor chose: the agent replies in it. */
   language: z.enum(LANGUAGE_CODES).default(DEFAULT_LANGUAGE),
   knowledge: knowledgeSettingsSchema.default({ answers: "agent", semantic: true, model: "auto", web: "fallback" }),
+  /**
+   * The child safety lock (CHL-1..8): a child is using the kiosk. No web search and no MCP tools
+   * (the server enforces both), and answers suited to a child.
+   */
+  child: z.boolean().default(false),
 });
 export type AgentSettings = z.infer<typeof agentSettingsSchema>;
 

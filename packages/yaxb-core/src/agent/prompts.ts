@@ -35,8 +35,9 @@ export function deepPromptAddendum({
 }
 
 /** Sections for both harnesses: the visitor's language, and passages found on their device. */
-export function turnPromptAddendum({ language, localKnowledge, web = "none" }: { language: string; localKnowledge: boolean; web?: "none" | "searched" | "available" }): string {
+export function turnPromptAddendum({ language, localKnowledge, web = "none", child = false }: { language: string; localKnowledge: boolean; web?: "none" | "searched" | "available"; child?: boolean }): string {
   const parts: string[] = [];
+  if (child) parts.push(CHILD_RULES);
   if (web === "searched")
     parts.push(
       "The kiosk's knowledge base does not cover this question, so the kiosk searched the web: `search_knowledge_base` returns those results as web:<n> passages with their site and URL. " +
@@ -55,6 +56,14 @@ export function turnPromptAddendum({ language, localKnowledge, web = "none" }: {
     );
   return parts.length ? `\n\nThis turn:\n${parts.map((p) => `- ${p}`).join("\n")}` : "";
 }
+
+/** The child safety lock (CHL-3): how to answer when a child is using the kiosk. */
+export const CHILD_RULES =
+  "A child is using the kiosk (the child safety lock is on). Answer for a child: short, kind, simple words. " +
+  "Never describe violence, weapons, drugs, alcohol, gambling, sex or other adult themes, and never give instructions that could hurt someone; say gently that it's something to ask a parent or a trusted adult about. " +
+  "Never ask for or repeat personal details (full name, address, school, phone number, photos). " +
+  "If the child seems unsafe, frightened, hurt or talks about being harmed or harming themselves, say kindly that they should tell a trusted adult now, give the emergency number, and call flag_for_moderation. " +
+  "Don't suggest websites, apps or contacting strangers.";
 
 export const KIOSK_SYSTEM_PROMPT = `You are YAXB, a self-service AI kiosk assistant for a healthcare organisation. Visitors talk to you by voice or text; your replies are read aloud, so write in short, plain sentences without markdown tables or heavy formatting.
 

@@ -41,3 +41,16 @@ A profile lets the kiosk set itself up for a visitor. It follows clinux-diary's 
 | FBK-3 | Feedback must be stored without identifying the visitor: the rating, the comment if given, the time, the answer mode, language and whether a profile was open. Never the conversation. | Built |
 | FBK-4 | Feedback must be sent to the server so moderators can see totals and trends (MOD-40), and recorded in the activity log when a profile is open. Offline, it waits and is sent later. | Built |
 | FBK-5 | The frequency must be settable by the organisation, including off. | Built |
+
+## Child safety lock
+
+| ID | Requirement | Status |
+|---|---|---|
+| CHL-1 | A parent can turn on the child safety lock (Preferences → Child safety lock) with a PIN of 4 to 8 digits, typed twice and kept only as a hash. A profile whose age range is Under 18 is in child mode while it is open, without a PIN. | Built |
+| CHL-2 | In child mode the kiosk never searches the web and uses no outside (MCP) tools; the server enforces both from the turn's settings. Kiosk only's web answers are off too. | Built |
+| CHL-3 | The assistant answers for a child: short, kind and simple; no adult themes or harmful instructions; it never asks for or repeats personal details; a child who seems unsafe is told to tell a trusted adult, given the emergency number, and the conversation is flagged to the moderators. | Built |
+| CHL-4 | Websites added to a notebook still pass the family-safe DNS filter (KNW-25). | Built |
+| CHL-5 | The staff sections, the Service Catalogue (its page, its navbar link) and the AI designer are hidden; their addresses lead back to Quick tools. | Built |
+| CHL-6 | Preferences keep only Profile, Language, Layout, theme and voice, and the lock itself; the model, knowledge, tools, storage and front desk need the PIN. | Built |
+| CHL-7 | Commands can't change where answers come from or web search while the lock is on. | Built |
+| CHL-8 | A "Child lock" pill beside Preferences shows the lock is on and opens its section; only the parent's PIN turns the device lock off (a wrong PIN is refused). | Built |

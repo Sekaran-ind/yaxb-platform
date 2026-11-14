@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import BrandLogo from "./BrandLogo.vue";
 import { Menu, X } from "@lucide/vue";
-import { ref } from "vue";
+import { computed, ref } from "vue";
+import { useChildMode } from "@/composables/child";
 import { useRoute } from "vue-router";
 import { cn } from "@/lib/cn";
 import BaseModal from "./BaseModal.vue";
@@ -16,6 +17,9 @@ const LINKS = [
   { to: "/catalogue", label: "Service catalogue" },
 ];
 const route = useRoute();
+// The child safety lock hides the Service Catalogue (CHL-5).
+const child = useChildMode();
+const links = computed(() => (child.on.value ? LINKS.filter((l) => l.to !== "/catalogue") : LINKS));
 const menuOpen = ref(false);
 const contactOpen = ref(false);
 </script>
@@ -33,7 +37,7 @@ const contactOpen = ref(false);
       </button>
       <div id="main-menu" :class="cn('w-full pb-3 md:flex md:w-auto md:items-center md:gap-1 md:pb-0', menuOpen ? 'block' : 'hidden')">
         <RouterLink
-          v-for="l in LINKS"
+          v-for="l in links"
           :key="l.to"
           :to="l.to"
           :aria-current="route.path === l.to ? 'page' : undefined"
