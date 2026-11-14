@@ -8,7 +8,7 @@
 //   controls  the personal button: Staff sign in for a guest, your initials (sign out) for a member
 //   actions   Open the kiosk, and New service (the primary, the large brand circle)
 //   foot      full: who you are, in words
-import { Library, LogIn, MonitorSmartphone, PencilRuler, Plus } from "@lucide/vue";
+import { Library, LogIn, MonitorSmartphone, PencilRuler, Plus, SlidersHorizontal } from "@lucide/vue";
 import { computed } from "vue";
 import { cn } from "@/lib/cn";
 import ConsolePlayer from "@/components/site/ConsolePlayer.vue";
@@ -108,10 +108,17 @@ const big = computed(() => props.variant === "full");
       <!-- Captions share one line under the circles. -->
       <span :class="cn('flex', big ? 'items-end gap-5' : 'items-center gap-2')">
       <span class="flex flex-col items-center gap-1.5">
-        <RouterLink to="/kiosk?screen=services" :class="cn('console-btn', big ? 'size-12' : 'size-9')" aria-label="Open the kiosk" title="Open the kiosk">
+        <RouterLink to="/kiosk" :class="cn('console-btn', big ? 'size-12' : 'size-9')" aria-label="Open the kiosk" title="Open the kiosk">
           <MonitorSmartphone :class="big ? 'size-5' : 'size-4'" aria-hidden="true" />
         </RouterLink>
         <span v-if="big" class="text-[11px] text-white/60" aria-hidden="true">Open the kiosk</span>
+      </span>
+      <!-- The same preferences as the kiosk (model, layout, theme, voice), opening here. -->
+      <span class="flex flex-col items-center gap-1.5">
+        <RouterLink :to="{ path: '/catalogue', query: { ...$route.query, prefs: 'model' } }" :class="cn('console-btn', big ? 'size-12' : 'size-9')" aria-label="Preferences" title="Preferences">
+          <SlidersHorizontal :class="big ? 'size-5' : 'size-4'" aria-hidden="true" />
+        </RouterLink>
+        <span v-if="big" class="text-[11px] text-white/60" aria-hidden="true">Preferences</span>
       </span>
       <span class="flex flex-col items-center gap-1.5">
         <button

@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import BrandLogo from "./BrandLogo.vue";
 import ContactForm from "./ContactForm.vue";
 </script>
 
 <template>
   <div class="p-6 md:p-8">
     <div class="mb-8 grid items-center gap-6 md:grid-cols-2">
-      <img src="/icons8-artificial-64.png" alt="YAXB" width="64" height="64" />
+      <BrandLogo label="YAXB" class="size-16" />
       <h2 class="text-center text-2xl font-semibold text-ink md:text-3xl">eMail : support@yaxb.ai</h2>
     </div>
     <div class="grid gap-8 md:grid-cols-2">

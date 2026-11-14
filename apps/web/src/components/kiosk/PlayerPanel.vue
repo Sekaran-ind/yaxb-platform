@@ -3,7 +3,8 @@
 // the voice controls (pause, the microphone, stop).
 //   full   the console column    strip  the pod player's bar    mini  orb, status and mic
 // Slots: "meta" (the notebook and model status) and "controls" (the profile button).
-import { Mic, MicOff, Pause, Play, Sparkles, Square } from "@lucide/vue";
+import { Mic, MicOff, Pause, Play, Square } from "@lucide/vue";
+import BrandLogo from "@/components/site/BrandLogo.vue";
 import { computed } from "vue";
 import { cn } from "@/lib/cn";
 import ConsolePlayer from "@/components/site/ConsolePlayer.vue";
@@ -38,7 +39,7 @@ const STATUS_TEXT: Partial<Record<KioskStatus, string>> = { Ready: "Ready when y
 <template>
   <ConsolePlayer :variant="variant" :eyebrow="title" :status="STATUS_TEXT[status] ?? status" :busy="busy" label="Kiosk player">
     <template #controls><slot name="controls" /></template>
-    <template #orb="{ size }"><Sparkles :class="cn('text-white/85', working && 'animate-pulse text-brand', size)" aria-hidden="true" /></template>
+    <template #orb="{ size }"><BrandLogo :class="cn(size, working && 'animate-pulse')" /></template>
     <template #under-status>
       <p v-if="listening && variant !== 'mini'" :class="cn('text-white/60 italic', variant === 'full' ? 'mt-2 min-h-6 max-w-xs text-center text-sm' : 'truncate text-xs')">{{ interim || "…" }}</p>
     </template>

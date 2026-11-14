@@ -8,8 +8,8 @@ nav:
   pod: tabs
   full: tabs
 screens:
-  - { id: transcript, label: Transcript, icon: message-square, component: transcript }
-  - { id: services, label: Services, icon: layout-grid, component: services }
-  - { id: notebook, label: Notebook, icon: notebook, component: notebook }
+  - { id: transcript, label: Ask Me, icon: message-square, component: transcript }
+  - { id: services, label: Quick tools, icon: layout-grid, component: services }
+  - { id: notebook, label: My notebook, icon: notebook, component: notebook }
   - { id: records, label: Sources, icon: library, component: records, layouts: [pod, full] }
   - { id: translate, label: Translate, icon: languages, component: translate, hidden: true }

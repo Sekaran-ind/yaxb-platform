@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BrandLogo from "./BrandLogo.vue";
 import { ref } from "vue";
 import BaseModal from "./BaseModal.vue";
 import ContactPanel from "./ContactPanel.vue";
@@ -10,7 +11,7 @@ const contactOpen = ref(false);
   <footer class="border-t border-gray-200/60">
     <div class="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-8 text-sm sm:px-6 md:flex-row md:items-center md:justify-between">
       <div class="flex items-center gap-2.5">
-        <span class="grid size-6 place-items-center rounded-md bg-brand-dark text-[10px] font-bold text-on-brand" aria-hidden="true">Y</span>
+        <BrandLogo class="size-6" />
         <span class="text-gray-500">Yaxb Technology Solutions Private Limited · GSTIN 33AABCY8630L1Z1</span>
       </div>
       <nav class="flex items-center gap-5 text-gray-500" aria-label="Footer">

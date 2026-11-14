@@ -13,7 +13,13 @@ import { addNote, deliveryText, finishCase, openCase, refreshQueue, resendCase, 
 import { roleName } from "@/composables/library";
 import type { NotebookRecord } from "@/lib/browser/store";
 
-const props = defineProps<{ caseKey: string; services: Record<string, ServiceHandler>; notebook: NotebookRecord | null }>();
+const props = defineProps<{
+  caseKey: string;
+  services: Record<string, ServiceHandler>;
+  notebook: NotebookRecord | null;
+  /** Inside the conversation (LIB-52): it folds back into its card instead of leaving. */
+  embedded?: boolean;
+}>();
 const emit = defineEmits<{ back: []; speak: [text: string] }>();
 
 const detail = ref<CaseDetail | null>(null);
@@ -128,21 +134,25 @@ const when = (iso: string) => new Date(iso).toLocaleString([], { dateStyle: "med
 </script>
 
 <template>
-  <JourneyPanel
-    v-if="continuing && detail && c"
-    :journey="c.journey"
-    :services="services"
-    :notebook="notebook"
-    :resume="detail"
-    :back-label="`Back to ${c.ref}`"
-    @close="backFromJourney"
-    @handed="onHanded"
-    @speak="(t) => emit('speak', t)"
-  />
+  <div v-if="continuing && detail && c" class="space-y-2">
+    <!-- In the conversation the journey has no back link of its own: this one returns to the request. -->
+    <button v-if="embedded" type="button" class="btn-ghost -ml-2 h-9 px-2 text-sm" @click="backFromJourney"><ArrowLeft class="size-4" aria-hidden="true" /> Back to {{ c.ref }}</button>
+    <JourneyPanel
+      :journey="c.journey"
+      :services="services"
+      :notebook="notebook"
+      :resume="detail"
+      :embedded="embedded"
+      :back-label="`Back to ${c.ref}`"
+      @close="backFromJourney"
+      @handed="onHanded"
+      @speak="(t) => emit('speak', t)"
+    />
+  </div>
 
   <section v-else class="space-y-4" aria-label="Request">
     <div class="flex items-center justify-between gap-2">
-      <button type="button" class="btn-ghost -ml-2 h-10 px-2 text-sm" @click="emit('back')"><ArrowLeft class="size-4" aria-hidden="true" /> Services</button>
+      <button type="button" class="btn-ghost -ml-2 h-10 px-2 text-sm" @click="emit('back')"><ArrowLeft class="size-4" aria-hidden="true" /> {{ embedded ? "Fold it away" : "Quick tools" }}</button>
       <button v-if="c" type="button" class="btn-ghost h-10 px-3 text-sm" :disabled="busy" @click="load"><RotateCcw class="size-4" aria-hidden="true" /> Refresh</button>
     </div>
     <p v-if="error && !c" role="alert" class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-red-800">{{ error }}</p>

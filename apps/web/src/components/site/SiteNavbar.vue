@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BrandLogo from "./BrandLogo.vue";
 import { Menu, X } from "@lucide/vue";
 import { ref } from "vue";
 import { useRoute } from "vue-router";
@@ -20,7 +21,7 @@ const contactOpen = ref(false);
   <nav id="top" class="sticky top-0 z-30 border-b border-gray-200/60 bg-canvas/80 backdrop-blur-xl" aria-label="Main">
     <div class="mx-auto flex h-14 max-w-6xl flex-wrap items-center justify-between px-4 sm:px-6">
       <RouterLink to="/" class="flex items-center gap-2.5">
-        <span class="grid size-7 place-items-center rounded-lg bg-brand-dark text-[11px] font-bold tracking-tight text-on-brand" aria-hidden="true">Y</span>
+        <BrandLogo class="size-8" />
         <span class="text-[15px] font-semibold tracking-tight text-ink">YAXB<span class="text-gray-400">.ai</span></span>
       </RouterLink>
       <button type="button" class="rounded-full p-2 md:hidden" :aria-expanded="menuOpen" aria-controls="main-menu" aria-label="Toggle menu" @click="menuOpen = !menuOpen">

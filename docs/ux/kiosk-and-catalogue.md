@@ -28,7 +28,7 @@ don't merge them into one kiosk with a design mode and a run mode.
    preview); running needs focus (one screen, big targets, voice). Merged, every screen would carry
    both.
 5. **The link between them is already one step.** The catalogue's "Open in a kiosk" loads a
-   published service into the kiosk (`/kiosk?load=<id>`); the kiosk's "Load a service" lists the
+   published service into the kiosk (`/kiosk?load=<id>`); the kiosk's "Load a service" (Notebook → Services) lists the
    catalogue and links to it to design one.
 
 ## What is shared instead (built)
@@ -36,7 +36,7 @@ don't merge them into one kiosk with a design mode and a run mode.
 - **One frame**: `KioskFrame.vue` with the same Full, Pod and Mini layouts, the dark side panel, and
   the same adaptive nav behaviour (tabs, the section menu when narrow, `fill` in Full).
 - **The same way across**: "Open the kiosk" in the catalogue's panel, "Open in a kiosk" on each
-  published service, and "Design a service in the catalogue →" in the kiosk's Load panel, each a link
+  published service, and "Design a service in the catalogue →" in the kiosk's Load panel (in the Notebook), each a link
   with an icon, the pattern for moving to another surface.
 - **The designer previews in the kiosk's own components** (`FlowPreview`, `JourneyRunner`, the
   adaptive nav), so what a designer sees is what a visitor gets.

@@ -24,6 +24,32 @@ export type ChatTurn = {
   card?: CommandCard;
   /** Sent to the moderators to check (MOD-10), on this screen only. */
   review?: "sending" | "sent" | "failed";
+  /** A journey running in the conversation (/journeys, /staff): kept with it, so it can be resumed. */
+  journey?: JourneyTurn;
+  /** A request's reference: its status, looked up whenever the conversation is open. */
+  /** `open`: unfold the whole request when it is added (opened from a queue or a link). */
+  request?: { ref: string; open?: boolean };
+  /**
+   * Context loaded into the conversation on this device (LIB-49), on both of its turns: what the
+   * person picked (a journey, a request, a file) and the kiosk's reply. It is not an answer, so it
+   * has no "ask a moderator"; the person's turn shows its icon.
+   */
+  via?: "journey" | "request" | "file";
+};
+
+/** A journey in the conversation: where it got to, and the request it became when it was handed over. */
+export type JourneyTurn = {
+  id: string;
+  /** The catalogue entry it comes from; null for a built-in journey. */
+  entry: string | null;
+  title: string;
+  /** The run so far (answers, results), to carry on from when the conversation is opened again. */
+  run: { current: string | null; answers: Record<string, Record<string, unknown>>; steps: Record<string, unknown>; trail: { step: string; label: string; stage?: string; ok: boolean }[] } | null;
+  status: "running" | "done" | "handed" | "closed";
+  /** Its result, once it ended: still readable after Done folds it away. */
+  result?: { title: string; text: string } | null;
+  /** Handed over: the request's reference. */
+  handed?: { ref: string; caseId: string };
 };
 
 /**
@@ -54,3 +80,6 @@ export type CommandCard = {
 export type KioskStatus = "Ready" | "Listening" | "Fetching" | "Thinking" | "Playing Response" | "Paused" | "Fetch failed";
 
 export const SETTINGS_STORAGE_KEY = "yaxb.settings.v1";
+
+/** What the conversation's context loader picked (/journeys, /staff). */
+export type ContextPick = { kind: "journey"; id: string; title: string } | { kind: "request"; ref: string };

@@ -24,7 +24,10 @@ import { recognizeCommand, yesOrNo } from "@/lib/browser/commands";
 import { modelFor, searchLocal, semanticReady, warmUp, type LocalSearch } from "@/lib/browser/semantic";
 import { extractWithModel, matchOnDevice } from "@/lib/browser/slots";
 import { languageLabel, speechLangFor } from "@/lib/languages";
-import type { CommandCard, KioskStatus } from "@/lib/types";
+import type { CommandCard, JourneyTurn, KioskStatus } from "@/lib/types";
+import { catalogue, entryOfJourney, kioskJourneys, kioskViewer, loadCatalogue, loadIntoKiosk } from "@/composables/library";
+import { startCaseNetwork } from "@/composables/cases";
+import { readDocument } from "@/lib/browser/documents";
 import AccountScreen from "@/components/account/AccountScreen.vue";
 import { AdaptiveNav, type NavScreen } from "@sekaran-ind/yaxb-journeys/vue";
 import FeedbackPrompt from "./FeedbackPrompt.vue";
@@ -37,6 +40,18 @@ import KioskPreferences from "./KioskPreferences.vue";
 import ProfileButton from "./ProfileButton.vue";
 import TranslatePane from "./TranslatePane.vue";
 import KioskFrame from "@/components/site/KioskFrame.vue";
+import { SlidersHorizontal } from "@lucide/vue";
+import { NATIVE } from "@/lib/platform";
+import { formInput } from "@/composables/form-input";
+
+/**
+ * `embedded`: only Ask Me, without the kiosk's frame, player and tabs, for another surface (the
+ * Service Catalogue's Ask Me screen): the same conversation, notebook, journeys and requests.
+ */
+const props = defineProps<{ embedded?: boolean }>();
+
+/** The kiosk's name, in its player and for screen readers. */
+const KIOSK_NAME = "Anjal - Digital Kiosk (Your Own)";
 
 
 const activeNotebook = computed({ get: () => settings.activeNotebook, set: (id) => updateSettings({ activeNotebook: id }) });
@@ -61,6 +76,18 @@ const selection = computed(() => {
 
 let offProgress: (() => void) | null = null;
 onMounted(() => (offProgress = onOfflineProgress((p) => (offline.value = p.status === "done" || p.status === "ready" ? null : p))));
+// Journeys and requests run in the conversation: the catalogue (and requests kept on devices) load with the kiosk.
+onMounted(async () => {
+  await loadCatalogue();
+  // The catalogue's "Open in a kiosk" (/kiosk?load=<entry>) adds its service to this kiosk.
+  const load = route.query.load;
+  if (typeof load === "string" && catalogue.value.some((s) => s.entry_id === load)) {
+    loadIntoKiosk(load);
+    const { load: _, ...query } = route.query;
+    void router.replace({ path: route.path, query });
+  }
+  startCaseNetwork();
+});
 onBeforeUnmount(() => offProgress?.());
 
 // The visitor's language: speech in and out, the agent's replies, on-device answers translated.
@@ -131,8 +158,12 @@ const route = useRoute();
 // Preferences (profile, language, layout, theme, voice, knowledge, model…) open inside the kiosk,
 // in place of its screens: /kiosk?prefs=<section>. There's no separate settings page.
 const prefsOpen = computed(() => typeof route.query.prefs === "string");
-const openPrefs = (section = "profile") => void router.push({ path: "/kiosk", query: { prefs: section } });
-const closePrefs = () => void router.push({ path: "/kiosk" });
+// Preferences open inside whichever surface this is (the kiosk, or the catalogue's Ask Me).
+const openPrefs = (section = "profile") => void router.push({ path: props.embedded ? route.path : "/kiosk", query: props.embedded ? { ...route.query, prefs: section } : { prefs: section } });
+const closePrefs = () => {
+  const { prefs: _, ...query } = route.query;
+  void router.push({ path: props.embedded ? route.path : "/kiosk", query: props.embedded ? query : {} });
+};
 const ANSWER_LABELS: Record<string, string> = { agent: "AI agent, grounded", local: "This device only", auto: "Automatic" };
 const LAYOUT_NAMES: Record<string, string> = { auto: "Automatic", mini: "Simple (one thing at a time)", pod: "Pod", full: "Full" };
 const clampRate = (r: number) => Math.round(Math.min(1.6, Math.max(0.6, r)) * 10) / 10;
@@ -246,10 +277,8 @@ async function onCard(turnId: string, action: "yes" | "no" | "start" | "sign-in"
   if (action === "no") return chat.updateCard(turnId, { state: "cancelled" }, ctx);
   if (action === "sign-in") return openPrefs("profile");
   if (action === "start" && card.journey) {
-    journey.value = card.journey;
-    screen.value = "services";
     void logActivity("command.used", { command: card.command });
-    return;
+    return startJourney(card.journey);
   }
   if (action === "ask-assistant" && card.said && selection.value && account.profile.value) {
     try {
@@ -273,7 +302,67 @@ async function onCard(turnId: string, action: "yes" | "no" | "start" | "sign-in"
   await chat.updateCard(turnId, { state: "done" }, ctx);
 }
 
+// ---- context in the conversation (LIB-49): journeys, requests and files -------------------------
+
+/** Run a journey in the conversation (from /journeys, /staff, the notebook's services or Services). */
+async function startJourney(id: string) {
+  const j = kioskJourneys.value.find((x) => x.id === id);
+  if (!j) return;
+  screen.value = "transcript";
+  journey.value = null;
+  const turn: JourneyTurn = { id: j.id, entry: entryOfJourney(j.id), title: j.title, run: null, status: "running" };
+  await chat.addTurns(j.title, { journey: turn, via: "journey" }, { settings: settings.agent, notebook: nb.notebook.value });
+}
+/** A request's reference, kept in the conversation: its status shows whenever the conversation is open. */
+async function showRequest(ref: string, open = false) {
+  screen.value = "transcript";
+  await chat.addTurns(ref, { request: { ref, ...(open ? { open } : {}) }, via: "request" }, { settings: settings.agent, notebook: nb.notebook.value });
+}
+async function onJourneyUpdate(turnId: string, patch: Partial<JourneyTurn>) {
+  const turn = chat.turns.value.find((t) => t.id === turnId);
+  if (!turn?.journey) return;
+  await chat.patchTurn(turnId, { journey: { ...turn.journey, ...patch } }, { settings: settings.agent, notebook: nb.notebook.value });
+}
+// A link to a request (/kiosk?case=<id or reference>: shared in team chat, the old Services address)
+// opens it in the conversation.
+watch(
+  () => route.query.case,
+  (key) => {
+    if (typeof key !== "string" || !key) return;
+    const { case: _, ...query } = route.query;
+    void router.replace({ path: route.path, query: { ...query, screen: "transcript" } });
+    void showRequest(key.trim(), true);
+  },
+  { immediate: true },
+);
+/** Files attached in the conversation become notebook sources, which answers can then cite. */
+async function attachFiles(files: File[]) {
+  screen.value = "transcript";
+  // The person's turn names the files, as they would read it in a chat app.
+  const names = files.map((f) => f.name).join(", ");
+  const added: string[] = [];
+  const problems: string[] = [];
+  for (const file of files) {
+    try {
+      const doc = await readDocument(file);
+      await nb.addSource({ title: doc.title, mime: doc.mime, text: doc.text });
+      added.push(doc.title);
+    } catch (e) {
+      problems.push(`${file.name} couldn't be added: ${(e as Error).message}`);
+    }
+  }
+  const one = added.length === 1;
+  const text = [added.length ? `Added ${added.map((t) => `“${t}”`).join(", ")} to the notebook. Ask about ${one ? "it" : "them"}, and answers will cite ${one ? "it" : "them"}.` : null, ...problems].filter(Boolean).join(" ");
+  await chat.addTurns(names, { text, via: "file" }, { settings: settings.agent, notebook: nb.notebook.value });
+}
+
 async function ask(question: string) {
+  // A form open in the conversation takes the words (LIB-56), unless the visitor chose to ask instead.
+  const form = formInput.value;
+  if (form) {
+    screen.value = "transcript";
+    return form.fill(question);
+  }
   const pendingCard = [...chat.turns.value].reverse().find((t) => t.card?.state === "confirm");
   const reply = pendingCard ? yesOrNo(question) : null;
   if (pendingCard && reply) return onCard(pendingCard.id, reply);
@@ -394,10 +483,13 @@ const navScreens = computed<NavScreen[]>(() =>
   })),
 );
 /**
- * The Mini kiosk is the size of a phone whatever it shows: its screens area has one fixed height
- * (a standard phone's, less the player and tabs; shorter on small screens) and scrolls inside.
+ * The kiosk keeps one height whatever screen it shows (SET-18): the device's height less the site's
+ * navbar, the page padding and the player, so Mini fills a phone, Pod a tablet and Full a desktop
+ * window, and every screen scrolls inside. It never shrinks below a usable height. (The native app
+ * has no site navbar.)
  */
-const MINI_HEIGHT = "h-[min(37rem,calc(100dvh-12rem))] min-h-96";
+const MINI_HEIGHT = NATIVE ? "h-[max(26rem,calc(100dvh-10.5rem))]" : "h-[max(26rem,calc(100dvh-14rem))]";
+const POD_HEIGHT = NATIVE ? "h-[max(28rem,calc(100dvh-11rem))]" : "h-[max(28rem,calc(100dvh-14.5rem))]";
 const MINI_BODY = "overflow-y-auto [scrollbar-width:thin]";
 const componentOf = (id: string) => kioskContent.screens.screens.find((s) => s.id === id)?.component;
 // A link may open a screen (/kiosk?screen=services&staff=team): the old staff pages redirect here.
@@ -429,23 +521,66 @@ function onStop() {
 
 const playerVariant = computed(() => (layout.value === "full" ? "full" : layout.value === "pod" ? "strip" : "mini"));
 /** Full and Mini have a fixed height: the screen's navigation stays put and the screen scrolls inside. */
-const fixedHeight = computed(() => layout.value !== "pod");
+const fixedHeight = computed(() => true);
 </script>
 
 <template>
   <!-- Measure the full available width (not the mini card), so Auto can grow back out of mini. -->
-  <div ref="root" class="w-full">
+  <!-- Embedded (the catalogue's Ask Me): the conversation alone; its host gives it a height. -->
+  <div v-if="embedded" class="h-full min-h-0">
+    <TranscriptPane
+      :turns="chat.turns.value"
+      :busy="chat.busy.value"
+      :listening="voiceIn.listening.value"
+      :voice-supported="voiceIn.supported.value"
+      height-class="h-full"
+      @mic="onMic"
+      :selection="selection"
+      :can-ask="canAsk"
+      :answers="answers"
+      :has-assistant="!!selection"
+      @card="onCard"
+      @review="reviewAnswer"
+      :catalog="catalog"
+      :catalog-error="catalogError"
+      :notebook-title="nb.notebook.value?.title ?? null"
+      :source-count="sourceCount"
+      @ask="ask"
+      @reset="chat.reset"
+      :services="services"
+      :notebook="nb.notebook.value"
+      :member="kioskViewer.member"
+      @journey="(id) => startJourney(id)"
+      @request="(ref, open) => showRequest(ref, open)"
+      @attach="attachFiles"
+      @journey-update="onJourneyUpdate"
+      @journey-done="(id) => void logActivity('journey.completed', { journey: id })"
+      @speak="(t) => voiceOut.speak(t)"
+      :threads="nb.threads.value"
+      :active-thread-id="chat.threadId.value"
+      @open-thread="(id) => chat.open(id)"
+    >
+      <!-- Beside Conversations: the visitor's profile (sign in) and the kiosk's preferences. -->
+      <template #actions>
+        <ProfileButton tone="light" :nickname="account.profile.value?.nickname ?? null" :open="false" @toggle="openPrefs('profile')" />
+        <button type="button" class="grid size-9 place-items-center rounded-full text-gray-500 ring-1 ring-gray-200 hover:bg-mist hover:text-ink" aria-label="Preferences" title="Preferences" @click="openPrefs('language')">
+          <SlidersHorizontal class="size-4" aria-hidden="true" />
+        </button>
+      </template>
+    </TranscriptPane>
+  </div>
+  <div v-else ref="root" class="w-full">
     <!-- The kiosk: one frame holding the player (with the kiosk's controls) and its screens. -->
-    <KioskFrame :layout="layout" :mini-height="MINI_HEIGHT">
+    <KioskFrame :layout="layout" :mini-height="MINI_HEIGHT" :pod-height="POD_HEIGHT">
       <template #before>
         <FeedbackPrompt class="mb-3" />
-        <h1 class="sr-only">Yaxb AI Kiosk</h1>
+        <h1 class="sr-only">{{ KIOSK_NAME }}</h1>
       </template>
       <template #panel>
         <PlayerPanel
           :variant="playerVariant"
           :status="status"
-          title="Yaxb AI Kiosk"
+          :title="KIOSK_NAME"
           :is-playing="voiceOut.speaking.value && !voiceOut.paused.value"
           :speaking="voiceOut.speaking.value"
           :listening="voiceIn.listening.value"
@@ -459,9 +594,6 @@ const fixedHeight = computed(() => layout.value !== "pod");
           <template #meta>
             <template v-if="nb.notebook.value">{{ nb.notebook.value.title }} · {{ sourceCount }} source{{ sourceCount === 1 ? "" : "s" }}</template>
             <span v-if="offline" class="block text-brand">Loading on-device model{{ offline.progress ? ` ${Math.round(offline.progress)}%` : "…" }}</span>
-          </template>
-          <template #controls>
-            <ProfileButton :nickname="account.profile.value?.nickname ?? null" :open="prefsOpen" @toggle="prefsOpen ? closePrefs() : openPrefs()" />
           </template>
         </PlayerPanel>
       </template>
@@ -500,16 +632,35 @@ const fixedHeight = computed(() => layout.value !== "pod");
                 :source-count="sourceCount"
                 @ask="ask"
                 @reset="chat.reset"
-              />
+                :services="services"
+                :notebook="nb.notebook.value"
+                :member="kioskViewer.member"
+                @journey="(id) => startJourney(id)"
+                @request="(ref, open) => showRequest(ref, open)"
+                @attach="attachFiles"
+                @journey-update="onJourneyUpdate"
+                @journey-done="(id) => void logActivity('journey.completed', { journey: id })"
+                @speak="(t) => voiceOut.speak(t)"
+                :threads="nb.threads.value"
+                :active-thread-id="chat.threadId.value"
+                @open-thread="(id) => chat.open(id)"
+              >
+                <!-- Beside Conversations: the visitor's profile (sign in) and the kiosk's preferences. -->
+                <template #actions>
+                  <ProfileButton tone="light" :nickname="account.profile.value?.nickname ?? null" :open="false" @toggle="openPrefs('profile')" />
+                  <button type="button" class="grid size-9 place-items-center rounded-full text-gray-500 ring-1 ring-gray-200 hover:bg-mist hover:text-ink" aria-label="Preferences" title="Preferences" @click="openPrefs('language')">
+                    <SlidersHorizontal class="size-4" aria-hidden="true" />
+                  </button>
+                </template>
+              </TranscriptPane>
               <ServicesScreen
                 v-else-if="componentOf(s.id) === 'services'"
                 :layout="layout"
-                :open-journey="journey"
                 :services="services"
                 :notebook="nb.notebook.value"
                 :highlight="account.profile.value ? (account.preferences.value?.highlight ?? []) : []"
-                @journey-done="(id) => void logActivity('journey.completed', { journey: id })"
-                @open-journey="(id) => (journey = id)"
+                @open-journey="startJourney"
+                @request="(ref) => showRequest(ref, true)"
                 @open-screen="setScreen"
                 @speak="(t) => voiceOut.speak(t)"
               />
@@ -520,6 +671,7 @@ const fixedHeight = computed(() => layout.value !== "pod");
                 :active-thread-id="chat.threadId.value"
                 @open-thread="(id) => (chat.open(id), (screen = 'transcript'))"
                 @new-thread="() => (chat.reset(), (screen = 'transcript'))"
+                @start-journey="startJourney"
               />
               <KnowledgeSources v-else-if="componentOf(s.id) === 'records'" />
               <TranslatePane v-else-if="componentOf(s.id) === 'translate'" :initial-text="lastAnswer" @speak="(t, lang) => voiceOut.speak(t, { lang })" />

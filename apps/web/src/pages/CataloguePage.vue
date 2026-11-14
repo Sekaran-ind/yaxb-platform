@@ -18,6 +18,9 @@ import { useRoute, useRouter } from "vue-router";
 import { resolveLayout } from "@sekaran-ind/yaxb-core/screens";
 import CataloguePlayer from "@/components/catalogue/CataloguePlayer.vue";
 import KioskFrame from "@/components/site/KioskFrame.vue";
+import KioskPreferences from "@/components/kiosk/KioskPreferences.vue";
+import KioskShell from "@/components/kiosk/KioskShell.vue";
+import { useAccount } from "@/composables/account";
 import EntryStatus from "@/components/catalogue/EntryStatus.vue";
 import { useWidth } from "@/composables/width";
 import DesignerLessons from "@/components/catalogue/DesignerLessons.vue";
@@ -44,7 +47,10 @@ const signingIn = ref(false);
 
 const q = (k: string) => (typeof route.query[k] === "string" ? (route.query[k] as string) : null);
 const service = computed(() => q("service"));
-const VIEWS = ["catalogue", "mine", "review", "roles", "libraries", "designer"] as const;
+const VIEWS = ["ask", "catalogue", "mine", "review", "roles", "libraries", "designer"] as const;
+/** Preferences (model, layout, theme, voice…) open here, inside the catalogue, as in the kiosk. */
+const prefs = computed(() => q("prefs"));
+const account = useAccount();
 type View = (typeof VIEWS)[number];
 const view = computed<View>(() => ((VIEWS as readonly string[]).includes(q("view") ?? "") ? (q("view") as View) : "catalogue"));
 function go(patch: Record<string, string | null>) {
@@ -140,6 +146,8 @@ const designStep = ref<{ index: number; total: number; label: string } | null>(n
 watch(service, () => (designStep.value = null));
 const infoVariant = computed(() => (layout.value === "full" ? "full" : layout.value === "pod" ? "strip" : "mini"));
 const navScreens = computed<NavScreen[]>(() => [
+  // The same Ask Me as the kiosk: ask, run journeys, check requests, from the catalogue too.
+  { id: "ask", label: "Ask Me", icon: "message-square" },
   { id: "catalogue", label: "Catalogue", icon: "library", badge: String(catalogue.value.length) },
   { id: "mine", label: me.value?.can.view ? "All services" : "My services", icon: "clipboard-list", badge: String(overview.value?.services.length ?? 0) },
   ...(can.value?.view ? [{ id: "review", label: "Review", icon: "message-square", badge: overview.value?.queue.length ? String(overview.value.queue.length) : undefined }] : []),
@@ -185,7 +193,8 @@ watch(signingIn, (v) => !v && void load());
         <ModeratorSignIn v-if="signingIn" class="mb-4" why="Sign in with your moderator key to see every service, review and manage roles." @signed-in="signingIn = false" />
         <p v-if="error" role="alert" class="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-red-800">{{ error }}</p>
 
-        <template v-if="overview && me && can">
+        <KioskPreferences v-if="prefs" :nickname="account.profile.value?.nickname ?? null" :fill="layout === 'full'" @close="go({ prefs: null })" />
+        <template v-else-if="overview && me && can">
           <ServiceWorkspace
             v-if="service"
             :key="service"
@@ -200,6 +209,9 @@ watch(signingIn, (v) => !v && void load());
             @step="(st) => (designStep = st)"
           />
           <AdaptiveNav v-else :screens="navScreens" storage-key="catalogue" label="Catalogue screens" :active="view" :width="paneWidth" :fill="layout === 'full'" @update:active="(v) => go({ view: v === 'catalogue' ? null : v })">
+            <template #ask>
+              <div :class="layout === 'full' ? 'h-full min-h-[30rem]' : 'h-[max(28rem,calc(100dvh-16rem))]'"><KioskShell embedded /></div>
+            </template>
             <template #catalogue>
               <section aria-label="Published services">
             <p v-if="!catalogue.length" class="rounded-lg bg-mist px-4 py-3 text-sm text-gray-600">Nothing is published yet. Design a service and send it for review.</p>

@@ -88,7 +88,7 @@ async function clearBrowser() {
 </script>
 
 <template>
-  <div ref="el" :class="fill ? 'mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col gap-4' : 'mx-auto max-w-5xl space-y-6'">
+  <div ref="el" :class="fill ? 'flex h-full min-h-0 w-full max-w-5xl flex-col gap-4' : 'max-w-5xl space-y-6'">
     <AdaptiveNav v-model:active="section" :screens="SECTIONS" mode="sidebar" storage-key="settings" label="Preferences" :width="width" :fill="fill" :class="fill && 'min-h-0 flex-1'" body-class="[scrollbar-width:thin]">
       <template #profile>
         <AccountScreen />
@@ -268,7 +268,7 @@ async function clearBrowser() {
         <div v-else class="space-y-4">
           <section class="card p-5">
             <h2 class="text-lg font-semibold text-ink">Memory</h2>
-            <p class="mt-1 mb-3 text-sm text-gray-500">Each notebook keeps a memory file the assistant reads every turn and updates when you state a lasting preference. You can edit it on the Notebook screen.</p>
+            <p class="mt-1 mb-3 text-sm text-gray-500">Each notebook keeps a memory file the assistant reads every turn and updates when you state a lasting preference. You can edit it in My notebook.</p>
             <ToggleRow label="Use and update notebook memory" :checked="agent.memory" @change="(memory) => setAgent({ memory })" />
           </section>
           <section class="card p-5">

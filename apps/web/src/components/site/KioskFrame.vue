@@ -4,9 +4,10 @@
 // three layouts (docs/ux/patterns.md, Frames):
 //   full  a wide screen: the panel is a column beside the screens, and the frame fills the window,
 //         wide and tall; the screens scroll inside it and the panel stays put
-//   pod   a tablet: the panel is a strip above the screens, and the page scrolls
+//   pod   a tablet: the panel is a strip above the screens; with `podHeight` (the kiosk) its
+//         screens area has one height and scrolls inside
 //   mini  a phone: a phone-sized card; with `miniHeight` (the kiosk, SET-18) its screens area has one
-//         fixed height and scrolls inside
+//         fixed height, from the device's, and scrolls inside
 // The host picks the layout (resolveLayout from the width it measures around the frame). The
 // screens' own width is measured here and passed to the default slot, for the adaptive nav.
 // `narrowPanel`: while someone is working (designing a service), the full layout's panel is narrower.
@@ -15,7 +16,7 @@ import { useWidth } from "@/composables/width";
 import { cn } from "@/lib/cn";
 import { NATIVE } from "@/lib/platform";
 
-const props = defineProps<{ layout: Layout; miniHeight?: string; narrowPanel?: boolean }>();
+const props = defineProps<{ layout: Layout; miniHeight?: string; podHeight?: string; narrowPanel?: boolean }>();
 const { el: screens, width } = useWidth(900);
 // The full frame's height: the window less the site's navbar and the page padding (no navbar in the app).
 const FULL_HEIGHT = NATIVE ? "h-[calc(100dvh-2.5rem)]" : "h-[calc(100dvh-6.5rem)]";
@@ -40,7 +41,7 @@ const outer = () => cn("mx-auto px-3 py-5 sm:px-5", props.layout === "mini" ? "m
           cn(
             'min-w-0',
             layout === 'full' && 'min-h-0 overflow-y-auto px-3 pt-3 pb-3 [scrollbar-width:thin]',
-            layout === 'pod' && 'px-3 pt-2 pb-3',
+            layout === 'pod' && cn('px-3 pt-2 pb-3', podHeight),
             layout === 'mini' && cn('px-1.5 pt-1 pb-2', miniHeight),
           )
         "

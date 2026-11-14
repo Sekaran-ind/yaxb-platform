@@ -45,7 +45,7 @@ const ring = computed(() => (props.suggested ? "ring-2 ring-info/40" : ""));
         <option value="">Choose a source…</option>
         <option v-for="s in notebook.sources" :key="s.id" :value="s.id">{{ s.title }}</option>
       </select>
-      <p v-else class="rounded-md bg-mist px-3 py-2 text-sm text-gray-600">This notebook has no sources yet. Add one on the Notebook screen first.</p>
+      <p v-else class="rounded-md bg-mist px-3 py-2 text-sm text-gray-600">This notebook has no sources yet. Add one in My notebook first.</p>
     </template>
     <input
       v-else
