@@ -111,6 +111,7 @@ function onTabKey(e: KeyboardEvent) {
           <span class="yj-label"><component :is="icon(s.icon)" v-if="icon(s.icon)" class="yj-icon" aria-hidden="true" /><span class="yj-tab-text">{{ s.label }}</span><span v-if="s.badge" class="yj-badge">{{ s.badge }}</span></span>
         </button>
       </div>
+      <slot name="trail" />
     </div>
     <div v-else class="yj-nav-head">
       <slot name="lead" />
@@ -132,6 +133,7 @@ function onTabKey(e: KeyboardEvent) {
       <h2 v-else-if="currentScreen" class="yj-nav-title">
         <component :is="icon(currentScreen.icon)" v-if="icon(currentScreen.icon)" class="yj-icon" aria-hidden="true" />{{ currentScreen.label }}
       </h2>
+      <slot name="trail" />
     </div>
     <div :id="`${uid}-panel`" :role="compactTabs ? 'tabpanel' : undefined" :aria-labelledby="compactTabs ? `${uid}-tab-${current}` : undefined" class="yj-cq yj-nav-body" :class="bodyClass">
       <slot v-if="current" :name="current" />
@@ -207,6 +209,8 @@ function onTabKey(e: KeyboardEvent) {
       <PopMenu v-if="showSwitch" v-slot="{ close }" label="Display" class="yj-push">
         <button v-for="m in SWITCHABLE_NAV_MODES" :key="m" type="button" role="menuitemradio" :aria-checked="m === mode" class="yj-menu-item" @click="choose(m), close()">{{ MODE_LABEL[m] }}</button>
       </PopMenu>
+      <!-- trail: the host's own controls at the end of the tab row (the kiosk's pills). -->
+      <slot name="trail" />
     </div>
     <div :id="`${uid}-panel`" role="tabpanel" :aria-labelledby="`${uid}-tab-${current}`" class="yj-cq yj-nav-body" :class="bodyClass"><slot v-if="current" :name="current" /></div>
   </div>

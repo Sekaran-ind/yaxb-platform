@@ -12,7 +12,7 @@ import { kioskJourneys } from "@/composables/library";
 import type { NotebookRecord } from "@/lib/browser/store";
 import type { JourneyTurn } from "@/lib/types";
 
-const props = defineProps<{ turn: JourneyTurn; services: Record<string, ServiceHandler>; notebook: NotebookRecord | null }>();
+const props = defineProps<{ turn: JourneyTurn; services: Record<string, ServiceHandler>; notebook: NotebookRecord | null; order?: number }>();
 const emit = defineEmits<{ update: [patch: Partial<JourneyTurn>]; speak: [text: string]; done: [journeyId: string] }>();
 
 const journey = computed(() => kioskJourneys.value.find((j) => j.id === props.turn.id) ?? null);
@@ -45,6 +45,7 @@ function again() {
         :journey="journey"
         :entry="turn.entry"
         :initial="turn.run"
+        :form-order="order"
         :services="services"
         :notebook="notebook"
         @progress="onProgress"

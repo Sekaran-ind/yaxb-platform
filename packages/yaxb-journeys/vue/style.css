@@ -524,6 +524,7 @@ textarea.yj-input {
 .yj-tabs-row {
   display: flex;
   flex: none;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   margin-bottom: 0.75rem;
@@ -532,8 +533,9 @@ textarea.yj-input {
   margin-left: auto;
 }
 /* Narrow, few screens: the tabs share the width; long names are cut with an ellipsis. */
+/* They keep room for their names: the host's trail drops to its own line before they are cut. */
 .yj-tablist-fit {
-  flex: 1;
+  flex: 1 1 17rem;
 }
 .yj-tablist-fit .yj-tab {
   flex: 1 1 0;
@@ -1412,4 +1414,20 @@ button.yj-crumb:hover {
 }
 .yj-handover {
   border-left: 3px solid var(--yj-accent);
+}
+
+/* The host's controls at the end of the tab row (trail): pushed to the end, kept on one line. */
+.yj-tabs-row > .yj-trail,
+.yj-nav-head > .yj-trail {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+/* A phone: the tab names matter more than their icons. */
+@container (max-width: 24rem) {
+  .yj-tablist-fit .yj-icon {
+    display: none;
+  }
 }

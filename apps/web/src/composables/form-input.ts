@@ -4,20 +4,26 @@
 // inside the form. "Ask a question instead" sends the next message to the assistant as usual.
 import { computed, ref, shallowRef } from "vue";
 
-type FormInput = { id: string; label: string; fill: (text: string) => Promise<void> };
+/** order: the form's place in the conversation; the newest (highest) open form takes the words. */
+type FormInput = { id: string; label: string; order: number; fill: (text: string) => Promise<void> };
 
+const offers = new Map<string, FormInput>();
 const current = shallowRef<FormInput | null>(null);
+const pickCurrent = () => (current.value = [...offers.values()].sort((a, b) => b.order - a.order)[0] ?? null);
 /** The visitor chose to ask a question while a form is open. */
 export const askInstead = ref(false);
 
 /** A form in the conversation is waiting for answers: the message box fills it. */
 export function offerFormInput(input: FormInput) {
-  current.value = input;
-  askInstead.value = false;
+  offers.set(input.id, input);
+  const before = current.value?.id;
+  pickCurrent();
+  if (current.value?.id !== before) askInstead.value = false;
 }
 /** That form is answered, closed or gone. */
 export function withdrawFormInput(id: string) {
-  if (current.value?.id === id) current.value = null;
+  offers.delete(id);
+  pickCurrent();
 }
 
 /** The form the message box fills now, unless the visitor chose to ask instead. */

@@ -5,7 +5,7 @@
 // conversation; a request's reference (R-XXXXXX) shows where that request is. Journeys and
 // references stay in the conversation, so opening it later shows where they are.
 import { MAX_MESSAGE_CHARS } from "@sekaran-ind/yaxb-core/schemas";
-import { ArrowUp, Bot, CheckCircle2, HardDrive, Circle, CircleDot, Inbox, ListChecks, Loader2, MessagesSquare, Mic, MicOff, Paperclip, Plus, RotateCcw, Settings2, ShieldCheck, UserRoundCog, Wrench } from "@lucide/vue";
+import { ArrowUp, Bot, CheckCircle2, HardDrive, Circle, CircleDot, Inbox, ListChecks, Loader2, Mic, MicOff, Paperclip, Plus, ShieldCheck, UserRoundCog, Wrench } from "@lucide/vue";
 import type { ServiceHandler } from "@sekaran-ind/yaxb-core/journeys";
 import { CASE_REF } from "@sekaran-ind/yaxb-core/cases";
 import { ACCEPTED_FILES } from "@/lib/browser/documents";
@@ -73,7 +73,8 @@ const emit = defineEmits<{
   speak: [text: string];
   openThread: [id: string];
 }>();
-const drawer = ref(false);
+/** The conversations drawer: opened from the Conversations pill in the tab row (the shell). */
+const drawer = defineModel<boolean>("drawer", { default: false });
 
 const TOOL_LABELS: Record<string, string> = {
   search_knowledge_base: "Searching the knowledge base",
@@ -256,40 +257,25 @@ function submit() {
 
 <template>
   <!-- A reading width, however wide the kiosk: the conversation and its composer stay centred. -->
-  <div :class="cn('relative mx-auto flex w-full max-w-4xl flex-col', heightClass ?? 'min-h-[min(62dvh,560px)]')">
-    <div class="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
-      <span v-if="restricted" class="text-sm font-medium text-ink">Front desk</span>
-      <RouterLink v-else :to="{ path: '/kiosk', query: { prefs: answers === 'local' ? 'knowledge' : 'model' } }" class="chip hover:text-ink">
-        <Settings2 class="size-3.5" aria-hidden="true" />
-        <template v-if="answers === 'local'">Kiosk only · no AI model</template>
-        <template v-else>{{ catalogError ? "Agent offline" : modelLabel ? `${provider?.label} · ${modelLabel}` : "Loading model…" }}{{ answers === "auto" ? " · curated answers on this device" : "" }}</template>
-      </RouterLink>
-      <div class="flex items-center gap-1">
-        <button v-if="turns.length && !restricted" type="button" class="inline-flex h-9 items-center gap-1 rounded-full px-2 hover:bg-mist hover:text-ink" @click="emit('reset')"><RotateCcw class="size-3.5" aria-hidden="true" /> New</button>
-        <button v-if="!restricted" type="button" class="inline-flex h-9 items-center gap-1 rounded-full px-2 hover:bg-mist hover:text-ink" :aria-expanded="drawer" aria-controls="threads-drawer" @click="drawer = !drawer">
-          <MessagesSquare class="size-3.5" aria-hidden="true" /> Conversations<span v-if="threads.length" class="rounded-full bg-mist px-1.5 text-[11px] text-ink">{{ threads.length }}</span>
-        </button>
-        <slot name="actions" />
-      </div>
-    </div>
-
+  <div :class="cn('relative flex w-full flex-col', heightClass ?? 'min-h-[min(62dvh,560px)]')">
     <p v-if="noProvider" role="alert" class="caution mb-3 px-3 py-2 text-sm">
       No AI provider is configured. Add a provider key as a Worker secret (locally: <code>apps/web/.dev.vars</code>).
     </p>
 
 
-    <div ref="scroller" :class="cn('relative -mx-1 mt-2 flex-1 space-y-5 px-1', heightClass ? 'min-h-0 overflow-y-auto pb-36 [scrollbar-width:thin]' : 'pb-4')" aria-live="polite">
+    <div ref="scroller" :class="cn('relative -mx-1 flex-1 space-y-5 px-1', heightClass ? 'min-h-0 overflow-y-auto pb-36 [scrollbar-width:thin]' : 'pb-4')" aria-live="polite">
       <div v-if="!turns.length" class="pt-16 text-center">
         <p class="text-lg font-medium tracking-tight text-ink">Ask a question, or tap the microphone.</p>
         <p class="mt-1 text-sm text-gray-500">Answers come from trusted sources, with references.</p>
         <slot name="empty" />
       </div>
-      <template v-for="t in turns" :key="t.id">
+      <template v-for="(t, i) in turns" :key="t.id">
         <!-- A journey or a request loaded into the conversation, kept with it. -->
         <div v-if="t.role === 'assistant' && (t.journey || t.request)" class="min-w-0">
           <ChatJourney
             v-if="t.journey"
             :turn="t.journey"
+            :order="i"
             :services="services"
             :notebook="notebook"
             @update="(patch) => emit('journeyUpdate', t.id, patch)"
@@ -486,7 +472,12 @@ function submit() {
           <ArrowUp v-else class="size-4" aria-hidden="true" />
         </button>
       </form>
-      <p class="mt-1.5 truncate text-center text-[11px] text-gray-400">Facts from cited sources. Check important things with a person.</p>
+      <p class="pointer-events-auto mt-1.5 truncate text-center text-[11px] text-gray-400">
+        <template v-if="restricted">Front desk · </template>
+        <RouterLink v-else :to="{ path: '/kiosk', query: { prefs: answers === 'local' ? 'knowledge' : 'model' } }" class="underline-offset-2 hover:text-ink hover:underline">
+          {{ answers === "local" ? "Kiosk only, no AI model" : catalogError ? "Agent offline" : modelLabel ? `${provider?.label} · ${modelLabel}` : "Loading model…" }}</RouterLink
+        ><template v-if="!restricted"> · </template>Facts from cited sources. Check important things with a person.
+      </p>
     </div>
   </div>
 </template>

@@ -568,6 +568,8 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
               icon: s.icon ?? null,
               revision: e.published_revision,
               published_at: e.reviewed_at,
+              /** Where its latest revision is: kiosks run the published revision whatever this says, but only an accepted service is offered to add. */
+              state: e.status,
               roles: b.roles,
               journeys: b.journeys.map((j) => ({
                 id: j.id,

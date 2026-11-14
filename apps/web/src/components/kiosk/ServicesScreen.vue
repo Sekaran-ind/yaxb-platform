@@ -9,7 +9,7 @@
 import type { ServiceHandler } from "@sekaran-ind/yaxb-core/journeys";
 import type { Layout } from "@sekaran-ind/yaxb-core/screens";
 import { servicesFor, type ServiceItem } from "@sekaran-ind/yaxb-core/services";
-import { ChevronDown, ChevronRight, Inbox, Info, Search } from "@lucide/vue";
+import { ChevronDown, ChevronRight, Inbox, Info } from "@lucide/vue";
 import { kioskContent } from "@sekaran-ind/yaxb-core/content";
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -24,15 +24,12 @@ import {
   catalogue,
   kioskJourneys,
   loadCatalogue,
-  loadedServices,
   loadIntoKiosk,
-  viewerIsMember,
   kioskViewer,
 } from "@/composables/library";
 import { caseQueue, onDevices, refreshQueue, startCaseNetwork } from "@/composables/cases";
 import { collect } from "@/composables/case-network";
 import RequestBoard from "./RequestBoard.vue";
-import { CASE_REF } from "@sekaran-ind/yaxb-core/cases";
 
 // highlight: service item keys the visitor's profile brings forward (yaxb-core accounts preferencesFrom).
 const props = defineProps<{ layout: Layout; services: Record<string, ServiceHandler>; notebook: NotebookRecord | null; highlight?: string[] }>();
@@ -58,13 +55,7 @@ onMounted(async () => {
   }
 });
 // The native app is for visitors: staff work in the web kiosk, where their sign-in is a cookie.
-const offered = computed(() => servicesFor(kioskContent.services, { layout: props.layout, journeys: kioskJourneys.value.map((j) => j.id) }).filter((s) => !(NATIVE && s.id === "staff")));
-const forYou = computed(() => {
-  // Built-in items, and the items of loaded catalogue services this viewer may start.
-  const fromCatalogue = loadedServices.value.flatMap((s) => s.service.items.filter((i) => s.meta.journeys.find((j) => j.id === i.journey)?.allowed));
-  const items = [...offered.value.flatMap((s) => s.items), ...fromCatalogue];
-  return (props.highlight ?? []).map((key) => items.find((i) => i.key === key)).filter((i): i is ServiceItem => Boolean(i));
-});
+const offered = computed(() => servicesFor(kioskContent.services, { layout: props.layout, journeys: kioskJourneys.value.map((j) => j.id) }).filter((s) => !(NATIVE && s.id === "staff") && s.id !== "ask"));
 const journeyOf = (item: ServiceItem) => (item.journey ? kioskJourneys.value.find((j) => j.id === item.journey) : undefined);
 const about = ref<string | null>(null);
 const showAll = ref(false);
@@ -82,15 +73,6 @@ const backToServices = () => void router.push({ path: "/kiosk", query: { screen:
 // ---- requests (cases) --------------------------------------------------------------------------
 /** A request opens in the conversation, unfolded (LIB-52). */
 const openRequest = (ref: string) => emit("request", ref);
-const refInput = ref("");
-const refProblem = ref<string | null>(null);
-function checkRequest() {
-  const ref = refInput.value.trim().toUpperCase().replace(/^R?-?/, "R-");
-  if (!CASE_REF.test(ref)) return void (refProblem.value = "That isn't a reference. A reference is R, a dash and six letters or digits, like R-7KQ4MX.");
-  refProblem.value = null;
-  refInput.value = "";
-  openRequest(ref);
-}
 // Work waiting for this member comes first on Services; what they started and the others' open
 // requests sit with "Check a request", lower down, so a visitor with nothing sees services first.
 const otherGroups = computed(() =>
@@ -113,23 +95,6 @@ const otherGroups = computed(() =>
         <span class="rounded-full bg-brand-dark px-2 py-0.5 text-xs font-medium text-on-brand">{{ caseQueue.mine.length }}</span>
       </h3>
       <RequestList :items="caseQueue.mine" @open="openRequest" />
-    </section>
-
-    <section v-if="forYou.length" aria-labelledby="svc-for-you">
-      <h3 id="svc-for-you" class="eyebrow">For you</h3>
-      <p class="mt-1 mb-3 text-sm text-gray-500">From the interests in your profile.</p>
-      <ul class="grid gap-2 @lg:grid-cols-2">
-        <li v-for="item in forYou" :key="`for-you-${item.key}`">
-          <button type="button" class="card flex w-full items-center gap-3 p-3 text-left transition hover:border-gray-300" @click="open(item)">
-            <span class="grid size-9 shrink-0 place-items-center rounded-xl bg-mist text-ink"><component :is="iconFor(item.icon)" v-if="iconFor(item.icon)" class="size-4" aria-hidden="true" /></span>
-            <span class="min-w-0 flex-1">
-              <span class="block text-sm font-medium text-ink">{{ item.label }}</span>
-              <span v-if="summaryOf(item)" class="block text-xs text-gray-500">{{ summaryOf(item) }}</span>
-            </span>
-            <ChevronRight class="size-4 shrink-0 text-gray-400" aria-hidden="true" />
-          </button>
-        </li>
-      </ul>
     </section>
 
     <section v-for="s in offered" :key="s.id" :aria-labelledby="`svc-${s.id}`">
@@ -166,46 +131,17 @@ const otherGroups = computed(() =>
       </ul>
     </section>
 
-    <!-- Services loaded from the Service Catalogue live in the notebook; their journeys run in the conversation. -->
-    <p class="rounded-lg bg-mist px-3 py-2 text-sm text-gray-700">
-      Looking for more? Services added to this kiosk from the Service Catalogue are in
-      <button type="button" class="font-medium text-ink underline underline-offset-2" @click="emit('openScreen', 'notebook')">My notebook</button>.
-      Every journey runs in the conversation, where you can also type <span class="font-mono text-ink">/journeys</span> to pick one.
-    </p>
-
     <!-- Moderators: who has which request kept on devices, and reassigning an idle one. -->
     <RequestBoard v-if="onDevices && (kioskViewer.admin || kioskViewer.roles.includes('moderator') || kioskViewer.roles.includes('administrator'))" />
 
-    <!-- Requests: what this member started and others' open ones, and checking one by its reference (anyone). -->
-    <section aria-labelledby="svc-requests" class="space-y-3">
-      <div>
-        <h3 id="svc-requests" class="flex items-center gap-2 text-base font-semibold text-ink"><Search class="size-4 text-brand" aria-hidden="true" /> Requests</h3>
-        <p class="mt-0.5 text-sm text-gray-500">When a service passes your answers on to its staff, you get a reference, kept in the conversation where you started it. Type it here, or in any conversation, to see where your request is or to add a note.</p>
-      </div>
-      <form class="flex flex-wrap items-end gap-2" novalidate @submit.prevent="checkRequest">
-        <div class="w-36">
-          <label for="svc-ref" class="mb-1 block text-sm font-medium text-ink">Reference</label>
-          <input
-            id="svc-ref"
-            v-model="refInput"
-            class="input font-mono uppercase"
-            placeholder="R-7KQ4MX"
-            autocomplete="off"
-            autocapitalize="characters"
-            spellcheck="false"
-            maxlength="12"
-            :aria-invalid="Boolean(refProblem)"
-            :aria-describedby="refProblem ? 'svc-ref-problem' : undefined"
-          />
-        </div>
-        <button type="submit" class="btn-light" :disabled="!refInput.trim()"><Search class="size-4" aria-hidden="true" /> Check a request</button>
-        <p v-if="refProblem" id="svc-ref-problem" role="alert" class="w-full text-sm text-red-800">{{ refProblem }}</p>
-      </form>
+    <!-- Staff: what they started and the other open requests they may see. (Visitors check theirs by
+         typing the reference in Ask Me.) -->
+    <section v-if="otherGroups.length" aria-labelledby="svc-requests" class="space-y-3">
+      <h3 id="svc-requests" class="flex items-center gap-2 text-base font-semibold text-ink"><Inbox class="size-4 text-brand" aria-hidden="true" /> Requests</h3>
       <div v-for="g in otherGroups" :key="g.id">
         <h4 class="eyebrow mb-2">{{ g.title }} ({{ g.items.length }})</h4>
         <RequestList :items="g.items" @open="openRequest" />
       </div>
-      <p v-if="viewerIsMember && !caseQueue.mine.length && !otherGroups.length" class="rounded-lg bg-mist px-3 py-2 text-sm text-gray-600">No open requests. Requests for your roles show at the top of Services.</p>
     </section>
 
     <section aria-labelledby="svc-about-all">

@@ -13,7 +13,9 @@ const props = defineProps<{ staff?: boolean; docCount?: (entryId: string) => num
 const emit = defineEmits<{ start: [journeyId: string]; documents: [entryId: string, title: string] }>();
 
 const picking = ref(false);
-const available = computed(() => catalogue.value.filter((s) => !s.loaded));
+// Only published services are offered: one whose latest revision was rejected, or is still a draft
+// or in review, isn't (a kiosk that already has it keeps its accepted revision).
+const available = computed(() => catalogue.value.filter((s) => !s.loaded && (s.state ?? "accepted") === "accepted"));
 const startedBy = (j: CatalogueJourney) => j.initiate.filter((r) => r !== "visitor").map(roleName).join(" or ");
 const finishedBy = (j: CatalogueJourney) => j.complete.map(roleName).join(" or ");
 
