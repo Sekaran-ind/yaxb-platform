@@ -4,11 +4,13 @@
 // Cards are laid out by the kiosk's own width (container queries), not the window's, so the Mini
 // kiosk on a wide screen gets one clean column. Services loaded from the Service Catalogue come
 // after the built-in ones (LIB-18..19): their journeys open for those who may start them, and the
-// rest show which role starts them.
+// rest show which role starts them. Loading one checks the team has someone for each role it needs
+// (LIB-37). Requests (cases, LIB-33..38) are here too: a signed-in member's work queue, and "Check a
+// request" by reference for anyone; ?case=<id or reference> opens one.
 import type { ServiceHandler } from "@sekaran-ind/yaxb-core/journeys";
 import type { Layout } from "@sekaran-ind/yaxb-core/screens";
 import { servicesFor, type ServiceItem } from "@sekaran-ind/yaxb-core/services";
-import { ChevronDown, ChevronRight, Info, Library, Lock, Plus, X } from "@lucide/vue";
+import { AlertTriangle, ChevronDown, ChevronRight, Inbox, Info, Library, Lock, Plus, Search, X } from "@lucide/vue";
 import { kioskContent } from "@sekaran-ind/yaxb-core/content";
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -16,10 +18,30 @@ import type { NotebookRecord } from "@/lib/browser/store";
 import { cn } from "@/lib/cn";
 import { iconFor } from "@/lib/icons";
 import { NATIVE } from "@/lib/platform";
+import CaseView from "./CaseView.vue";
+import RequestList from "./RequestList.vue";
 import JourneyPanel from "./JourneyPanel.vue";
 import JourneySummaryCard from "./JourneySummaryCard.vue";
 import KioskStaff from "./KioskStaff.vue";
-import { catalogue, catalogueReady, kioskJourneys, loadCatalogue, loadedServices, loadIntoKiosk, removeFromKiosk, roleName, type CatalogueJourney } from "@/composables/library";
+import {
+  catalogue,
+  catalogueReady,
+  entryOfJourney,
+  kioskJourneys,
+  loadCatalogue,
+  loadedServices,
+  loadIntoKiosk,
+  needsOf,
+  removeFromKiosk,
+  roleName,
+  viewerIsMember,
+  kioskViewer,
+  type CatalogueJourney,
+} from "@/composables/library";
+import { caseQueue, onDevices, refreshQueue, startCaseNetwork } from "@/composables/cases";
+import { collect } from "@/composables/case-network";
+import RequestBoard from "./RequestBoard.vue";
+import { CASE_REF } from "@sekaran-ind/yaxb-core/cases";
 
 // highlight: service item keys the visitor's profile brings forward (yaxb-core accounts preferencesFrom).
 const props = defineProps<{ layout: Layout; openJourney: string | null; services: Record<string, ServiceHandler>; notebook: NotebookRecord | null; highlight?: string[] }>();
@@ -29,7 +51,13 @@ const route = useRoute();
 const router = useRouter();
 // The catalogue's published services; /kiosk?load=<id> (the catalogue's "Open in a kiosk") loads one.
 onMounted(async () => {
+  void refreshQueue();
   await loadCatalogue();
+  // Requests kept on devices: join the team's channel and collect from the box and the relay.
+  if (onDevices.value) {
+    startCaseNetwork();
+    void collect().then(refreshQueue);
+  }
   const load = route.query.load;
   if (typeof load === "string" && catalogue.value.some((s) => s.entry_id === load)) {
     loadIntoKiosk(load);
@@ -63,14 +91,70 @@ function open(item: ServiceItem) {
   if (item.screen) emit("openScreen", item.screen);
 }
 const backToServices = () => void router.push({ path: "/kiosk", query: { screen: "services" } });
+
+// ---- requests (cases) --------------------------------------------------------------------------
+const caseKey = computed(() => (typeof route.query.case === "string" ? route.query.case : null));
+const openRequest = (key: string) => void router.push({ path: "/kiosk", query: { screen: "services", case: key } });
+const refInput = ref("");
+const refProblem = ref<string | null>(null);
+function checkRequest() {
+  const ref = refInput.value.trim().toUpperCase().replace(/^R?-?/, "R-");
+  if (!CASE_REF.test(ref)) return void (refProblem.value = "That isn't a reference. A reference is R, a dash and six letters or digits, like R-7KQ4MX.");
+  refProblem.value = null;
+  refInput.value = "";
+  openRequest(ref);
+}
+// Work waiting for this member comes first on Services; what they started and the others' open
+// requests sit with "Check a request", lower down, so a visitor with nothing sees services first.
+const otherGroups = computed(() =>
+  [
+    { id: "started", title: "You started", items: caseQueue.value.started },
+    { id: "others", title: "Other open requests", items: caseQueue.value.others },
+  ].filter((g) => g.items.length),
+);
+
+// ---- loading a catalogue service: who it needs (LIB-37) ----------------------------------------
+const checking = ref<string | null>(null);
+const unstaffed = (entryId: string) => needsOf(entryId).filter((n) => n.staffing !== "ready");
+function askToLoad(entryId: string) {
+  if (!unstaffed(entryId).length) return loadIntoKiosk(entryId);
+  checking.value = entryId;
+}
+function confirmLoad(entryId: string) {
+  loadIntoKiosk(entryId);
+  checking.value = null;
+}
+const STAFFING = { ready: "has someone", invited: "invited, but not signed in yet", nobody: "nobody has this role yet" } as const;
 </script>
 
 <template>
-  <JourneyPanel v-if="journey" :key="journey.id" :journey="journey" :services="services" :notebook="notebook" @close="emit('openJourney', null)" @speak="(t) => emit('speak', t)" @done="emit('journeyDone', journey.id)" />
+  <JourneyPanel
+    v-if="journey"
+    :key="journey.id"
+    :journey="journey"
+    :entry="entryOfJourney(journey.id)"
+    :services="services"
+    :notebook="notebook"
+    @close="emit('openJourney', null)"
+    @speak="(t) => emit('speak', t)"
+    @done="emit('journeyDone', journey.id)"
+    @handed="refreshQueue"
+  />
+
+  <CaseView v-else-if="caseKey" :key="caseKey" :case-key="caseKey" :services="services" :notebook="notebook" @back="backToServices" @speak="(t) => emit('speak', t)" />
 
   <KioskStaff v-else-if="staffSection" @back="backToServices" />
 
   <div v-else class="@container space-y-7">
+    <!-- Work waiting for this member's roles comes first. -->
+    <section v-if="caseQueue.mine.length" aria-labelledby="svc-waiting" class="space-y-3">
+      <h3 id="svc-waiting" class="flex items-center gap-2 text-base font-semibold text-ink">
+        <Inbox class="size-4 text-brand" aria-hidden="true" /> Waiting for you
+        <span class="rounded-full bg-brand-dark px-2 py-0.5 text-xs font-medium text-on-brand">{{ caseQueue.mine.length }}</span>
+      </h3>
+      <RequestList :items="caseQueue.mine" @open="openRequest" />
+    </section>
+
     <section v-if="forYou.length" aria-labelledby="svc-for-you">
       <h3 id="svc-for-you" class="eyebrow">For you</h3>
       <p class="mt-1 mb-3 text-sm text-gray-500">From the interests in your profile.</p>
@@ -131,12 +215,24 @@ const backToServices = () => void router.push({ path: "/kiosk", query: { screen:
       <div v-if="picking" class="rounded-2xl bg-mist p-3">
         <p v-if="!available.length" class="text-sm text-gray-600">Every published service is loaded<template v-if="!catalogue.length">: nothing is published yet</template>.</p>
         <ul class="grid gap-2 @lg:grid-cols-2">
-          <li v-for="s in available" :key="s.entry_id" class="card flex items-start justify-between gap-2 p-3">
+          <li v-for="s in available" :key="s.entry_id" class="card flex flex-wrap items-start justify-between gap-2 p-3">
             <span class="min-w-0">
               <span class="block text-sm font-medium text-ink">{{ s.title }}</span>
               <span class="block text-xs text-gray-500">{{ s.journeys.length }} journey{{ s.journeys.length === 1 ? "" : "s" }} · {{ s.library }}</span>
             </span>
-            <button type="button" class="btn-primary h-8 px-3 text-xs" @click="loadIntoKiosk(s.entry_id)">Load</button>
+            <button v-if="checking !== s.entry_id" type="button" class="btn-primary h-8 px-3 text-xs" @click="askToLoad(s.entry_id)">Load</button>
+            <!-- Roles nobody can act on yet: say so before loading. -->
+            <div v-else class="caution w-full space-y-2 p-3 text-sm" role="status">
+              <p class="flex items-center gap-1.5 font-medium"><AlertTriangle class="size-4 shrink-0" aria-hidden="true" /> Some roles have nobody to act yet</p>
+              <ul class="space-y-0.5">
+                <li v-for="n in unstaffed(s.entry_id)" :key="n.role"><span class="font-medium">{{ n.label }}</span>: {{ STAFFING[n.staffing] }}. Needed to {{ n.why.join("; ") }}.</li>
+              </ul>
+              <p class="text-gray-700">Requests would wait for them until someone has the role. An administrator gives a member a role in For staff → Administration.</p>
+              <div class="flex flex-wrap gap-2">
+                <button type="button" class="btn-primary h-10 px-4" @click="confirmLoad(s.entry_id)">Load anyway</button>
+                <button type="button" class="btn-ghost h-10" @click="checking = null">Cancel</button>
+              </div>
+            </div>
           </li>
         </ul>
         <RouterLink v-if="!NATIVE" to="/catalogue" class="mt-2 inline-block text-sm font-medium text-ink hover:underline">Design a service in the catalogue →</RouterLink>
@@ -151,6 +247,9 @@ const backToServices = () => void router.push({ path: "/kiosk", query: { screen:
             </h4>
             <p v-if="s.meta.summary" class="text-sm text-gray-500">{{ s.meta.summary }}</p>
             <p v-if="s.meta.roles.length" class="mt-1 text-xs text-gray-500">Delivered by {{ s.meta.roles.map((r) => r.label).join(", ") }}</p>
+            <p v-if="unstaffed(s.meta.entry_id).length" class="caution mt-1 flex items-center gap-1.5 px-2 py-1 text-xs">
+              <AlertTriangle class="size-3.5 shrink-0" aria-hidden="true" /> Nobody can act yet for: {{ unstaffed(s.meta.entry_id).map((n) => n.label).join(", ") }}. Their requests wait.
+            </p>
           </div>
           <button type="button" class="btn-ghost h-8 shrink-0 px-2 text-xs" :aria-label="`Remove ${s.meta.title} from this kiosk`" @click="removeFromKiosk(s.meta.entry_id)"><X class="size-3.5" aria-hidden="true" /> Remove</button>
         </div>
@@ -174,6 +273,41 @@ const backToServices = () => void router.push({ path: "/kiosk", query: { screen:
           </li>
         </ul>
       </article>
+    </section>
+
+    <!-- Moderators: who has which request kept on devices, and reassigning an idle one. -->
+    <RequestBoard v-if="onDevices && (kioskViewer.admin || kioskViewer.roles.includes('moderator') || kioskViewer.roles.includes('administrator'))" />
+
+    <!-- Requests: what this member started and others' open ones, and checking one by its reference (anyone). -->
+    <section aria-labelledby="svc-requests" class="space-y-3">
+      <div>
+        <h3 id="svc-requests" class="flex items-center gap-2 text-base font-semibold text-ink"><Search class="size-4 text-brand" aria-hidden="true" /> Requests</h3>
+        <p class="mt-0.5 text-sm text-gray-500">When a service passes your answers on to its staff, you get a reference. Type it here to see where your request is, or to add a note.</p>
+      </div>
+      <form class="flex flex-wrap items-end gap-2" novalidate @submit.prevent="checkRequest">
+        <div class="w-36">
+          <label for="svc-ref" class="mb-1 block text-sm font-medium text-ink">Reference</label>
+          <input
+            id="svc-ref"
+            v-model="refInput"
+            class="input font-mono uppercase"
+            placeholder="R-7KQ4MX"
+            autocomplete="off"
+            autocapitalize="characters"
+            spellcheck="false"
+            maxlength="12"
+            :aria-invalid="Boolean(refProblem)"
+            :aria-describedby="refProblem ? 'svc-ref-problem' : undefined"
+          />
+        </div>
+        <button type="submit" class="btn-light" :disabled="!refInput.trim()"><Search class="size-4" aria-hidden="true" /> Check a request</button>
+        <p v-if="refProblem" id="svc-ref-problem" role="alert" class="w-full text-sm text-red-800">{{ refProblem }}</p>
+      </form>
+      <div v-for="g in otherGroups" :key="g.id">
+        <h4 class="eyebrow mb-2">{{ g.title }} ({{ g.items.length }})</h4>
+        <RequestList :items="g.items" @open="openRequest" />
+      </div>
+      <p v-if="viewerIsMember && !caseQueue.mine.length && !otherGroups.length" class="rounded-lg bg-mist px-3 py-2 text-sm text-gray-600">No open requests. Requests for your roles show at the top of Services.</p>
     </section>
 
     <section aria-labelledby="svc-about-all">

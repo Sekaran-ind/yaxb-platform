@@ -3,9 +3,10 @@
 // side panel), or edit its YAML; try it in the preview; read its summary, audit trail and history.
 // Its author (or an editor) saves, submits and archives it; reviewers accept or reject it. The YAML
 // is what is saved: the designer writes it. A published service someone else owns opens read-only,
-// from the catalogue. A new service can start from a description: the Service Designer agent
-// (POST /api/library/design) drafts it, and the entry created from that draft remembers it, so the
-// agent learns from its review.
+// from the catalogue. The Service Designer agent is a conversation kept with the service
+// (DesignerChat, LIB-39..41): a new service can start from a description, and any service can be
+// changed by asking, during review too. The entry created from a draft remembers it, so the agent
+// learns from its review. A new service not created yet is kept in this browser until it is.
 import { JOURNEY_SERVICES } from "@sekaran-ind/yaxb-core/content";
 import type { EntryRevision, Library, LibraryEntry, LibraryPermissions } from "@sekaran-ind/yaxb-core/library";
 import {
@@ -22,12 +23,12 @@ import {
   type ServiceDesign,
 } from "@sekaran-ind/yaxb-journeys";
 import { ConfirmAction, FlowPreview, ServiceDesigner, ServiceSummary, YamlEditor } from "@sekaran-ind/yaxb-journeys/vue";
-import { Archive, ArchiveRestore, ArrowLeft, Check, ExternalLink, History, Loader2, Save, Send, Sparkles, X } from "@lucide/vue";
+import { Archive, ArchiveRestore, ArrowLeft, Check, ExternalLink, History, Loader2, Save, Send, X } from "@lucide/vue";
 import { computed, ref, shallowRef, watch } from "vue";
+import DesignerChat from "./DesignerChat.vue";
 import EntryStatus from "./EntryStatus.vue";
 import ServiceAudit from "./ServiceAudit.vue";
 import SegmentedControl from "@/components/site/SegmentedControl.vue";
-import { effectiveSelection, settings, useProviders } from "@/composables/settings";
 import { useWidth } from "@/composables/width";
 import type { CatalogueService } from "@/composables/library";
 import { api, ApiError } from "@/lib/api";
@@ -58,36 +59,51 @@ const error = ref<string | null>(null);
 const notice = ref<string | null>(null);
 const busy = ref(false);
 
-// ---- describe it: the Service Designer agent drafts a new service --------------------------------
-const MAX_NARRATIVE = 4000;
-const { data: catalog } = useProviders();
-const selection = computed(() => effectiveSelection(settings, catalog.value));
-const narrative = ref("");
-const drafting = ref(false);
+// ---- the Service Designer conversation ------------------------------------------------------------
 /** The draft the editor holds, so the entry created from it is linked to it. */
 const draftRun = ref<string | null>(null);
-const draftNotes = ref<string | null>(null);
-/** The description box is open (a new service starts with it; after a draft it folds away). */
-const describing = ref(true);
-async function draftWithAi() {
-  const sel = selection.value;
-  if (!sel) return;
-  drafting.value = true;
-  error.value = notice.value = null;
+/** A new service's conversation, linked to the entry when it is created. */
+const threadId = ref<string | null>(null);
+const STARTER = serviceTemplate("new-service");
+function applyDraft(next: string, run: string | null) {
+  yaml.value = next;
+  if (run) draftRun.value = run;
+  openView(view.value === "design" || view.value === "yaml" || view.value === "preview" ? view.value : "design");
+}
+
+// A new service isn't lost on a reload: it is kept in this browser (with its conversation) until created.
+const UNSAVED = "yaxb.catalogue.unsaved";
+type Unsaved = { yaml: string; thread: string | null; run: string | null };
+function readUnsaved(): Unsaved | null {
   try {
-    const r = await api<{ yaml: string; ok: boolean; notes: string | null; run: string }>("/api/library/design", { narrative: narrative.value, provider: sel.provider, model: sel.model });
-    yaml.value = r.yaml;
-    draftRun.value = r.run;
-    draftNotes.value = r.notes;
-    describing.value = false;
-    openView("design");
-    // The panel says it was drafted; only problems need saying here too.
-    if (!r.ok) notice.value = "The draft has problems (listed below). Fix them before you submit it.";
-  } catch (e) {
-    error.value = (e as Error).message;
-  } finally {
-    drafting.value = false;
+    const v = JSON.parse(localStorage.getItem(UNSAVED) ?? "null") as Unsaved | null;
+    return v && typeof v.yaml === "string" ? v : null;
+  } catch {
+    return null;
   }
+}
+function keepUnsaved() {
+  if (props.entryId || readOnlyCopy.value) return;
+  try {
+    if (yaml.value === STARTER && !threadId.value) localStorage.removeItem(UNSAVED);
+    else localStorage.setItem(UNSAVED, JSON.stringify({ yaml: yaml.value, thread: threadId.value, run: draftRun.value } satisfies Unsaved));
+  } catch {
+    /* private mode */
+  }
+}
+const forgetUnsaved = () => {
+  try {
+    localStorage.removeItem(UNSAVED);
+  } catch {
+    /* private mode */
+  }
+};
+function startOver() {
+  forgetUnsaved();
+  yaml.value = STARTER;
+  threadId.value = draftRun.value = null;
+  notice.value = null;
+  openView("design");
 }
 
 type View = "design" | "yaml" | "preview" | "summary" | "audit" | "history";
@@ -102,10 +118,12 @@ async function load() {
     entry.value = null;
     revisions.value = [];
     saved.value = "";
-    yaml.value = serviceTemplate("new-service");
+    const kept = readUnsaved();
+    yaml.value = kept?.yaml ?? STARTER;
+    threadId.value = kept?.thread ?? null;
+    draftRun.value = kept?.run ?? null;
     mayChange.value = true;
-    draftRun.value = draftNotes.value = null;
-    describing.value = true;
+    if (kept && kept.yaml !== STARTER) notice.value = "Your new service is as you left it: it stays in this browser until you create it.";
     openView("design");
     return;
   }
@@ -185,8 +203,14 @@ async function act(fn: () => Promise<void>, done?: string) {
 const save = () =>
   act(async () => {
     if (!entry.value) {
-      const r = await api<{ entry: LibraryEntry }>("/api/library/services", { yaml: yaml.value, library: libraryChoice.value, ...(draftRun.value ? { design: draftRun.value } : {}) });
+      const r = await api<{ entry: LibraryEntry }>("/api/library/services", {
+        yaml: yaml.value,
+        library: libraryChoice.value,
+        ...(draftRun.value ? { design: draftRun.value } : {}),
+        ...(threadId.value ? { thread: threadId.value } : {}),
+      });
       saved.value = yaml.value;
+      forgetUnsaved();
       emit("created", r.entry.id);
       return;
     }
@@ -263,6 +287,10 @@ const VIEWS = computed<{ value: View; label: string }[]>(() => [
   ...(entry.value ? [{ value: "audit" as const, label: "Audit" }, { value: "history" as const, label: `History (${revisions.value.length})` }] : []),
 ]);
 
+watch([yaml, threadId], keepUnsaved);
+/** Reviewers of a service in review can talk to the designer too (suggestions); so can whoever may change it. */
+const showChat = computed(() => !readOnlyCopy.value && (editable.value || canReview.value));
+
 // Last: load() fills refs declared above (an immediate watcher runs during setup).
 watch(
   () => props.entryId,
@@ -303,40 +331,20 @@ watch(
       You're designing as a guest: your services stay with this browser. A reviewer publishes them for kiosks.
     </div>
 
-    <!-- A new service may start from a description: the Service Designer agent drafts it. -->
-    <section v-if="!entry && editable && !readOnlyCopy" aria-label="Describe it" class="rounded-2xl bg-mist p-3">
-      <form v-if="describing" class="space-y-2" @submit.prevent="draftWithAi">
-        <label for="narrative" class="flex items-center gap-2 text-sm font-medium text-ink"><Sparkles class="size-4 text-brand" aria-hidden="true" /> Describe the service in your own words</label>
-        <p id="narrative-hint" class="text-xs text-gray-600">
-          Who uses it, what they do, what it asks for, and who finishes it. The AI drafts the service; you check and change it in the steps below, and a reviewer publishes it.
-          <template v-if="draftRun"> Drafting again replaces what is in the editor now.</template>
-        </p>
-        <textarea
-          id="narrative"
-          v-model="narrative"
-          class="input min-h-28"
-          :maxlength="MAX_NARRATIVE"
-          aria-describedby="narrative-hint"
-          placeholder="e.g. Our clinic wants visitors to book a vaccination: they choose the vaccine and a day, give their name and phone number, and the nurse confirms it."
-        />
-        <div class="flex flex-wrap items-center gap-2">
-          <button type="submit" class="btn-primary" :disabled="drafting || !selection || narrative.trim().length < 20">
-            <Loader2 v-if="drafting" class="size-4 animate-spin" aria-hidden="true" /><Sparkles v-else class="size-4" aria-hidden="true" /> {{ drafting ? "Drafting…" : "Draft it with AI" }}
-          </button>
-          <span v-if="drafting" role="status" class="text-xs text-gray-600">This can take a minute.</span>
-          <span v-else-if="!selection" class="text-xs text-gray-600">Drafting needs an AI model, and this server has none set up. Design it step by step below.</span>
-          <span v-else-if="narrative.trim().length < 20" class="text-xs text-gray-600">Write a few sentences first, or design it step by step below.</span>
-          <span v-else class="text-xs text-gray-600">{{ narrative.length }} / {{ MAX_NARRATIVE }}</span>
-        </div>
-      </form>
-      <div v-else class="flex flex-wrap items-start justify-between gap-2">
-        <p class="min-w-0 flex-1 text-sm text-ink">
-          <Sparkles class="mr-1 inline size-4 text-brand" aria-hidden="true" />Drafted by the AI from your description. Check every step and change what you need, then create it.
-          <span v-if="draftNotes" class="mt-1 block text-xs text-gray-600">It noted: {{ draftNotes }}</span>
-        </p>
-        <button type="button" class="btn-light h-8 text-sm" @click="describing = true">Describe it again</button>
-      </div>
-    </section>
+    <!-- The Service Designer: a conversation kept with the service (new, draft, sent back or in review). -->
+    <DesignerChat
+      v-if="showChat"
+      :entry-id="entry?.id ?? null"
+      :thread-id="entry ? null : threadId"
+      :yaml="yaml"
+      :pristine="yaml === STARTER"
+      :editable="editable"
+      @apply="applyDraft"
+      @thread="(id) => (threadId = id)"
+    />
+    <p v-if="!entry && editable && !readOnlyCopy && (yaml !== STARTER || threadId)" class="-mt-2 text-right">
+      <button type="button" class="btn-ghost h-7 px-2 text-xs" @click="startOver">Start over</button>
+    </p>
 
     <div class="flex flex-wrap items-center justify-between gap-2">
       <SegmentedControl :model-value="view" :options="VIEWS" label="View" @update:model-value="openView" />

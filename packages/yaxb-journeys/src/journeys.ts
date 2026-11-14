@@ -28,7 +28,7 @@ import { load } from "js-yaml";
 import { conditionProblem, holds, placeholders, render, type Scope } from "./expressions.js";
 import { fieldListProblems, formProblems, keptAnswers, type Field } from "./fields.js";
 import { questionnaireFields, type Questionnaire } from "./questionnaires.js";
-import { journeyRoleProblems, type JourneyRoles } from "./roles.js";
+import { journeyRoleProblems, ROLE_ID, VISITOR_ROLE, type JourneyRoles } from "./roles.js";
 
 export * from "./expressions.js";
 export * from "./fields.js";
@@ -52,6 +52,12 @@ export type Step = {
   stage?: string;
   icon?: string;
   submitLabel?: string;
+  /**
+   * Who answers this step: a role id (a member with that role, on their own device), or absent
+   * for the person who started the journey. When the run reaches a step its current actor can't
+   * answer, it waits there: the journey is handed over (a case, which the host stores).
+   */
+  role?: string;
   /** The questionnaire this ask step uses; its questions are in `fields`. */
   questionnaire?: string;
   /** The questionnaire's pages, by field id (absent for a step with its own fields). */
@@ -75,7 +81,7 @@ export type Journey = {
 };
 
 const JOURNEY_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "category", "roles", "start", "steps"]);
-const STEP_KEYS = new Set(["ask", "fields", "questionnaire", "service", "with", "onError", "decide", "final", "result", "next", "label", "stage", "icon", "submitLabel"]);
+const STEP_KEYS = new Set(["ask", "fields", "questionnaire", "service", "with", "onError", "decide", "final", "result", "next", "label", "stage", "icon", "submitLabel", "role"]);
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 const SERVICE = /^[a-z][a-z0-9-]*(?:\.[a-z][a-zA-Z0-9-]*)+$/;
 const SCOPE_ROOTS = new Set(["answers", "steps", "context"]);
@@ -155,6 +161,12 @@ export function journeyProblems(doc: unknown, { services, questionnaires = [], r
       else if (services && !services.includes(s.service)) problems.push(`${at}: no service '${s.service}'`);
       checkTemplate(at, s.with);
     }
+    if (s.role !== undefined) {
+      if (typeof s.role !== "string" || !ROLE_ID.test(s.role)) problems.push(`${at}: role is a role id (lower-case words joined by '-')`);
+      else if (s.role === VISITOR_ROLE) problems.push(`${at}: leave role out for the person who started the journey`);
+      else if (roles && !roles.includes(s.role)) problems.push(`${at}: no role '${s.role}'`);
+      if (s.ask === undefined && s.questionnaire === undefined) problems.push(`${at}: only a step with questions is answered by a role`);
+    }
     if (s.onError !== undefined && s.onError !== "fail" && s.onError !== "continue") problems.push(`${at}: onError is fail or continue`);
     if (s.decide !== undefined) checkBranches(`${at} decide`, s.decide);
     if (s.final !== undefined) {
@@ -197,11 +209,43 @@ export function compileJourney(source: string | object, options: JourneyOptions 
 
 export type ServiceHandler = (input: unknown, ctx: { journey: Journey; step: Step; scope: Scope; signal?: AbortSignal }) => Promise<unknown>;
 
-export type RunStatus = "idle" | "asking" | "running" | "done" | "failed";
+export type RunStatus = "idle" | "asking" | "waiting" | "running" | "done" | "failed";
+
+/**
+ * Who is running the journey: the person who started it (`starter`), and their roles. A runner
+ * with an actor stops at a step someone else answers (status "waiting"); without one, it asks every
+ * step (built-in journeys, and the designer's plain preview).
+ */
+export type RunActor = { starter: boolean; roles: readonly string[] };
+
+/** The part of a run that is stored and handed over: enough to resume it anywhere. */
+export type RunSnapshot = { current: string | null; answers: Record<string, Record<string, unknown>>; steps: Record<string, unknown>; trail: RunState["trail"] };
+
+/** May this actor answer the step? A step with a role needs that role; one without, the starter. */
+export const mayAnswer = (step: Pick<Step, "role">, actor: RunActor) => (step.role ? actor.roles.includes(step.role) : actor.starter);
+
+export type RoleNeed = { role: string; for: ("start" | "answer" | "finish")[] };
+
+/** Every role a journey needs a person for: its starters (other than visitors), its steps' roles and its finishers. */
+export function journeyRolesNeeded(journey: Pick<Journey, "roles" | "steps">): RoleNeed[] {
+  const out = new Map<string, Set<"start" | "answer" | "finish">>();
+  const add = (role: string, why: "start" | "answer" | "finish") => {
+    if (role === VISITOR_ROLE) return;
+    if (!out.has(role)) out.set(role, new Set());
+    out.get(role)!.add(why);
+  };
+  const initiate = journey.roles?.initiate ?? [];
+  if (!initiate.includes(VISITOR_ROLE)) for (const r of initiate) add(r, "start");
+  for (const s of Object.values(journey.steps)) if (s.role) add(s.role, "answer");
+  for (const r of journey.roles?.complete ?? []) add(r, "finish");
+  return [...out].map(([role, why]) => ({ role, for: [...why] }));
+}
 
 export type RunState = {
   status: RunStatus;
   current: string | null;
+  /** The step someone else answers (status "waiting"): its role, or null for the person who started it. */
+  waiting: { step: string; role: string | null } | null;
   /** The step waiting for the visitor (status "asking"). */
   prompt: { step: string; text: string; fields: Field[]; sections?: StepSection[]; submitLabel?: string } | null;
   answers: Record<string, Record<string, unknown>>;
@@ -215,14 +259,34 @@ export type RunState = {
 const MAX_TRANSITIONS = 200;
 
 /**
+ * The trail as progress to show: the screens that asked something and the services that ran.
+ * Decisions and plain hops are the journey's own workings, never something a person did, and the
+ * result shows on its own, so they stay out of the chips (untitled, they would show their ids,
+ * "route" or "done").
+ */
+export function progressOf(journey: Pick<Journey, "steps">, trail: RunState["trail"]): RunState["trail"] {
+  return trail.filter((t) => {
+    const s = journey.steps[t.step];
+    return !s || (!s.final && (s.ask !== undefined || Boolean(s.service)));
+  });
+}
+
+/**
  * Runs a journey: services run on their own, ask steps wait for `answer()`. `onChange` gets every
  * new state. Handlers are the surface's; a missing one fails the run with a clear message.
  */
 export function createRunner(
   journey: Journey,
-  { services = {}, context = {}, onChange }: { services?: Record<string, ServiceHandler>; context?: Scope; onChange?: (s: RunState) => void } = {},
+  {
+    services = {},
+    context = {},
+    onChange,
+    actor: firstActor,
+  }: { services?: Record<string, ServiceHandler>; context?: Scope; onChange?: (s: RunState) => void; actor?: RunActor } = {},
 ) {
-  let state: RunState = { status: "idle", current: null, prompt: null, answers: {}, steps: {}, trail: [], result: null, error: null };
+  const blank = (): RunState => ({ status: "idle", current: null, waiting: null, prompt: null, answers: {}, steps: {}, trail: [], result: null, error: null });
+  let state: RunState = blank();
+  let actor = firstActor;
   let controller: AbortController | null = null;
 
   const set = (patch: Partial<RunState>) => {
@@ -249,14 +313,15 @@ export function createRunner(
         record(step, true);
         const r = (render(step.result ?? {}, scope()) ?? {}) as { title?: unknown; text?: unknown; ok?: unknown };
         const ok = r.ok === undefined ? true : r.ok === true || r.ok === "true";
-        return set({ status: "done", current: id, prompt: null, result: { title: String(r.title ?? journey.title), text: String(r.text ?? ""), ok } });
+        return set({ status: "done", current: id, prompt: null, waiting: null, result: { title: String(r.title ?? journey.title), text: String(r.text ?? ""), ok } });
       }
       if (step.ask !== undefined && !(id in state.answers)) {
-        return set({ status: "asking", current: id, prompt: { step: id, text: step.ask, fields: step.fields ?? [], sections: step.sections, submitLabel: step.submitLabel } });
+        if (actor && !mayAnswer(step, actor)) return set({ status: "waiting", current: id, prompt: null, waiting: { step: id, role: step.role ?? null } });
+        return set({ status: "asking", current: id, waiting: null, prompt: { step: id, text: step.ask, fields: step.fields ?? [], sections: step.sections, submitLabel: step.submitLabel } });
       }
       if (step.service) {
         const handler = Object.hasOwn(services, step.service) ? services[step.service] : undefined;
-        set({ status: "running", current: id, prompt: null });
+        set({ status: "running", current: id, prompt: null, waiting: null });
         try {
           if (!handler) throw new Error(`"${step.service}" isn't available here.`);
           controller = new AbortController();
@@ -285,8 +350,21 @@ export function createRunner(
       return state;
     },
     start: () => {
-      state = { status: "idle", current: null, prompt: null, answers: {}, steps: {}, trail: [], result: null, error: null };
+      state = blank();
       return advance(journey.start);
+    },
+    /** What to store when the run is handed over (or to keep it). */
+    snapshot: (): RunSnapshot => ({ current: state.current, answers: state.answers, steps: state.steps, trail: state.trail }),
+    /** Carry on from a stored run, as someone else (the journey's next role) or the same person. */
+    resume: (snap: RunSnapshot, as?: RunActor) => {
+      if (as) actor = as;
+      state = { ...blank(), answers: snap.answers, steps: snap.steps, trail: snap.trail };
+      return advance(snap.current ?? journey.start);
+    },
+    /** Hand a waiting run to another actor in place (the designer's preview: "continue as"). */
+    continueAs: (as: RunActor) => {
+      actor = as;
+      return advance(state.current ?? journey.start);
     },
     /** Answer the current ask step. Returns problems instead of advancing when an answer is missing. */
     async answer(values: Record<string, unknown>): Promise<RunState | { problems: string[] }> {
@@ -308,3 +386,38 @@ export function createRunner(
 }
 
 export type Runner = ReturnType<typeof createRunner>;
+
+/**
+ * Runs a journey again from its stored answers and service results, without asking anyone or
+ * calling any service, to see where it stands. The server uses it to check a handed-over run (every
+ * answer valid for its step, in the order the journey reaches them) and to find who answers next,
+ * which the client never says. The result waits at the first step without an answer, or has ended.
+ */
+export async function replay(
+  journey: Journey,
+  run: Pick<RunSnapshot, "answers" | "steps">,
+  context: Scope = {},
+): Promise<{ ok: true; state: RunState; answered: string[] } | { ok: false; problems: string[] }> {
+  const recorded: ServiceHandler = async (_input, { step }) => {
+    const out = Object.hasOwn(run.steps, step.id) ? run.steps[step.id] : undefined;
+    if (out === undefined) throw new Error(`The step "${step.label ?? step.id}" hasn't run.`);
+    if (out && typeof out === "object" && typeof (out as { error?: unknown }).error === "string") throw new Error((out as { error: string }).error);
+    return out;
+  };
+  const names = [...new Set(Object.values(journey.steps).flatMap((s) => (s.service ? [s.service] : [])))];
+  const runner = createRunner(journey, { services: Object.fromEntries(names.map((n) => [n, recorded])), context });
+  let state = await runner.start();
+  const answered: string[] = [];
+  for (let i = 0; i < MAX_TRANSITIONS && state.status === "asking" && state.prompt; i++) {
+    const at = state.prompt.step;
+    if (!Object.hasOwn(run.answers, at)) break;
+    answered.push(at);
+    const r = await runner.answer(run.answers[at]!);
+    if ("problems" in r) return { ok: false, problems: r.problems.map((p) => `${journey.steps[at]?.label ?? at}: ${p}`) };
+    state = r;
+  }
+  const extra = Object.keys(run.answers).filter((k) => !answered.includes(k));
+  if (extra.length) return { ok: false, problems: [`Answers for steps the journey didn't reach: ${extra.join(", ")}.`] };
+  if (state.status === "failed") return { ok: false, problems: [state.error ?? "The journey failed."] };
+  return { ok: true, state, answered };
+}

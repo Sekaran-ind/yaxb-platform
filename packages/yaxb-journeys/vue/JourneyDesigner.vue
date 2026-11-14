@@ -47,19 +47,22 @@ const KINDS: { id: StepKind; label: string }[] = [
   { id: "decide", label: "Decide where to go" },
   { id: "final", label: "End with a result" },
 ];
+/** Roles a screen can be answered by: the service's and the built-in ones (not visitors: that's the starter). */
+const memberRoles = computed(() => props.roles.filter((r) => r.id !== "visitor"));
+const answeredBy = (role: string) => (role ? (props.roles.find((r) => r.id === role)?.label ?? role) : "whoever started it");
 const WITH_PLACEHOLDER = 'message: "Summarise {{answers.questions.name}}"';
 const screenIds = computed(() => j.value.screens.map((s) => s.id).filter(Boolean));
 /** The other screens, by name (their ids are what the YAML keeps). */
 const others = (sid: string) => j.value.screens.filter((s) => s.id && s.id !== sid).map((s) => ({ id: s.id, name: s.label ? `${s.label} (${s.id})` : s.id }));
 
-// Ids follow names while they are still the made-up ones ("journey-2", "screen-3") or were made from the name.
-watch(
-  () => j.value.title,
-  (title, before) => {
-    if (props.readonly) return;
-    if (/^journey-\d+$/.test(j.value.id) || j.value.id === idFromName(before ?? "")) j.value.id = idFromName(title) || j.value.id;
-  },
-);
+// Ids follow names while they are still the made-up ones ("journey-2", "screen-3") or were made from
+// the name, set in the same edit as the name.
+function setTitle(title: string) {
+  const before = j.value.title;
+  j.value.title = title;
+  if (props.readonly) return;
+  if (/^journey-\d+$/.test(j.value.id) || j.value.id === idFromName(before)) j.value.id = idFromName(title) || j.value.id;
+}
 function setScreenLabel(i: number, label: string) {
   const s = j.value.screens[i]!;
   const before = s.label;
@@ -141,7 +144,7 @@ const open = ref<number | null>(0);
       <div class="yj-form-grid">
         <div class="yj-span-2">
           <label :for="id('title')" class="yj-field-label">Journey name <span class="yj-required" aria-hidden="true">*</span></label>
-          <input :id="id('title')" v-model="j.title" class="yj-input" placeholder="Check in for your visit" />
+          <input :id="id('title')" :value="j.title" class="yj-input" @input="setTitle(($event.target as HTMLInputElement).value)" placeholder="Check in for your visit" />
         </div>
         <div class="yj-span-2">
           <label :for="id('summary')" class="yj-field-label">What it does, in a sentence</label>
@@ -187,7 +190,7 @@ const open = ref<number | null>(0);
             <button type="button" class="yj-screen-toggle" :aria-expanded="open === i" @click="open = open === i ? null : i">
               <span class="yj-item-kind">Screen {{ i + 1 }} · {{ KINDS.find((k) => k.id === s.kind)?.label }}</span>
               <span class="yj-title yj-block">{{ s.label || s.id }}</span>
-              <span v-if="s.kind === 'ask'" class="yj-help yj-block">{{ questionsNote(s.fieldsYaml).text }}</span>
+              <span v-if="s.kind === 'ask'" class="yj-help yj-block">{{ questionsNote(s.fieldsYaml).text }} · answered by {{ answeredBy(s.role) }}</span>
             </button>
             <div v-if="!readonly" class="yj-row">
               <button type="button" class="yj-btn yj-btn-quiet yj-btn-icon" :data-move="`${i}-up`" :disabled="i === 0" :aria-label="`Move screen ${s.label || s.id} up`" :title="`Move screen ${s.label || s.id} up`" @click="move(i, -1)"><Glyph name="up" /></button>
@@ -216,6 +219,14 @@ const open = ref<number | null>(0);
                 </div>
                 <div class="yj-span-2">
                   <QuestionsEditor v-model="s.fieldsYaml" :readonly="readonly" :label="`Questions on “${s.label || s.id}”`" />
+                </div>
+                <div>
+                  <label :for="id(`role${i}`)" class="yj-field-label">Who answers it</label>
+                  <select :id="id(`role${i}`)" v-model="s.role" class="yj-input" :aria-describedby="id(`roleh${i}`)">
+                    <option value="">The person who started the journey</option>
+                    <option v-for="r in memberRoles" :key="r.id" :value="r.id">{{ r.label }}</option>
+                  </select>
+                  <p :id="id(`roleh${i}`)" class="yj-help">Another role: the journey waits here and goes to that role's work queue.</p>
                 </div>
                 <div>
                   <label :for="id(`sub${i}`)" class="yj-field-label">Button label</label>

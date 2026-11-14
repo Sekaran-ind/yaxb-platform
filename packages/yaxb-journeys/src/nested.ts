@@ -20,6 +20,9 @@
 //           ask: Tell us who you are.         optional prompt (the title when absent)
 //           questions:                        the fields, as in a questionnaire
 //             - { id: name, type: text, label: Your name, required: true }
+//         - id: triage
+//           role: nurse                        who answers it (absent: whoever started it); the
+//           questions: [...]                   journey waits for a nurse, a case in their queue
 //         - id: summarise
 //           service: agent.ask                a service screen; `with:` is its input
 //           with: { message: "…" }
@@ -38,7 +41,7 @@ export const isNestedService = (doc: unknown): doc is Record<string, unknown> =>
 
 const SERVICE_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "order", "layouts", "hidden", "roles", "journeys"]);
 const JOURNEY_KEYS = new Set(["id", "title", "summary", "icon", "category", "version", "roles", "start", "screens"]);
-const SCREEN_KEYS = new Set(["id", "title", "ask", "questions", "submitLabel", "service", "with", "onError", "decide", "next", "result", "stage", "icon"]);
+const SCREEN_KEYS = new Set(["id", "title", "ask", "questions", "submitLabel", "service", "with", "onError", "decide", "next", "result", "stage", "icon", "role"]);
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 
 export type Expanded = {
@@ -153,6 +156,10 @@ export function expandService(doc: Record<string, unknown>): Expanded {
           step.ask = s.ask ?? s.title ?? "Please answer these questions.";
           step.fields = s.questions ?? [];
           if (s.submitLabel !== undefined) step.submitLabel = s.submitLabel;
+        }
+        if (s.role !== undefined) {
+          step.role = s.role;
+          if (typeof s.role === "string" && ROLE_ID.test(s.role) && s.role !== VISITOR_ROLE && !known.has(s.role)) problems.push(`${sat}: role '${s.role}' isn't one of this service's roles: add it to the roles`);
         }
         if (s.service !== undefined) {
           step.service = s.service;

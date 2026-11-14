@@ -3,8 +3,11 @@
 // service: the assistant, an on-device model, or the notebook (handlers from the shell).
 // A question can also be answered in the visitor's own words: slot filling reads them into the
 // form's fields as suggestions to check (lib/browser/slots), never as answers given for them.
+// A catalogue journey runs as the person at the kiosk (their roles): when it reaches a screen another
+// role answers, or ends with roles that finish it, it is handed over as a case (LIB-33..38), and the
+// visitor gets its reference. `resume` carries on a case from where it stopped, as its next person.
 import { createRunner, type Journey, type RunState, type ServiceHandler, type SlotConfirm, type SlotVia } from "@sekaran-ind/yaxb-core/journeys";
-import { summarizeJourney, summarizeRun } from "@sekaran-ind/yaxb-core/journeys";
+import { progressOf, summarizeJourney, summarizeRun } from "@sekaran-ind/yaxb-core/journeys";
 import { ArrowLeft, CheckCircle2, Circle, Copy, Loader2, Mic, MicOff, NotebookPen, RotateCcw, Sparkles, Square, Volume2, Wand2, XCircle } from "@lucide/vue";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { effectiveSelection, settings, useProviders } from "@/composables/settings";
@@ -14,13 +17,80 @@ import type { NotebookRecord } from "@/lib/browser/store";
 import { cn } from "@/lib/cn";
 import { speechLangFor } from "@/lib/languages";
 import JourneyField from "./JourneyField.vue";
-import { roleName } from "@/composables/library";
+import { kioskActor, roleName } from "@/composables/library";
+import { actCase, deliveryText, resendCase, startCase, type CaseDetail } from "@/composables/cases";
+import type { CaseSummary, Delivery } from "@sekaran-ind/yaxb-core/cases";
 
-const props = defineProps<{ journey: Journey; services: Record<string, ServiceHandler>; notebook: NotebookRecord | null }>();
-const emit = defineEmits<{ close: []; speak: [text: string]; done: [] }>();
+const props = defineProps<{
+  journey: Journey;
+  services: Record<string, ServiceHandler>;
+  notebook: NotebookRecord | null;
+  /** The catalogue entry the journey is from: it can then be handed over between roles. */
+  entry?: string | null;
+  /** A case to carry on (from the work queue, or a visitor's reference). */
+  resume?: CaseDetail | null;
+  backLabel?: string;
+}>();
+const emit = defineEmits<{ close: []; speak: [text: string]; done: []; handed: [c: CaseSummary] }>();
 
 const state = shallowRef<RunState | null>(null);
-const runner = createRunner(props.journey, { services: props.services, onChange: (s) => (state.value = s) });
+const handsOver = computed(() => Boolean(props.resume || props.entry));
+const runner = createRunner(props.journey, {
+  services: props.services,
+  onChange: (s) => (state.value = s),
+  ...(handsOver.value ? { actor: props.resume?.actor ?? kioskActor.value } : {}),
+});
+
+// ---- hand-over (LIB-33..38) ---------------------------------------------------------------------
+const finishers = computed(() => (props.journey.roles?.complete ?? []).filter((r) => r !== "visitor"));
+const handed = ref<CaseSummary | null>(null);
+/** How far it got when the kiosk keeps requests on its devices (LIB-43..45). */
+const delivery = ref<Delivery | null>(null);
+const handing = ref(false);
+const handError = ref<string | null>(null);
+/** Store the run: a new case, or this person's part of the case being resumed. */
+async function handOver() {
+  if (handing.value || handed.value) return;
+  handing.value = true;
+  handError.value = null;
+  const snap = runner.snapshot();
+  try {
+    let r: { case: CaseSummary; delivery: Delivery | null };
+    if (props.resume) {
+      const before = props.resume.case.run;
+      const answers = Object.fromEntries(Object.entries(snap.answers).filter(([k]) => !Object.hasOwn(before.answers, k)));
+      const steps = Object.fromEntries(Object.entries(snap.steps).filter(([k]) => !Object.hasOwn(before.steps, k)));
+      // Opened where it isn't this person's turn: nothing of theirs to send.
+      if (!Object.keys(answers).length) return;
+      r = await actCase(props.resume, answers, steps);
+    } else r = await startCase(props.entry!, props.journey.id, snap.answers, snap.steps);
+    handed.value = r.case;
+    delivery.value = r.delivery;
+    emit("handed", r.case);
+  } catch (e) {
+    handError.value = (e as Error).message;
+  } finally {
+    handing.value = false;
+  }
+}
+const resending = ref(false);
+async function sendAgain() {
+  if (!handed.value) return;
+  resending.value = true;
+  try {
+    delivery.value = (await resendCase(handed.value.id)) ?? delivery.value;
+  } finally {
+    resending.value = false;
+  }
+}
+/** Who it went to, in words. */
+const handedTo = computed(() => {
+  const c = handed.value;
+  if (!c) return "";
+  if (c.status === "waiting") return c.waiting_role ? roleName(c.waiting_role) : "the person who started it";
+  if (c.status === "to_finish") return c.finish_roles.map(roleName).join(" or ");
+  return "";
+});
 const values = ref<Record<string, unknown>>({});
 const problems = ref<string[]>([]);
 const copied = ref(false);
@@ -142,11 +212,14 @@ const voice = useSpeechInput(
   () => speechLangFor(settings.agent.language),
 );
 
-// Tell the shell when the journey finishes (the activity log records that a service was used).
+// Tell the shell when the journey finishes (the activity log records that a service was used), and
+// hand it over when it now needs someone else.
 watch(
   () => state.value?.status,
   (s) => {
     if (s === "done") emit("done");
+    if (!handsOver.value) return;
+    if (s === "waiting" || (s === "done" && (props.resume || finishers.value.length))) void handOver();
   },
 );
 
@@ -160,7 +233,12 @@ async function copy() {
   copied.value = true;
   setTimeout(() => (copied.value = false), 1500);
 }
-const restart = () => void runner.start();
+const restart = () => {
+  handed.value = null;
+  delivery.value = null;
+  handError.value = null;
+  void (props.resume ? runner.resume(props.resume.case.run, props.resume.actor) : runner.start());
+};
 
 onMounted(restart);
 onBeforeUnmount(() => {
@@ -171,14 +249,14 @@ onBeforeUnmount(() => {
 <template>
   <div class="space-y-4">
     <div>
-      <button type="button" class="btn-ghost -ml-2 h-9 px-2 text-sm" @click="emit('close')"><ArrowLeft class="size-4" aria-hidden="true" /> Services</button>
+      <button type="button" class="btn-ghost -ml-2 h-9 px-2 text-sm" @click="emit('close')"><ArrowLeft class="size-4" aria-hidden="true" /> {{ backLabel ?? "Services" }}</button>
       <h3 class="mt-1 text-lg font-semibold text-ink">{{ journey.title }}</h3>
       <p v-if="journey.summary" class="text-sm text-gray-600">{{ journey.summary }}</p>
       <p class="mt-1 text-xs text-gray-500">{{ about.privacy }}</p>
     </div>
 
     <ol v-if="state && (state.trail.length || state.status === 'running' || state.status === 'asking')" class="flex flex-wrap gap-2 text-xs" aria-label="Progress">
-      <li v-for="(t, i) in state.trail" :key="`${t.step}-${i}`" :class="cn('inline-flex items-center gap-1 rounded-full px-2.5 py-1', t.ok ? 'bg-success/10 text-ink' : 'bg-danger/10 text-red-800')">
+      <li v-for="(t, i) in progressOf(journey, state.trail)" :key="`${t.step}-${i}`" :class="cn('inline-flex items-center gap-1 rounded-full px-2.5 py-1', t.ok ? 'bg-success/10 text-ink' : 'bg-danger/10 text-red-800')">
         <CheckCircle2 v-if="t.ok" class="size-3.5" aria-hidden="true" /><XCircle v-else class="size-3.5" aria-hidden="true" />{{ t.label }}
       </li>
       <li v-if="state.status === 'running'" class="inline-flex items-center gap-1 rounded-full bg-info/10 px-2.5 py-1 text-info"><Loader2 class="size-3.5 animate-spin" aria-hidden="true" /> {{ currentLabel }}</li>
@@ -228,10 +306,50 @@ onBeforeUnmount(() => {
       <button type="button" class="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-ink" @click="runner.stop()"><Square class="size-3.5" aria-hidden="true" /> Stop</button>
     </div>
 
-    <div v-if="state?.status === 'done' && state.result" class="card space-y-3 p-4">
+    <!-- Handed over: the reference, and who has it now. -->
+    <div v-if="handing || handed || handError" class="card space-y-3 p-4" aria-live="polite">
+      <p v-if="handing" class="flex items-center gap-2 text-sm text-ink"><Loader2 class="size-4 animate-spin" aria-hidden="true" /> Handing it over…</p>
+      <template v-else-if="handed">
+        <!-- The journey ended and goes to those who close it: the result is still the visitor's to read. -->
+        <template v-if="state?.status === 'done' && state.result">
+          <h4 class="font-semibold text-ink">{{ state.result.title }}</h4>
+          <p v-if="state.result.text" class="leading-relaxed whitespace-pre-wrap text-ink">{{ state.result.text }}</p>
+        </template>
+        <h4 v-else class="font-semibold text-ink">{{ handed.status === "done" ? "Done" : `Sent to ${handedTo}` }}</h4>
+        <p v-if="handed.status !== 'done'" class="text-sm text-ink">
+          <template v-if="handed.status === 'waiting' && !handed.waiting_role">It goes back to the person who started it. They carry on with this reference.</template>
+          <template v-else-if="handed.status === 'to_finish'">{{ handedTo }} closes it when it is done.</template>
+          <template v-else>It is in {{ handedTo }}'s work queue. They carry on from here.</template>
+        </p>
+        <div class="flex flex-wrap items-center gap-3 rounded-lg bg-mist px-3 py-2">
+          <span class="text-sm text-gray-600">Reference</span>
+          <span class="font-mono text-lg font-semibold tracking-wider text-ink">{{ handed.ref }}</span>
+          <button type="button" class="btn-ghost h-8 px-2 text-xs" @click="emit('speak', `Your reference is ${handed.ref.split('').join(' ')}`)"><Volume2 class="size-3.5" aria-hidden="true" /> Read it out</button>
+        </div>
+        <!-- Kept on devices: how far it got, and send it again when nobody could take it. -->
+        <div v-if="delivery" class="flex flex-wrap items-center gap-2 text-sm" :class="delivery.state === 'not-sent' || delivery.state === 'expired' ? 'caution rounded-lg px-3 py-2' : 'text-gray-700'" role="status">
+          <span class="min-w-0 flex-1">{{ deliveryText(delivery) }}</span>
+          <button v-if="delivery.state === 'not-sent' || delivery.state === 'expired'" type="button" class="btn-light h-8 px-3 text-xs" :disabled="resending" @click="sendAgain">
+            <Loader2 v-if="resending" class="size-3.5 animate-spin" aria-hidden="true" /><RotateCcw v-else class="size-3.5" aria-hidden="true" /> Send it again
+          </button>
+        </div>
+        <p v-if="!resume" class="text-xs text-gray-500">Keep the reference: under Services, “Check a request” shows where it is and lets you add a note.</p>
+        <div class="flex flex-wrap gap-2">
+          <button v-if="run && services['notebook.add']" type="button" class="btn-light" @click="saveRun"><NotebookPen class="size-4" aria-hidden="true" /> Save to notebook</button>
+          <button type="button" class="btn-primary ml-auto" @click="emit('close')">Done</button>
+        </div>
+        <p v-if="saved" role="status" class="text-sm text-ink">{{ saved }}</p>
+      </template>
+      <div v-else-if="handError" role="alert" class="space-y-2 text-sm text-red-800">
+        <p>It couldn't be handed over: {{ handError }}</p>
+        <button type="button" class="btn-light" @click="handOver"><RotateCcw class="size-4" aria-hidden="true" /> Try again</button>
+      </div>
+    </div>
+
+    <div v-if="state?.status === 'done' && state.result && !handed && !handing" class="card space-y-3 p-4">
       <h4 class="font-semibold text-ink">{{ state.result.title }}</h4>
       <p class="leading-relaxed whitespace-pre-wrap text-ink">{{ state.result.text }}</p>
-      <p v-if="completers.length" class="rounded-lg bg-info/10 px-3 py-2 text-sm text-ink">Next: {{ completers.join(" or ") }} will complete this with you.</p>
+      <p v-if="completers.length && !handsOver" class="rounded-lg bg-info/10 px-3 py-2 text-sm text-ink">Next: {{ completers.join(" or ") }} will complete this with you.</p>
       <div class="flex flex-wrap gap-2">
         <button type="button" class="btn-light" @click="emit('speak', state.result.text)"><Volume2 class="size-4" aria-hidden="true" /> Read aloud</button>
         <button type="button" class="btn-light" @click="copy"><Copy class="size-4" aria-hidden="true" /> {{ copied ? "Copied" : "Copy" }}</button>

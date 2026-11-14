@@ -23,6 +23,12 @@ export type KioskSettings = {
   activeNotebook: string | null;
   /** yaxb-box connection for Storage: Box. Stays in this browser; never sent with a chat turn. */
   box: { url: string; token: string };
+  /**
+   * Where requests (cases, LIB-42..48) are kept: on the devices that work on them (handed over device
+   * to device, through the box, or through the cloud relay, which is transient), or centrally in the
+   * cloud, which is the paid plan. Box and relay can each be turned off.
+   */
+  cases: { storage: "devices" | "central"; useBox: boolean; useRelay: boolean };
 };
 
 const DEFAULTS: KioskSettings = {
@@ -37,13 +43,14 @@ const DEFAULTS: KioskSettings = {
   theme: "system",
   activeNotebook: null,
   box: { url: "", token: "" },
+  cases: { storage: "devices", useBox: true, useRelay: true },
 };
 
 function load(): KioskSettings {
   try {
     const saved = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) ?? "{}") as Partial<KioskSettings>;
     if (!isThemeChoice(saved.theme)) delete saved.theme;
-    return { ...DEFAULTS, ...saved, agent: { ...DEFAULT_AGENT_SETTINGS, ...saved.agent, knowledge: { ...DEFAULT_AGENT_SETTINGS.knowledge, ...saved.agent?.knowledge } }, box: { ...DEFAULTS.box, ...saved.box } };
+    return { ...DEFAULTS, ...saved, agent: { ...DEFAULT_AGENT_SETTINGS, ...saved.agent, knowledge: { ...DEFAULT_AGENT_SETTINGS.knowledge, ...saved.agent?.knowledge } }, box: { ...DEFAULTS.box, ...saved.box }, cases: { ...DEFAULTS.cases, ...saved.cases } };
   } catch {
     return structuredClone(DEFAULTS);
   }

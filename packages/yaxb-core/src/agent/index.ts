@@ -305,10 +305,20 @@ export function createKiosk(deps: KioskDeps) {
    * lessons as its memory. The draft is checked with the catalogue's compiler; nothing is saved here.
    */
   async function design(
-    input: { narrative: unknown; selection: Selection; published?: readonly { yaml: string }[]; lessons?: readonly DesignLesson[]; roles?: readonly string[] },
+    input: {
+      narrative: unknown;
+      /** The service in the editor, the conversation so far and a reviewer's note (LIB-39..41). */
+      current?: unknown;
+      history?: unknown;
+      review?: unknown;
+      selection: Selection;
+      published?: readonly { yaml: string }[];
+      lessons?: readonly DesignLesson[];
+      roles?: readonly string[];
+    },
     { signal }: { signal?: AbortSignal } = {},
   ): Promise<DesignResult | { error: string }> {
-    const parsed = designInputSchema.safeParse({ narrative: input.narrative });
+    const parsed = designInputSchema.safeParse({ narrative: input.narrative, current: input.current, history: input.history, review: input.review });
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "That description isn't valid." };
     const { selection } = input;
     const timeout = AbortSignal.timeout(limits.timeoutMs);
@@ -318,6 +328,9 @@ export function createKiosk(deps: KioskDeps) {
       const model = await (deps.modelFactory ? deps.modelFactory(selection) : createChatModel(deps.env, selection));
       return await designService(model, createServiceDesignerAgent as unknown as DesignerAgentFactory, {
         narrative: parsed.data.narrative,
+        current: parsed.data.current,
+        history: parsed.data.history,
+        review: parsed.data.review,
         services: JOURNEY_SERVICES,
         roles: input.roles,
         pool: examplePool(kioskContent.designer, input.published ?? []),

@@ -25,6 +25,14 @@ const schema = z.object({
    * X-Yaxb-Session instead of a cookie. Default: Capacitor's iOS and Android origins.
    */
   KIOSK_APP_ORIGINS: z.string().default("capacitor://localhost,https://localhost"),
+  /**
+   * Cases (LIB-42..48). Central storage of service data in the cloud is the paid plan: "on" only for
+   * a subscribed deployment. Without it, cases live on devices and the box, and the cloud is only a
+   * transient relay (CASES_RELAY, "on" by default), whose envelopes expire after RELAY_HOURS.
+   */
+  CASES_CENTRAL: z.enum(["on", "off"]).default("off"),
+  CASES_RELAY: z.enum(["on", "off"]).default("on"),
+  RELAY_HOURS: z.coerce.number().int().min(1).max(168).default(48),
 });
 
 /** The native app's origins (PLT-14). */

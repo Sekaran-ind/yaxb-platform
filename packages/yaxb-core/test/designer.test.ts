@@ -225,3 +225,40 @@ describe("learning from reviews", () => {
     expect(await designer.lessons()).toEqual([]);
   });
 });
+
+describe("the design conversation (LIB-39..41)", () => {
+  it("drafts from a first description, then changes the service in the editor, with the reviewer's note", async () => {
+    const { designInputSchema, requestText } = await import("../src/designer/index.js");
+    expect(designInputSchema.safeParse({ narrative: "too short" }).success).toBe(false);
+    expect(designInputSchema.safeParse({ narrative: "Add a phone", current: "kind: service" }).success).toBe(true);
+    expect(designInputSchema.safeParse({ narrative: "ok", history: [{ role: "user", text: "a description" }] }).success).toBe(true);
+    expect(requestText({ narrative: "A library renews books." })).toContain("<service_description>");
+    const change = requestText({ narrative: "Add a phone number", current: "kind: service\nid: x", review: "Ask for less." });
+    expect(change).toContain("<current_service>");
+    expect(change).toContain("<reviewer_note>");
+    expect(change).toContain("Keep everything");
+  });
+
+  for (const [name, make] of [
+    ["memory", () => createMemoryDesignerStore()],
+    ["D1 (SQLite)", () => createD1DesignerStore(sqliteD1())],
+  ] as const) {
+    it(`keeps a thread with its starter until the service is created, then with the service, ${name}`, async () => {
+      const svc = createDesignerService(make());
+      const result = { yaml: "kind: service\n", title: "X", problems: [], ok: true, notes: null, examples: [] };
+      const [u, a] = await svc.turn("t1", null, { id: "guest:1", name: "You" }, "Describe it", { text: "Drafted the service.", result, run: "r1" });
+      expect(u!.role).toBe("user");
+      expect(a!.yaml).toBe("kind: service\n");
+      expect((await svc.thread({ thread: "t1" }))!.owner_id).toBe("guest:1");
+      expect(await svc.linkThread("t1", "e1", "guest:2")).toBe(false);
+      expect(await svc.linkThread("t1", "e1", "guest:1")).toBe(true);
+      expect(await svc.linkThread("t1", "e1", "guest:1")).toBe(false);
+      await svc.turn("t1", "e1", { id: "m1", name: "Meena" }, "Add a phone", { text: "Changed as you asked.", result: null, run: null });
+      const t = await svc.thread({ entry: "e1" });
+      expect(t!.messages.map((m) => `${m.role}:${m.text}`)).toEqual(["user:Describe it", "assistant:Drafted the service.", "user:Add a phone", "assistant:Changed as you asked."]);
+      expect(t!.messages.every((m) => m.entry_id === "e1")).toBe(true);
+      const { historyOf } = await import("../src/designer/index.js");
+      expect(historyOf(t!.messages)[0]).toEqual({ role: "user", text: "Describe it" });
+    });
+  }
+});

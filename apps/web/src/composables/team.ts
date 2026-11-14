@@ -75,6 +75,7 @@ async function joinChat(peer: string) {
       t.messages.push(await append(me.value!.id, peer, "received", text));
       if (open.value !== peer) t.unread++;
     },
+    data: (d) => void onData(peer, d),
   });
   sessions.set(peer, session);
   session.connect();
@@ -147,6 +148,54 @@ function closeCall() {
   callError.value = "";
 }
 
+// ---- data between members' devices: cases handed over (LIB-43) ------------------------------------
+
+type DataHandler = (from: string, data: unknown) => Promise<boolean>;
+let dataHandler: DataHandler | null = null;
+const acks = new Map<string, (ok: boolean) => void>();
+/** What to do with data a member's device sends (the cases composable registers this). */
+export function onTeamData(handler: DataHandler) {
+  dataHandler = handler;
+}
+async function onData(peer: string, d: unknown) {
+  const msg = d as { ack?: string; ok?: boolean; id?: string; payload?: unknown };
+  if (typeof msg?.ack === "string") return acks.get(msg.ack)?.(msg.ok === true);
+  if (typeof msg?.id !== "string" || !dataHandler) return;
+  let ok = false;
+  try {
+    ok = await dataHandler(peer, msg.payload);
+  } catch {
+    ok = false;
+  }
+  sessions.get(peer)?.sendData({ ack: msg.id, ok });
+}
+const until = (test: () => boolean, ms: number) =>
+  new Promise<boolean>((resolve) => {
+    const started = Date.now();
+    const tick = () => (test() ? resolve(true) : Date.now() - started > ms ? resolve(false) : setTimeout(tick, 250));
+    tick();
+  });
+/**
+ * Send data straight to a member's device, if it is online: open the pair's channel (inviting
+ * their device, which joins by itself), send, and wait for it to say it kept it. False when it
+ * isn't online, the channel can't open, or it refused.
+ */
+async function sendData(peer: string, payload: unknown, { timeoutMs = 20_000 } = {}): Promise<boolean> {
+  if (!me.value || !onlineIds.value.has(peer)) return false;
+  await joinChat(peer);
+  presence?.invite(peer, "chat");
+  if (!(await until(() => sessions.get(peer)?.state === "connected", timeoutMs))) return false;
+  const id = crypto.randomUUID();
+  const answer = new Promise<boolean>((resolve) => {
+    acks.set(id, resolve);
+    setTimeout(() => resolve(false), timeoutMs);
+  });
+  if (!sessions.get(peer)?.sendData({ id, payload })) return false;
+  const ok = await answer;
+  acks.delete(id);
+  return ok;
+}
+
 async function setAvailability(value: Online["availability"]) {
   await api("/api/team/availability", { value }, "PUT");
   presence?.availability(value);
@@ -186,5 +235,6 @@ export function useTeam() {
     setAvailability,
     availabilityOf,
     nameOf,
+    sendData,
   };
 }

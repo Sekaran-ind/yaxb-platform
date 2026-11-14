@@ -94,6 +94,11 @@
 @utility chip {
   @apply inline-flex items-center gap-1.5 rounded-full bg-mist px-2.5 py-1 text-xs text-gray-600;
 }
+/* A caution: something to know before going on (not an error). The yellow is a bar and a tint, never
+   the text or icon colour, so it reads in every theme (pale yellow on white fails contrast). */
+@utility caution {
+  @apply rounded-lg border-l-4 border-warning bg-warning/15 text-ink;
+}
 @utility eyebrow {
   @apply text-[11px] font-semibold tracking-[0.18em] text-gray-500 uppercase;
 }

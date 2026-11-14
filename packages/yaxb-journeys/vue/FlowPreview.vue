@@ -2,9 +2,12 @@
 // A compiled bundle as a visitor would meet it: each service is a screen of the adaptive nav, its
 // items open journeys in place, and journeys ask their questionnaires. Two more screens list every
 // journey and every questionnaire, so content nobody links to yet can be tried too.
+// When the services name roles, "View as" shows it as each one would meet it (LIB-38): the journeys
+// they may start (the others locked, with who starts them), and a journey that passes between roles
+// stops where another role answers; "Continue as" carries on as them, as the kiosk's hand-over does.
 import type { Bundle } from "@sekaran-ind/yaxb-journeys/bundle";
 import { previewHandlers } from "@sekaran-ind/yaxb-journeys/bundle";
-import { formProblems, type Journey, type Questionnaire, type ServiceHandler } from "@sekaran-ind/yaxb-journeys/journeys";
+import { canInitiate, formProblems, journeyRolesNeeded, roleLabel, VISITOR_ROLE, type Journey, type Questionnaire, type Role, type RunActor, type ServiceHandler } from "@sekaran-ind/yaxb-journeys/journeys";
 import type { Layout, NavMode } from "@sekaran-ind/yaxb-journeys/screens";
 import { servicesFor, type ServiceItem } from "@sekaran-ind/yaxb-journeys/services";
 import { computed, reactive, ref, watch } from "vue";
@@ -15,7 +18,7 @@ import QuestionnaireForm from "./QuestionnaireForm.vue";
 import ServiceItems from "./ServiceItems.vue";
 
 const props = defineProps<{
-  bundle: Pick<Bundle, "services" | "journeys" | "questionnaires">;
+  bundle: Pick<Bundle, "services" | "journeys" | "questionnaires"> & { roles?: Role[] };
   layout: Layout;
   width: number;
   mode?: NavMode;
@@ -29,6 +32,29 @@ const props = defineProps<{
   languages?: LanguageOption[];
   storageKey?: string;
 }>();
+
+// ---- view as: a visitor, or one of the roles the journeys name ---------------------------------
+const roleIds = computed(() => [...new Set(props.bundle.journeys.flatMap((j) => journeyRolesNeeded(j).map((n) => n.role)))]);
+const roleName = (id: string) => roleLabel(id, props.bundle.roles);
+const viewAs = ref<string>(VISITOR_ROLE);
+/** Who started the journey open now: they are its "starter" when it comes back to them. */
+const starter = ref<string>(VISITOR_ROLE);
+const actor = computed<RunActor>(() => ({ starter: viewAs.value === starter.value, roles: viewAs.value === VISITOR_ROLE ? [] : [viewAs.value] }));
+const viewerRoles = computed(() => (viewAs.value === VISITOR_ROLE ? [] : [viewAs.value]));
+const startedBy = (j: Journey) => (j.roles?.initiate ?? []).filter((r) => r !== VISITOR_ROLE).map(roleName).join(" or ");
+/** Items the current viewer can't start, and why. */
+const lockedOf = (serviceId: string) => {
+  const s = offered.value.find((x) => x.id === serviceId);
+  const out: Record<string, string> = {};
+  for (const i of s?.items ?? []) {
+    const j = i.journey ? props.bundle.journeys.find((x) => x.id === i.journey) : undefined;
+    if (j && !canInitiate(j, viewerRoles.value)) out[i.key] = `Started by ${startedBy(j)}`;
+  }
+  return out;
+};
+function continueAs(role: string | null) {
+  viewAs.value = role ?? starter.value;
+}
 
 const JOURNEYS = "all-journeys";
 const QUESTIONNAIRES = "all-questionnaires";
@@ -51,11 +77,20 @@ const journeyOf = (screen: string) => props.bundle.journeys.find((j) => j.id ===
 
 function openItem(screen: string, item: ServiceItem) {
   notes[screen] = undefined;
+  const j = item.journey ? props.bundle.journeys.find((x) => x.id === item.journey) : undefined;
+  if (j && !canInitiate(j, viewerRoles.value)) {
+    notes[screen] = `${roleName(viewAs.value)} can't start “${item.label}”: it is started by ${startedBy(j)}. Choose them under View as.`;
+    return;
+  }
+  if (item.journey) starter.value = viewAs.value;
   if (item.journey) open[screen] = item.journey;
   else if (item.screen) notes[screen] = `In the kiosk, "${item.label}" opens the ${item.screen} screen.`;
   else if (item.staff) notes[screen] = `In the kiosk, "${item.label}" opens the staff section "${item.staff}".`;
 }
-const startJourney = (j: Journey) => (open[JOURNEYS] = j.id);
+const startJourney = (j: Journey) => {
+  starter.value = viewAs.value;
+  open[JOURNEYS] = j.id;
+};
 
 // Questionnaires on their own: answers and a check, without a journey.
 const answers = reactive<Record<string, Record<string, unknown>>>({});
@@ -78,7 +113,14 @@ watch(journeyIds, (ids) => {
 <template>
   <div class="yj yj-preview">
     <p v-if="!screens.length" class="yj-note">Nothing to show yet. Add a service, a journey or a questionnaire.</p>
-    <AdaptiveNav v-else v-model:active="active" :screens="screens" :width="width" :mode="mode" :switchable="switchable" :storage-key="storageKey ?? 'journeys.preview'">
+    <div v-if="screens.length && roleIds.length" class="yj-row yj-viewas">
+      <label :for="`${storageKey ?? 'preview'}-viewas`" class="yj-field-label yj-m0">View as</label>
+      <select :id="`${storageKey ?? 'preview'}-viewas`" v-model="viewAs" class="yj-input yj-select-sm">
+        <option :value="VISITOR_ROLE">A visitor</option>
+        <option v-for="r in roleIds" :key="r" :value="r">{{ roleName(r) }}</option>
+      </select>
+    </div>
+    <AdaptiveNav v-if="screens.length" v-model:active="active" :screens="screens" :width="width" :mode="mode" :switchable="switchable" :storage-key="storageKey ?? 'journeys.preview'">
       <template v-for="s in offered" :key="s.id" #[screenId(s.id)]>
         <JourneyRunner
           v-if="journeyOf(screenId(s.id))"
@@ -89,16 +131,34 @@ watch(journeyIds, (ids) => {
           :back-label="s.title"
           :sources="sources"
           :languages="languages"
+          :actor="roleIds.length ? actor : undefined"
+          :roles="bundle.roles"
+          :starter-label="roleName(starter)"
+          @continue-as="continueAs"
           @close="open[screenId(s.id)] = undefined"
         />
         <template v-else>
-          <ServiceItems :service="s" :journeys="bundle.journeys" @open="(i) => openItem(screenId(s.id), i)" />
+          <ServiceItems :service="s" :journeys="bundle.journeys" :locked="lockedOf(s.id)" @open="(i) => openItem(screenId(s.id), i)" />
           <p v-if="notes[screenId(s.id)]" class="yj-note yj-mt" role="status">{{ notes[screenId(s.id)] }}</p>
         </template>
       </template>
 
       <template #[JOURNEYS]>
-        <JourneyRunner v-if="journeyOf(JOURNEYS)" :journey="journeyOf(JOURNEYS)!" :services="handlers" :width="width" closable back-label="Journeys" :sources="sources" :languages="languages" @close="open[JOURNEYS] = undefined" />
+        <JourneyRunner
+          v-if="journeyOf(JOURNEYS)"
+          :journey="journeyOf(JOURNEYS)!"
+          :services="handlers"
+          :width="width"
+          closable
+          back-label="Journeys"
+          :sources="sources"
+          :languages="languages"
+          :actor="roleIds.length ? actor : undefined"
+          :roles="bundle.roles"
+          :starter-label="roleName(starter)"
+          @continue-as="continueAs"
+          @close="open[JOURNEYS] = undefined"
+        />
         <ul v-else class="yj-items">
           <li v-for="j in bundle.journeys" :key="j.id">
             <button type="button" class="yj-item" @click="startJourney(j)">

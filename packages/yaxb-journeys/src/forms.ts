@@ -129,6 +129,8 @@ export type StepForm = {
   /** ask without a questionnaire: the fields, as YAML (a list). */
   fieldsYaml: string;
   submitLabel: string;
+  /** ask: who answers it, a role id; "" for the person who started the journey. */
+  role: string;
   /** service: the handler, and its input as YAML (a mapping). */
   service: string;
   withYaml: string;
@@ -166,6 +168,7 @@ export const newStep = (id = "", kind: StepKind = "ask"): StepForm => ({
   questionnaire: "",
   fieldsYaml: "",
   submitLabel: "",
+  role: "",
   service: "",
   withYaml: "",
   onError: "fail",
@@ -206,6 +209,7 @@ export function journeyToForm(doc: Partial<Journey> | Record<string, unknown>): 
       questionnaire: str(s.questionnaire),
       fieldsYaml: s.fields === undefined ? "" : yamlOf(s.fields),
       submitLabel: str(s.submitLabel),
+      role: str(s.role),
       service: str(s.service),
       withYaml: yamlOf(s.with),
       onError: s.onError === "continue" ? "continue" : "fail",
@@ -260,7 +264,7 @@ export function formToJourney(f: JourneyForm): { ok: true; doc: Record<string, u
       step = s.questionnaire.trim()
         ? { ...common, ask: s.ask.trim(), questionnaire: s.questionnaire.trim() }
         : { ...common, ask: s.ask.trim() || "Please answer these questions.", fields: parse(id, s.fieldsYaml, "list") ?? [] };
-      step = { ...step, submitLabel: s.submitLabel.trim(), next: then };
+      step = { ...step, submitLabel: s.submitLabel.trim(), role: s.role.trim(), next: then };
     } else if (s.kind === "service") {
       step = { ...common, service: s.service.trim(), with: parse(id, s.withYaml, "mapping"), onError: s.onError === "continue" ? "continue" : undefined, next: then };
     } else if (s.kind === "decide") {
@@ -379,6 +383,7 @@ export function designFromDoc(doc: Record<string, unknown>): { design: ServiceDe
         ask: s.ask !== undefined && s.ask !== s.title ? str(s.ask) : "",
         fieldsYaml: s.questions === undefined ? "" : yamlOf(s.questions),
         submitLabel: str(s.submitLabel),
+        role: str(s.role),
         service: str(s.service),
         withYaml: yamlOf(s.with),
         onError: s.onError === "continue" ? "continue" : "fail",
@@ -419,7 +424,7 @@ export function designToDoc(d: ServiceDesign): { ok: true; doc: Record<string, u
       const then = s.then === "branches" ? branches(s.branches) : s.next.trim() || undefined;
       const base = { id: s.id.trim(), title: s.label.trim(), stage: s.stage.trim(), icon: s.icon.trim() };
       let screen: Record<string, unknown>;
-      if (s.kind === "ask") screen = { ...base, ask: s.ask.trim(), questions: parse(at, s.fieldsYaml, "list") ?? [], submitLabel: s.submitLabel.trim(), next: then };
+      if (s.kind === "ask") screen = { ...base, ask: s.ask.trim(), questions: parse(at, s.fieldsYaml, "list") ?? [], submitLabel: s.submitLabel.trim(), role: s.role.trim(), next: then };
       else if (s.kind === "service") screen = { ...base, service: s.service.trim(), with: parse(at, s.withYaml, "mapping"), onError: s.onError === "continue" ? "continue" : undefined, next: then };
       else if (s.kind === "decide") screen = { ...base, decide: branches(s.branches) };
       else {

@@ -10,6 +10,11 @@
 //   GET    /v1/kv/:namespace/:key   PUT { value }  DELETE    LangGraph store items
 //   GET    /v1/kv?prefix=<namespace>&limit=&offset=      search a namespace and below
 //   GET    /v1/kv-namespaces?limit=&offset=
+//   POST   /v1/mailbox  (body: envelope)                 a case on its way to another device (LIB-42..48)
+//   GET    /v1/mailbox?roles=a,b&member=&device=         envelopes for them, not picked up, not expired
+//   POST   /v1/mailbox/:id/pick  { by }                  take one (its body is deleted)
+//   GET    /v1/mailbox-status?ids=a,b                     waiting, delivered or expired
+//   GET    /v1/beacons    PUT /v1/beacons/:caseId         who holds which case (moderators' board)
 //
 // Auth: `Authorization: Bearer <YAXB_BOX_TOKEN>`, compared in constant time. Bearer tokens, not
 // cookies, so CORS can't be used to ride a session; origins are still limited to the kiosk's own
@@ -22,6 +27,8 @@ import { COLLECTIONS, ID, NAMESPACE, openDb } from './db.js';
 
 export const VERSION = '0.1.0';
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
+/** The longest the box keeps an envelope nobody picks up (30 days). */
+const MAILBOX_MAX_HOURS = 30 * 24;
 
 export function loadConfig(env = process.env) {
   return {
@@ -92,7 +99,7 @@ export function createBoxServer(config, { db = openDb(config.dbPath) } = {}) {
     if (!allowed) return false;
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, POST, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
     res.setHeader('Access-Control-Max-Age', '600');
     // Chrome's Private Network Access: a public page may call this LAN address only if we say so.
@@ -166,6 +173,43 @@ export function createBoxServer(config, { db = openDb(config.dbPath) } = {}) {
       }
       if (req.method === 'DELETE') {
         db.kvPut(a, b, null);
+        return send(res, 204);
+      }
+      throw new HttpError(405, 'Method not allowed.');
+    }
+
+    if (resource === 'mailbox') {
+      if (!a && req.method === 'POST') {
+        const e = await readJson(req);
+        const ok =
+          plainObject(e) && ID.test(String(e.id)) && (e.kind === 'case' || e.kind === 'reassign') && plainObject(e.to) && typeof e.expires_at === 'string' && typeof e.created_at === 'string';
+        if (!ok) throw new HttpError(400, 'That is not an envelope.');
+        const latest = new Date(Date.now() + MAILBOX_MAX_HOURS * 3_600_000).toISOString();
+        db.mailboxPost({ ...e, expires_at: e.expires_at > latest ? latest : e.expires_at });
+        return send(res, 204);
+      }
+      if (!a && req.method === 'GET') {
+        const roles = (url.searchParams.get('roles') || '').split(',').filter(Boolean).slice(0, 20);
+        return send(res, 200, { items: db.mailboxInbox({ roles, member: url.searchParams.get('member') || undefined, device: url.searchParams.get('device') || undefined }) });
+      }
+      if (a && b === 'pick' && req.method === 'POST') {
+        if (!ID.test(a)) throw new HttpError(400, 'Bad id.');
+        const body = await readJson(req);
+        return send(res, 200, { picked: db.mailboxPick(a, String(body?.by ?? 'someone').slice(0, 80)) });
+      }
+      throw new HttpError(405, 'Method not allowed.');
+    }
+    if (resource === 'mailbox-status' && req.method === 'GET') {
+      const ids = (url.searchParams.get('ids') || '').split(',').filter((x) => ID.test(x)).slice(0, 100);
+      return send(res, 200, { status: db.mailboxStatus(ids) });
+    }
+    if (resource === 'beacons') {
+      if (!a && req.method === 'GET') return send(res, 200, { items: db.beaconList() });
+      if (a && req.method === 'PUT') {
+        if (!ID.test(a)) throw new HttpError(400, 'Bad id.');
+        const body = await readJson(req);
+        if (!plainObject(body) || body.case_id !== a || typeof body.expires_at !== 'string') throw new HttpError(400, 'That is not a beacon.');
+        db.beaconPut(body);
         return send(res, 204);
       }
       throw new HttpError(405, 'Method not allowed.');

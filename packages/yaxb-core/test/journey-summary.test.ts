@@ -21,13 +21,19 @@ describe("journey summaries", () => {
     expect(s.privacy).toMatch(/sent to the AI assistant\.$/);
   });
 
-  it("say when nothing leaves the device", () => {
+  it("say where answers go: to the staff who finish a journey handed over (LIB-34)", () => {
     const s = summarizeJourney(journey("visit-check-in"));
     expect(s.asks[0]).toBe("Main symptom"); // required first
     expect(s.asks).toContain("Your name");
     expect(s.uses).toEqual([]);
+    expect(s.leavesDevice).toBe(true);
+    expect(s.privacy).toBe("Asks for main symptom, your name, city, how many days, how bad is it, temperature and visit date. Your answers go, as a request with a reference, to the staff who take it from you.");
+  });
+
+  it("say when nothing leaves the device", () => {
+    const s = summarizeJourney({ ...journey("visit-check-in"), roles: undefined });
     expect(s.leavesDevice).toBe(false);
-    expect(s.privacy).toBe("Asks for main symptom, your name, city, how many days, how bad is it, temperature and visit date. Nothing leaves this device.");
+    expect(s.privacy).toMatch(/Nothing leaves this device\.$/);
   });
 
   it("are written for every configured journey, and given to the assistant", () => {

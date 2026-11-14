@@ -14,9 +14,16 @@
 //   accepted service also becomes an example for the next narrative.
 //
 // A draft is only a draft: it is created as the author's own entry and goes through the normal
-// review before any kiosk can load it. The narrative is data, never instructions, and isn't stored.
+// review before any kiosk can load it. The narrative is data, never instructions.
+//
+// A conversation (LIB-39..41): designing is a thread kept with the service, not one request. Each
+// turn sends the service as it is in the editor and the thread so far, so the agent changes what is
+// there instead of starting again, at any stage: a new service, a draft, a service sent back by a
+// reviewer (the reviewer's note goes with it), or one in review, where a reviewer may ask for a
+// suggestion that its author then applies. The thread (what people asked and the agent's notes) is
+// stored with the service and read by whoever may see it; it describes a service, not a person.
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { checkDocument, DEFAULT_ROLES, FIELD_TYPES, parseDocument, type BundleProblem } from "@sekaran-ind/yaxb-journeys";
 import { tool } from "langchain";
 import { z } from "zod";
@@ -65,6 +72,14 @@ export type DesignRun = {
 };
 
 export interface DesignerStore {
+  addMessage(m: DesignMessage): Promise<void>;
+  /** A thread's messages, oldest first (the newest MAX_THREAD). */
+  messages(threadId: string): Promise<DesignMessage[]>;
+  /** The thread kept with a catalogue entry. */
+  threadOfEntry(entryId: string): Promise<string | null>;
+  /** Who started a thread, and the entry it belongs to. */
+  threadInfo(threadId: string): Promise<{ owner_id: string; entry_id: string | null } | null>;
+  linkThread(threadId: string, entryId: string): Promise<void>;
   putRun(r: DesignRun): Promise<void>;
   run(id: string): Promise<DesignRun | null>;
   runForEntry(entryId: string): Promise<DesignRun | null>;
@@ -74,9 +89,43 @@ export interface DesignerStore {
   removeLesson(id: string): Promise<boolean>;
 }
 
-export const designInputSchema = z.strictObject({
-  narrative: z.string().trim().min(20, "Describe the service in a few sentences.").max(MAX_NARRATIVE, `Keep the description under ${MAX_NARRATIVE} characters.`),
-});
+/** Turns of the thread sent back to the agent (the newest). */
+export const THREAD_TURNS = 12;
+/** Messages a thread keeps. */
+export const MAX_THREAD = 200;
+const MAX_CURRENT = 64 * 1024;
+
+export const designInputSchema = z
+  .strictObject({
+    narrative: z.string().trim().max(MAX_NARRATIVE, `Keep the description under ${MAX_NARRATIVE} characters.`),
+    /** The service as it is in the editor: the agent changes it. */
+    current: z.string().max(MAX_CURRENT).optional(),
+    /** The thread so far, oldest first. */
+    history: z.array(z.strictObject({ role: z.enum(["user", "assistant"]), text: z.string().max(MAX_NARRATIVE + 2000) })).max(THREAD_TURNS * 2).optional(),
+    /** A reviewer's note on the last revision (a service sent back). */
+    review: z.string().max(1000).optional(),
+  })
+  .superRefine((v, ctx) => {
+    const follows = Boolean(v.current || v.history?.length);
+    if (v.narrative.length < (follows ? 2 : 20)) ctx.addIssue({ code: "custom", path: ["narrative"], message: follows ? "Say what to change." : "Describe the service in a few sentences." });
+  });
+
+/** One message of a design conversation. */
+export type DesignMessage = {
+  id: string;
+  thread_id: string;
+  entry_id: string | null;
+  author_id: string;
+  author_name: string;
+  role: "user" | "assistant";
+  text: string;
+  /** The assistant's draft. */
+  yaml: string | null;
+  ok: boolean | null;
+  run_id: string | null;
+  created_at: string;
+};
+export type DesignThread = { id: string; owner_id: string; entry_id: string | null; messages: DesignMessage[] };
 export const lessonInputSchema = z.strictObject({ text: z.string().trim().min(5, "Write the lesson.").max(MAX_LESSON) });
 
 export type DesignResult = {
@@ -171,12 +220,13 @@ journeys: what a person can do with the service, each with
   - id, title, summary, icon
     roles: { initiate: [who starts it], complete: [who finishes it] } (visitor means anyone at the kiosk; leave out complete when nobody else finishes it)
     screens: in order; each screen goes to the next unless it says next: <screen id>
-      - a question screen: id, title, ask (the prompt), submitLabel, questions: [{ id, type, label, required, options, description, default, when }]
+      - a question screen: id, title, ask (the prompt), submitLabel, role (who answers it: one of the roles; leave it out for the person who started the journey), questions: [{ id, type, label, required, options, description, default, when }]
       - a service screen: id, title, service: <name>, with: { the service's input, using {{answers.<screen>.<question>}} }
       - a decision screen: id, title, decide: [{ if: "answers.<screen>.<question> == 'value'", to: <screen id> }, { to: <screen id> }]
       - a result screen, which ends the journey: id, title, result: { title, text } (may use {{answers.<screen>.<question>}} and {{steps.<service screen>.text}})
 
 Question types: ${FIELD_TYPES.join(", ")}. A select needs options [{ value, label }]. \`when: "values.<other question> == true"\` asks a question only when it applies: on its own screen a question reads values.<question>, never answers.<this screen>.<question>.
+When a journey passes between people (a visitor asks, staff approve, then the visitor finishes it), give the staff's screens a role: the kiosk hands the journey over at that screen, as a request with a reference, and it waits in that role's work queue; the screens after it without a role go back to the person who started it. Only question screens have a role.
 Templates only fill in values such as {{answers.<screen>.<question>}}: there are no {{#if}} or other blocks. To show different endings, use a decision screen and two result screens.
 Services a screen may use:
 ${handlers}
@@ -210,6 +260,12 @@ export function lessonsMemory(lessons: readonly DesignLesson[]): string {
 
 export type DesignOptions = {
   narrative: string;
+  /** The service in the editor now: change it rather than starting again. */
+  current?: string;
+  /** The conversation so far, oldest first. */
+  history?: readonly { role: "user" | "assistant"; text: string }[];
+  /** A reviewer's note on the last revision. */
+  review?: string;
   services: readonly string[];
   /** Role ids the organisation already has. */
   roles?: readonly string[];
@@ -220,6 +276,17 @@ export type DesignOptions = {
   signal?: AbortSignal;
   recursionLimit?: number;
 };
+
+/** This turn's request: a first description, or a change to the service in the editor. */
+export function requestText(opts: Pick<DesignOptions, "narrative" | "current" | "review">): string {
+  if (!opts.current) return `<service_description>\n${opts.narrative}\n</service_description>`;
+  return [
+    `<current_service>\n${opts.current.trim()}\n</current_service>`,
+    ...(opts.review ? [`<reviewer_note>\n${opts.review}\n</reviewer_note>`] : []),
+    `<change_request>\n${opts.narrative}\n</change_request>`,
+    "Change the current service as the request asks" + (opts.review ? " (and the reviewer's note, where it applies)" : "") + ". Keep everything it doesn't ask about exactly as it is. Submit the whole service. If the request is a question, answer it in the note and submit the service unchanged.",
+  ].join("\n\n");
+}
 
 /** The YAML in a reply: a ```yaml block, or the reply itself when it starts like a service. */
 export function yamlFromReply(text: string): string | null {
@@ -331,11 +398,13 @@ const textOf = (content: unknown) =>
  * agent submits nothing: one direct reply, repaired with the compiler's errors.
  */
 export async function designService(model: BaseChatModel, createAgent: DesignerAgentFactory, opts: DesignOptions): Promise<DesignResult> {
-  const examples = pickExamples(opts.narrative, opts.pool);
+  const first = opts.history?.find((m) => m.role === "user")?.text ?? "";
+  const examples = pickExamples(`${first} ${opts.narrative}`, opts.pool);
   const prompt = designerPrompt(opts.services, examples);
   const memory = lessonsMemory(opts.lessons ?? []);
   const { tools, state, check } = designerTools(opts, examples.map((e) => e.id));
-  const request = `<service_description>\n${opts.narrative}\n</service_description>`;
+  const request = requestText(opts);
+  const earlier = (opts.history ?? []).slice(-THREAD_TURNS * 2).map((m) => (m.role === "user" ? new HumanMessage(`<request>\n${m.text}\n</request>`) : new AIMessage(m.text)));
 
   let yaml: string | null = null;
   let notes: string | null = null;
@@ -343,7 +412,7 @@ export async function designService(model: BaseChatModel, createAgent: DesignerA
     const now = new Date().toISOString();
     const agent = createAgent(model, tools, prompt);
     const final = await agent.invoke(
-      { messages: [new HumanMessage(request)], files: { [MEMORY_PATH]: { content: memory.split("\n"), created_at: now, modified_at: now } } } as never,
+      { messages: [...earlier, new HumanMessage(request)], files: { [MEMORY_PATH]: { content: memory.split("\n"), created_at: now, modified_at: now } } } as never,
       { recursionLimit: opts.recursionLimit ?? 40, signal: opts.signal } as never,
     );
     if (state.submitted) ({ yaml, notes } = state.submitted);
@@ -354,7 +423,7 @@ export async function designService(model: BaseChatModel, createAgent: DesignerA
   }
 
   // Direct: lean models, or an agent that never submitted.
-  const messages = [new SystemMessage(`${prompt}\n${memory}\nReply with only the service YAML in one \`\`\`yaml block.`), new HumanMessage(request)];
+  const messages = [new SystemMessage(`${prompt}\n${memory}\nReply with only the service YAML in one \`\`\`yaml block.`), ...earlier, new HumanMessage(request)];
   for (let attempt = 0; attempt < REPAIR_ATTEMPTS; attempt++) {
     if (yaml) {
       const errors = check(yaml).filter((p) => p.level === "error");
@@ -475,8 +544,8 @@ export function createDesignerService(store: DesignerStore, { now = () => new Da
   const at = () => now().toISOString();
   return {
     /** Record a drafting (without the narrative). */
-    async recorded(ownerId: string, result: DesignResult): Promise<DesignRun> {
-      const run: DesignRun = { id: crypto.randomUUID(), owner_id: ownerId, title: result.title, draft_yaml: result.yaml, ok: result.ok, entry_id: null, outcome: null, created_at: at() };
+    async recorded(ownerId: string, result: DesignResult, entryId: string | null = null): Promise<DesignRun> {
+      const run: DesignRun = { id: crypto.randomUUID(), owner_id: ownerId, title: result.title, draft_yaml: result.yaml, ok: result.ok, entry_id: entryId, outcome: null, created_at: at() };
       await store.putRun(run);
       return run;
     },
@@ -507,14 +576,70 @@ export function createDesignerService(store: DesignerStore, { now = () => new Da
       return lesson;
     },
     removeLesson: (id: string) => store.removeLesson(id),
+
+    // ---- the conversation (LIB-39..41) ----
+    /** The thread kept with an entry, or one not yet linked; null when there is none. */
+    async thread(key: { entry?: string; thread?: string }): Promise<DesignThread | null> {
+      const id = key.entry ? await store.threadOfEntry(key.entry) : (key.thread ?? null);
+      if (!id) return null;
+      const info = await store.threadInfo(id);
+      if (!info) return null;
+      return { id, ...info, messages: await store.messages(id) };
+    },
+    /** A turn: what someone asked, and the agent's reply (its notes and draft). */
+    async turn(
+      threadId: string,
+      entryId: string | null,
+      author: { id: string; name: string },
+      asked: string,
+      reply: { text: string; result: DesignResult | null; run: string | null },
+    ): Promise<DesignMessage[]> {
+      const base = { thread_id: threadId, entry_id: entryId, author_id: author.id };
+      const user: DesignMessage = { ...base, id: crypto.randomUUID(), author_name: author.name, role: "user", text: asked, yaml: null, ok: null, run_id: null, created_at: at() };
+      const assistant: DesignMessage = {
+        ...base,
+        id: crypto.randomUUID(),
+        author_name: "Service Designer",
+        role: "assistant",
+        text: reply.text,
+        yaml: reply.result?.yaml ?? null,
+        ok: reply.result?.ok ?? null,
+        run_id: reply.run,
+        created_at: new Date(now().getTime() + 1).toISOString(),
+      };
+      await store.addMessage(user);
+      await store.addMessage(assistant);
+      return [user, assistant];
+    },
+    /** A new service was created from a thread: keep the thread with it (its starter only, once). */
+    async linkThread(threadId: string, entryId: string, ownerId: string): Promise<boolean> {
+      const info = await store.threadInfo(threadId);
+      if (!info || info.owner_id !== ownerId || info.entry_id) return false;
+      await store.linkThread(threadId, entryId);
+      return true;
+    },
   };
 }
+
+/** The thread as the agent reads it back: what people asked, and its replies. */
+export const historyOf = (messages: readonly DesignMessage[]) => messages.slice(-THREAD_TURNS * 2).map((m) => ({ role: m.role, text: m.text }));
 export type DesignerService = ReturnType<typeof createDesignerService>;
 
 export function createMemoryDesignerStore(): DesignerStore {
   const runs = new Map<string, DesignRun>();
   let lessons: DesignLesson[] = [];
+  const messages: DesignMessage[] = [];
   return {
+    addMessage: async (m) => void messages.push({ ...m }),
+    messages: async (id) => messages.filter((m) => m.thread_id === id).slice(-MAX_THREAD).map((m) => ({ ...m })),
+    threadOfEntry: async (entryId) => messages.find((m) => m.entry_id === entryId)?.thread_id ?? null,
+    async threadInfo(id) {
+      const first = messages.find((m) => m.thread_id === id);
+      return first ? { owner_id: first.author_id, entry_id: messages.find((m) => m.thread_id === id && m.entry_id)?.entry_id ?? null } : null;
+    },
+    async linkThread(id, entryId) {
+      for (const m of messages) if (m.thread_id === id) m.entry_id = entryId;
+    },
     putRun: async (r) => void runs.set(r.id, { ...r }),
     run: async (id) => runs.get(id) ?? null,
     runForEntry: async (entryId) => [...runs.values()].find((r) => r.entry_id === entryId) ?? null,

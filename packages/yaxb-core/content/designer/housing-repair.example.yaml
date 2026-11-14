@@ -1,8 +1,10 @@
 # A few-shot example for the Service Designer agent: a service screen (the AI assistant writes a
-# short summary from the answers), and two journeys, one for tenants and one for the repairs team.
+# short summary from the answers), a hand-over (the repairs team books the visit on its own screen),
+# and two journeys, one for tenants and one for the repairs team.
 narrative: |
   A housing association wants tenants to report repairs. The tenant says which room, what is
-  broken, and how urgent it is. The assistant writes a one-paragraph summary for the repairs team.
+  broken, and how urgent it is. The assistant writes a one-paragraph summary for the repairs team,
+  who then book a day for the visit; the tenant sees the day with their reference.
   Separately, someone on the repairs team should be able to record that a repair was finished,
   with the job reference and a note.
 service: |
@@ -40,11 +42,19 @@ service: |
           service: agent.ask
           with:
             message: "Write one short paragraph for a repairs team: room {{answers.problem.room}}, problem: {{answers.problem.problem}}, urgency: {{answers.problem.urgency}}. Facts only."
+        - id: book-visit
+          title: Book the visit
+          role: repairs-team
+          ask: Book a day for this repair.
+          submitLabel: Book it
+          questions:
+            - { id: visit_date, type: date, label: Visit day, required: true }
+            - { id: note, type: textarea, label: Note for the tenant }
         - id: done
-          title: Reported
+          title: Visit booked
           result:
-            title: Your repair is reported
-            text: "{{steps.summary.text}}\n\nFor an emergency, also phone the repairs line now."
+            title: "We'll come on {{answers.book-visit.visit_date}}"
+            text: "{{answers.book-visit.note}}\n\nFor an emergency, also phone the repairs line now."
     - id: finish-repair
       title: Record a finished repair
       icon: check

@@ -1401,3 +1401,15 @@ button.yj-crumb:hover {
     flex-wrap: nowrap;
   }
 }
+
+/* Roles in the preview (LIB-38): who is viewing, journeys they can't start, a hand-over. */
+.yj-viewas {
+  margin-bottom: 0.75rem;
+  align-items: center;
+}
+.yj-item-locked {
+  opacity: 0.75;
+}
+.yj-handover {
+  border-left: 3px solid var(--yj-accent);
+}

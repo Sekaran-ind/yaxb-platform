@@ -104,3 +104,31 @@ test('data survives a restart (one SQLite file, WAL mode)', async () => {
   assert.equal((await r.json()).data.title, 'Kept');
   await b.close();
 });
+
+test('mailbox: an envelope waits for its role until picked up (its body then gone) or expired', async () => {
+  const soon = new Date(Date.now() + 3_600_000).toISOString();
+  const past = new Date(Date.now() - 1000).toISOString();
+  const env = (id, to, expires_at = soon) => ({ id, kind: 'case', to, from: { id: 'guest:k', name: 'Visitor', device: 'k' }, case_id: 'c1', ref: 'R-ABCDEF', created_at: new Date().toISOString(), expires_at, body: { case: { id: 'c1' }, events: [] } });
+  assert.equal((await call('/v1/mailbox', { method: 'POST', body: { id: 'x' } })).status, 400);
+  assert.equal((await call('/v1/mailbox', { method: 'POST', body: env('e-1', { roles: ['organiser'] }) })).status, 204);
+  assert.equal((await call('/v1/mailbox', { method: 'POST', body: env('e-2', { device: 'kiosk-1' }) })).status, 204);
+  assert.equal((await call('/v1/mailbox', { method: 'POST', body: env('e-3', { roles: ['organiser'] }, past) })).status, 204);
+  const org = await (await call('/v1/mailbox?roles=organiser')).json();
+  assert.deepEqual(org.items.map((e) => e.id), ['e-1']);
+  const dev = await (await call('/v1/mailbox?roles=marshal&device=kiosk-1')).json();
+  assert.deepEqual(dev.items.map((e) => e.id), ['e-2']);
+  assert.deepEqual(await (await call('/v1/mailbox/e-1/pick', { method: 'POST', body: { by: 'Olu' } })).json(), { picked: true });
+  assert.deepEqual(await (await call('/v1/mailbox/e-1/pick', { method: 'POST', body: { by: 'Ola' } })).json(), { picked: false });
+  const st = await (await call('/v1/mailbox-status?ids=e-1,e-2,e-3')).json();
+  assert.deepEqual(st.status, { 'e-1': { state: 'delivered', picked_by: 'Olu' }, 'e-2': { state: 'waiting', picked_by: null }, 'e-3': { state: 'expired', picked_by: null } });
+  const row = box.db.raw.prepare('SELECT body FROM mailbox WHERE id = ?').get('e-1');
+  assert.equal(row.body, null);
+});
+
+test('beacons: who holds which case, until they expire', async () => {
+  const b = { case_id: 'c9', ref: 'R-ZZZZZZ', journey_title: 'Register', service_title: 'Marathon', status: 'waiting', role: 'organiser', holder: { roles: ['organiser'] }, holder_name: null, copies: ['k'], updated_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60_000).toISOString() };
+  assert.equal((await call('/v1/beacons/c8', { method: 'PUT', body: b })).status, 400);
+  assert.equal((await call('/v1/beacons/c9', { method: 'PUT', body: b })).status, 204);
+  const list = await (await call('/v1/beacons')).json();
+  assert.deepEqual(list.items.map((x) => x.ref), ['R-ZZZZZZ']);
+});
