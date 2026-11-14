@@ -142,6 +142,10 @@
     "./schedule": {
       "types": "./dist/schedule/index.d.ts",
       "default": "./dist/schedule/index.js"
+    },
+    "./guardian": {
+      "types": "./dist/guardian/index.d.ts",
+      "default": "./dist/guardian/index.js"
     }
   },
   "files": [

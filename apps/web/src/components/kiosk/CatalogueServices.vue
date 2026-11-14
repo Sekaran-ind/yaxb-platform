@@ -2,11 +2,11 @@
 // The services added to this kiosk from the Service Catalogue (LIB-18..19, LIB-37), shown in the
 // notebook: load one (checking the team has someone for every role it needs), remove one, and start
 // a journey, which runs in the conversation. Journeys a viewer can't start show who starts them.
+import ServiceMark from "@/components/site/ServiceMark.vue";
 import { AlertTriangle, ChevronRight, FileText, Library, Lock, Plus, Users, X } from "@lucide/vue";
 import { cn } from "@/lib/cn";
 import AddServiceFlow from "./AddServiceFlow.vue";
 import { computed, ref } from "vue";
-import { iconFor } from "@/lib/icons";
 import { NATIVE } from "@/lib/platform";
 import { catalogue, catalogueReady, loadedServices, needsOf, removeFromKiosk, roleName, type CatalogueJourney } from "@/composables/library";
 
@@ -55,7 +55,7 @@ const unstaffed = (entryId: string) => needsOf(entryId).filter((n) => n.staffing
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0">
           <h4 :id="`cat-${s.meta.entry_id}`" class="flex items-center gap-2 font-semibold text-ink">
-            <component :is="iconFor(s.meta.icon ?? undefined)" v-if="iconFor(s.meta.icon ?? undefined)" class="size-4 text-brand" aria-hidden="true" />{{ s.meta.title }}
+            <ServiceMark :icon="s.meta.icon" :title="s.meta.title" :id="s.meta.id" size="sm" />{{ s.meta.title }}
           </h4>
           <p v-if="s.meta.summary" class="text-sm text-gray-500">{{ s.meta.summary }}</p>
           <p v-if="s.meta.roles.length" class="mt-1 text-xs text-gray-500">Delivered by {{ s.meta.roles.map((r) => r.label).join(", ") }}</p>

@@ -23,15 +23,21 @@ import {
   type ServiceDesign,
 } from "@sekaran-ind/yaxb-journeys";
 import { ConfirmAction, FlowPreview, ServiceDesigner, ServiceSummary, YamlEditor } from "@sekaran-ind/yaxb-journeys/vue";
-import { Archive, ArchiveRestore, ArrowLeft, Check, ExternalLink, History, Loader2, Save, Send, X } from "@lucide/vue";
+import { Archive, ArchiveRestore, ArrowLeft, Check, History, Loader2, Save, Send, X } from "@lucide/vue";
 import { computed, ref, shallowRef, watch } from "vue";
+import { useRoute } from "vue-router";
 import DesignerChat from "./DesignerChat.vue";
+import ConsentPanel from "./ConsentPanel.vue";
 import EntryStatus from "./EntryStatus.vue";
 import ServiceAudit from "./ServiceAudit.vue";
 import SegmentedControl from "@/components/site/SegmentedControl.vue";
 import { useWidth } from "@/composables/width";
 import type { CatalogueService } from "@/composables/library";
 import { api, ApiError } from "@/lib/api";
+
+/** A new service opened from one of the home page's ideas (`/catalogue?service=new&idea=…`) starts the designer's first message with it. */
+const route = useRoute();
+const idea = computed(() => (typeof route.query.idea === "string" ? route.query.idea : undefined));
 
 const props = defineProps<{
   /** null: a new service. */
@@ -106,12 +112,24 @@ function startOver() {
   openView("design");
 }
 
-type View = "design" | "yaml" | "preview" | "summary" | "audit" | "history";
+type View = "design" | "yaml" | "preview" | "consent" | "summary" | "audit" | "history";
 const view = ref<View>("design");
 const dirty = computed(() => yaml.value !== saved.value);
 const editable = computed(() => (props.entryId === null || mayChange.value) && !readOnlyCopy.value && entry.value?.status !== "archived");
 
+/** Opened before the catalogue's list arrived: its copy fills in when it does. */
+const awaitingCopy = ref(false);
+watch(
+  () => props.published,
+  (p) => {
+    if (!awaitingCopy.value || !p) return;
+    awaitingCopy.value = false;
+    yaml.value = saved.value = p.yaml;
+    openView(view.value);
+  },
+);
 async function load() {
+  awaitingCopy.value = false;
   error.value = notice.value = null;
   readOnlyCopy.value = false;
   if (!props.entryId) {
@@ -134,12 +152,13 @@ async function load() {
     mayChange.value = r.canChange;
     yaml.value = saved.value = r.entry.yaml;
   } catch (e) {
-    // Someone else's published service: read the catalogue's copy.
-    if (e instanceof ApiError && e.status === 404 && props.published) {
+    // Someone else's published service: read the catalogue's copy (now, or when the list arrives).
+    if (e instanceof ApiError && e.status === 404) {
       entry.value = null;
       readOnlyCopy.value = true;
-      yaml.value = saved.value = props.published.yaml;
       mayChange.value = false;
+      if (props.published) yaml.value = saved.value = props.published.yaml;
+      else awaitingCopy.value = true;
     } else error.value = (e as Error).message;
   }
   openView(view.value === "design" ? "design" : view.value);
@@ -275,14 +294,16 @@ function useRevision(r: EntryRevision) {
 }
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : "");
 const title = computed(() => entry.value?.title ?? props.published?.title ?? (design.value.title || "New service"));
-const kioskLink = computed(() => {
-  const id = entry.value?.published_revision ? entry.value.id : props.published?.entry_id;
-  return id ? `/kiosk?screen=services&load=${encodeURIComponent(id)}` : null;
+/** Where the service records what happens (LIB-62): the consent forms say so. */
+const entryStorage = computed(() => {
+  const st = (entry.value as { storage?: string } | null)?.storage ?? props.published?.storage;
+  return st === "box" || st === "server" ? st : "none";
 });
 const VIEWS = computed<{ value: View; label: string }[]>(() => [
   { value: "design", label: "Design" },
   { value: "yaml", label: "YAML" },
   { value: "preview", label: "Preview" },
+  { value: "consent", label: "Consent" },
   { value: "summary", label: "Summary" },
   ...(entry.value ? [{ value: "audit" as const, label: "Audit" }, { value: "history" as const, label: `History (${revisions.value.length})` }] : []),
 ]);
@@ -317,7 +338,6 @@ watch(
           last saved {{ when(entry.updated_at) }}
         </p>
       </div>
-      <a v-if="kioskLink" :href="kioskLink" class="btn-light h-9 text-sm"><ExternalLink class="size-4" aria-hidden="true" /> Open in a kiosk</a>
     </div>
 
     <div v-if="entry?.status === 'in_review'" class="rounded-lg bg-info/10 px-3 py-2 text-sm text-ink">
@@ -339,6 +359,7 @@ watch(
       :yaml="yaml"
       :pristine="yaml === STARTER"
       :editable="editable"
+      :idea="entry ? undefined : idea"
       @apply="applyDraft"
       @thread="(id) => (threadId = id)"
     />
@@ -377,6 +398,7 @@ watch(
     <div v-else-if="view === 'preview'" class="rounded-2xl bg-canvas p-3 ring-1 ring-gray-200">
       <FlowPreview :bundle="check.bundle" :layout="resolveLayout(width - 24)" :width="width - 24" storage-key="catalogue.preview" />
     </div>
+    <ConsentPanel v-else-if="view === 'consent'" v-model="yaml" :editable="editable" :storage="entryStorage" :roles="roles" />
     <div v-else-if="view === 'summary'" class="space-y-4">
       <ServiceSummary :bundle="check.bundle" />
       <dl v-if="entry" class="grid gap-x-6 gap-y-1 rounded-xl bg-mist p-3 text-sm sm:grid-cols-[auto_1fr]">

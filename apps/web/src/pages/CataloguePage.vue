@@ -16,6 +16,7 @@ import { Archive, ArchiveRestore, ExternalLink, FolderPlus, Pencil, Plus, Trash2
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { resolveLayout } from "@sekaran-ind/yaxb-core/screens";
+import { settings } from "@/composables/settings";
 import CataloguePlayer from "@/components/catalogue/CataloguePlayer.vue";
 import CataloguePills from "@/components/catalogue/CataloguePills.vue";
 import KioskFrame from "@/components/site/KioskFrame.vue";
@@ -29,7 +30,7 @@ import ServiceWorkspace from "@/components/catalogue/ServiceWorkspace.vue";
 import ModeratorSignIn from "@/components/moderation/ModeratorSignIn.vue";
 import { catalogue, loadCatalogue, roleCatalogue, type CatalogueService } from "@/composables/library";
 import { api } from "@/lib/api";
-import { iconFor } from "@/lib/icons";
+import ServiceMark from "@/components/site/ServiceMark.vue";
 
 type LibraryRow = Library & { counts: Record<"total" | "draft" | "in_review" | "accepted" | "rejected" | "archived", number> };
 type Overview = {
@@ -138,10 +139,13 @@ async function libCall(fn: () => Promise<unknown>) {
 }
 
 // ---- the frame ------------------------------------------------------------------------------
-// The kiosk's frame and layouts (Full, Pod, Mini by the width), always chosen by the width here:
-// the kiosk's own layout choice is a kiosk preference.
+// The kiosk's frame and layouts: Preferences → Layout applies here too (Auto picks Full, Pod or
+// Mini by the width). Every layout has the kiosk's fixed height: the screens scroll inside the frame.
 const { el: root, width } = useWidth(1280);
-const layout = computed(() => resolveLayout(width.value, "auto"));
+const layout = computed(() => resolveLayout(width.value, settings.layout));
+/** The kiosk's Pod and Mini heights (KioskShell POD_HEIGHT, MINI_HEIGHT; the catalogue has the site's navbar). */
+const MINI_HEIGHT = "h-[max(26rem,calc(100dvh-14rem))]";
+const POD_HEIGHT = "h-[max(28rem,calc(100dvh-14.5rem))]";
 /** Where the designer is, for the player's "now playing" line. */
 const designStep = ref<{ index: number; total: number; label: string } | null>(null);
 watch(service, () => (designStep.value = null));
@@ -175,17 +179,17 @@ watch(signingIn, (v) => !v && void load());
 <template>
   <!-- The catalogue as a kiosk: the same frame, with an information panel where the kiosk has its player, and the catalogue's screens. -->
   <div ref="root" class="w-full">
-    <KioskFrame :layout="layout" :narrow-panel="Boolean(service)">
+    <KioskFrame :layout="layout" :narrow-panel="Boolean(service)" :mini-height="MINI_HEIGHT" :pod-height="POD_HEIGHT" scroll>
       <template #panel>
         <CataloguePlayer :variant="infoVariant" :who="who" :counts="counts" :current="current" :step="service ? designStep : null" :loading="!overview && !error" />
       </template>
       <template #default="{ width: paneWidth }">
         <!-- With a service or the preferences open there is no tab row: the pills sit above them. -->
-        <div v-if="service || prefs" class="mb-3 flex justify-end"><CataloguePills :who="who" :signing-in="signingIn" @new-service="go({ service: 'new', prefs: null })" @sign-in="signingIn = !signingIn" @sign-out="signOut" @prefs="go({ prefs: 'model' })" /></div>
+        <div v-if="service || prefs" class="mb-3 flex justify-end"><CataloguePills :load-entry="service && !prefs ? (published(service)?.entry_id ?? null) : null" :who="who" :signing-in="signingIn" @new-service="go({ service: 'new', prefs: null })" @sign-in="signingIn = !signingIn" @sign-out="signOut" @prefs="go({ prefs: 'model' })" /></div>
         <ModeratorSignIn v-if="signingIn" class="mb-4" why="Sign in with your moderator key to see every service, review and manage roles." @signed-in="signingIn = false" />
         <p v-if="error" role="alert" class="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-red-800">{{ error }}</p>
 
-        <KioskPreferences v-if="prefs" :nickname="account.profile.value?.nickname ?? null" :fill="layout === 'full'" @close="go({ prefs: null })" />
+        <KioskPreferences v-if="prefs" :nickname="account.profile.value?.nickname ?? null" fill @close="go({ prefs: null })" />
         <template v-else-if="overview && me && can">
           <ServiceWorkspace
             v-if="service"
@@ -200,10 +204,10 @@ watch(signingIn, (v) => !v && void load());
             @changed="changed"
             @step="(st) => (designStep = st)"
           />
-          <AdaptiveNav v-else :screens="navScreens" storage-key="catalogue" label="Catalogue screens" :active="view" :width="paneWidth" :fill="layout === 'full'" @update:active="(v) => go({ view: v === 'catalogue' ? null : v })">
+          <AdaptiveNav v-else :screens="navScreens" storage-key="catalogue" label="Catalogue screens" :active="view" :width="paneWidth" fill @update:active="(v) => go({ view: v === 'catalogue' ? null : v })">
             <template #trail><CataloguePills trail :who="who" :signing-in="signingIn" @new-service="go({ service: 'new', prefs: null })" @sign-in="signingIn = !signingIn" @sign-out="signOut" @prefs="go({ prefs: 'model' })" /></template>
             <template #ask>
-              <div :class="layout === 'full' ? 'h-full min-h-[30rem]' : 'h-[max(28rem,calc(100dvh-16rem))]'"><KioskShell embedded /></div>
+              <div class="h-full min-h-[22rem]"><KioskShell embedded /></div>
             </template>
             <template #catalogue>
               <section aria-label="Published services">
@@ -211,7 +215,7 @@ watch(signingIn, (v) => !v && void load());
             <ul class="grid gap-3 @lg:grid-cols-2 @4xl:grid-cols-3">
               <li v-for="s in catalogue" :key="s.entry_id" class="card flex flex-col gap-2 p-4">
                 <div class="flex items-start gap-3">
-                  <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-mist text-ink"><component :is="iconFor(s.icon ?? undefined)" v-if="iconFor(s.icon ?? undefined)" class="size-5" aria-hidden="true" /></span>
+                  <ServiceMark :icon="s.icon" :title="s.title" :id="s.id" />
                   <span class="min-w-0">
                     <span class="block font-semibold text-ink">{{ s.title }}</span>
                     <span class="block text-xs text-gray-500">{{ s.library }} · revision {{ s.revision }} · {{ when(s.published_at) }}</span>

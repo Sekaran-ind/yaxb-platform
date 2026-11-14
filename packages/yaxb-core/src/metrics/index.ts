@@ -24,6 +24,9 @@ export const EVENT_KINDS = [
   "request.closed",
   "request.declined",
   "request.reassigned",
+  // The Legal Guardian (CON-6): a person agreed to (or declined) a role's consent form, by version.
+  "consent.given",
+  "consent.declined",
 ] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 

@@ -6,9 +6,12 @@ import { useRoute } from "vue-router";
 import { cn } from "@/lib/cn";
 import BaseModal from "./BaseModal.vue";
 import ContactPanel from "./ContactPanel.vue";
+import { SITE_WIDTH } from "@/lib/site-width";
+import { BRAND } from "@/lib/legal";
 
 const LINKS = [
   { to: "/#about", label: "About" },
+  { to: "/#ideas", label: "Ideas" },
   { to: "/kiosk", label: "AI Kiosk" },
   { to: "/catalogue", label: "Service catalogue" },
 ];
@@ -19,10 +22,10 @@ const contactOpen = ref(false);
 
 <template>
   <nav id="top" class="sticky top-0 z-30 border-b border-gray-200/60 bg-canvas/80 backdrop-blur-xl" aria-label="Main">
-    <div class="mx-auto flex h-14 max-w-6xl flex-wrap items-center justify-between px-4 sm:px-6">
+    <div :class="cn('mx-auto flex h-14 flex-wrap items-center justify-between', SITE_WIDTH)">
       <RouterLink to="/" class="flex items-center gap-2.5">
         <BrandLogo class="size-8" />
-        <span class="text-[15px] font-semibold tracking-tight text-ink">YAXB<span class="text-gray-400">.ai</span></span>
+        <span class="text-[15px] font-semibold tracking-tight text-ink">{{ BRAND.replace(".ai", "") }}<span class="text-gray-400">.ai</span></span>
       </RouterLink>
       <button type="button" class="rounded-full p-2 md:hidden" :aria-expanded="menuOpen" aria-controls="main-menu" aria-label="Toggle menu" @click="menuOpen = !menuOpen">
         <X v-if="menuOpen" class="size-5" />
@@ -42,6 +45,6 @@ const contactOpen = ref(false);
         <button type="button" class="btn-primary mt-2 h-8 w-full px-3.5 text-[13px] md:mt-0 md:ml-2 md:w-auto" @click="(menuOpen = false), (contactOpen = true)">Contact us</button>
       </div>
     </div>
-    <BaseModal :open="contactOpen" title="Hello" @close="contactOpen = false"><ContactPanel /></BaseModal>
+    <BaseModal :open="contactOpen" title="Get in touch" @close="contactOpen = false"><ContactPanel :heading="false" /></BaseModal>
   </nav>
 </template>

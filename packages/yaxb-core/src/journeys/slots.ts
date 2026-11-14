@@ -6,7 +6,8 @@
 //
 // Passes, each only for fields the earlier ones left empty:
 //   1. label    the field's label or keywords used as a key: "temperature 38.5" (as clinux-core)
-//   2. pattern  typed values: email, phone, date, and a field's own language names
+//   2. pattern  typed values: email, phone, web address, money, a measure (a recogniser the
+//               surface injects, else simple patterns), date, and a field's own language names
 //   3. entity   a local NER model (people, places, organisations) for fields with `entity`
 //   4. meaning  the sentence-transformer: each clause against each field's label + description,
 //               filled only when one field is clearly the best match
@@ -18,6 +19,9 @@ import type { Field } from "./index.js";
 import { similarity, type Embed } from "../knowledge/semantic.js";
 
 export type Entity = { type: "person" | "location" | "organization"; text: string; score: number };
+/** A typed value found in the text, whatever its language (digits, symbols, addresses). */
+export type TypedValue = { kind: "email" | "phone" | "url" | "money" | "measure"; text: string; value: string | number; unit?: string };
+export const TYPED_KINDS = ["email", "phone", "url", "money", "measure"] as const;
 export type SlotVia = "label" | "pattern" | "entity" | "meaning" | "model";
 export type SlotFill = { field: string; label: string; value: unknown; via: SlotVia; text?: string };
 /** A closed list the text points at, without naming one option: the visitor picks. */
@@ -35,6 +39,8 @@ export type SlotHelpers = {
   /** For the meaning pass: the best field must reach minScore and beat the next by margin. */
   meaning?: { minScore: number; margin: number };
   ner?: (text: string) => Promise<Entity[]>;
+  /** Typed values (the browser uses Microsoft Recognizers-Text): phone numbers, emails, addresses, money, measures. */
+  values?: (text: string) => Promise<TypedValue[]>;
   /** The visitor's languages, for language fields: [{ code, label, native }]. */
   languages?: readonly { code: string; label: string; native: string }[];
 };
@@ -73,6 +79,7 @@ function dateFrom(text: string): string | null {
 }
 const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/;
 const PHONE = /(?:\+?\d[\d\s-]{8,14}\d)/;
+const URL_RE = /\bhttps?:\/\/[^\s<>"]+/i;
 const NEGATION = /\b(no|not|never|none|without|don'?t|doesn'?t|didn'?t|haven'?t|isn'?t)\b|இல்லை|नहीं|नही|లేదు|ഇല്ല|ಇಲ್ಲ|না/i;
 
 function optionIn(field: Field, text: string): { value: string } | { typed: string; options: { value: string; label: string }[] } | null {
@@ -217,9 +224,21 @@ export async function matchFields(fields: readonly Field[], text: string, helper
     apply(m.field, valueFor(m.field, segment, helpers), "label", message.slice(m.start, m.end + segment.length).trim());
   });
 
-  // 2. patterns: typed values the text holds without naming the field
+  // 2. patterns: typed values the text holds without naming the field (the recogniser first)
+  const wantsTyped = all.some((f) => !done.has(f.id) && (TYPED_KINDS as readonly string[]).includes(f.entity ?? ""));
+  const typed = wantsTyped && helpers.values ? await helpers.values(message).catch(() => [] as TypedValue[]) : [];
+  const usedTyped = new Set<TypedValue>();
   for (const f of all.filter((x) => !done.has(x.id))) {
-    if (f.entity === "email" && EMAIL.test(message)) fill(f, message.match(EMAIL)![0], "pattern");
+    const t = typed.find((v) => v.kind === f.entity && !usedTyped.has(v));
+    if (t) {
+      usedTyped.add(t);
+      if (f.type === "number") {
+        if (Number.isFinite(Number(t.value))) fill(f, Number(t.value), "pattern", t.text);
+      } else fill(f, t.kind === "phone" ? String(t.value).replace(/[\s-]/g, "") : t.kind === "money" || t.kind === "measure" ? t.text : t.value, "pattern", t.text);
+      continue;
+    }
+    if (f.entity === "url" && URL_RE.test(message)) fill(f, message.match(URL_RE)![0], "pattern");
+    else if (f.entity === "email" && EMAIL.test(message)) fill(f, message.match(EMAIL)![0], "pattern");
     else if (f.entity === "phone" && PHONE.test(message)) fill(f, message.match(PHONE)![0].replace(/[\s-]/g, ""), "pattern");
     else if (f.type === "date" && dateFrom(message)) fill(f, dateFrom(message), "pattern");
     else if (f.type === "language" && languageIn(message, helpers.languages)) fill(f, languageIn(message, helpers.languages), "pattern");

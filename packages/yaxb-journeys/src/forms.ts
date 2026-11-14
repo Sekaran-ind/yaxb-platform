@@ -340,6 +340,8 @@ export type ServiceDesign = {
   journeys: JourneyDesign[];
   /** The service's own days (SCH-3): title and date (YYYY-MM-DD), optional time. */
   dates: { id: string; title: string; date: string; time: string }[];
+  /** The consent forms (CON-1), kept as they are: the Consent view edits them, not the designer. */
+  consent?: unknown;
 };
 
 export const newScreen = (id = "", kind: StepKind = "ask"): StepForm => ({ ...newStep(id, kind), then: "step", next: "" });
@@ -412,6 +414,7 @@ export function designFromDoc(doc: Record<string, unknown>): { design: ServiceDe
         const d = (raw ?? {}) as Record<string, unknown>;
         return { id: str(d.id), title: str(d.title), date: str(d.date), time: str(d.time) };
       }),
+      ...(doc.consent !== undefined ? { consent: doc.consent } : {}),
     },
     unsupported,
   };
@@ -462,6 +465,7 @@ export function designToDoc(d: ServiceDesign): { ok: true; doc: Record<string, u
       order: d.order ?? undefined,
       roles: d.roles.map((r) => compact({ id: r.id, label: r.label, description: r.description })),
       dates: d.dates.length ? d.dates.map((x) => compact({ id: x.id.trim() || idFromName(x.title) || "date", title: x.title.trim(), date: x.date.trim(), time: x.time.trim() })) : undefined,
+      consent: d.consent ?? undefined,
       journeys,
     }),
   };

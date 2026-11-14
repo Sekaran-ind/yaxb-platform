@@ -31,6 +31,7 @@ const contactSchema = z.strictObject({
   name: z.string().trim().min(1, "Please enter your name").max(120),
   email: z.email("Please enter a valid email").max(254),
   message: z.string().trim().min(1, "Please enter a message").max(5000),
+  organisation: z.string().trim().max(160).optional().default(""),
   // Honeypot: real users never fill this hidden field.
   company: z.string().max(0).optional().default(""),
 });
@@ -801,6 +802,35 @@ app.get("/api/library/design", (c) =>
 );
 
 /**
+ * The Legal Guardian (CON-1..8): consent forms for the service in the editor, one per role, with the
+ * flags a reviewer should see. Anyone who may design may ask (the result is a draft for the editor,
+ * stored nowhere); rate limited like chat, and like a form for guests. Without a model it drafts from
+ * the service alone.
+ */
+const guardianRequestSchema = z.strictObject({
+  yaml: z.string().min(1).max(MAX_ENTRY_BYTES),
+  storage: z.enum(["none", "box", "server"]).optional(),
+  provider: z.string().max(40).optional(),
+  model: z.string().max(120).optional(),
+});
+app.post("/api/library/consent", async (c) => {
+  await catalogue(c.env);
+  const actor = await libraryActor(c);
+  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, `guardian:${actor.id}`))) return jsonError(c, 429, "Too many requests in a short time. Please wait a minute.");
+  if (actor.guest && !(await withinLimit("form", c.env.FORM_LIMITER, `guardian:${actor.id}`))) return jsonError(c, 429, "Too many drafts in a short time. Please wait a minute.");
+  const parsed = guardianRequestSchema.safeParse((await readJson(c, MAX_ENTRY_BYTES + MAX_FORM_BODY)).body);
+  if (!parsed.success) return jsonError(c, 422, parsed.error.issues[0]?.message ?? "Invalid request.");
+  const { yaml, storage, provider, model } = parsed.data;
+  const { roles } = await library(c.env).published([], { all: true });
+  const out = await kiosk(c.env).guardian(
+    { yaml, storage, relayHours: settings(c.env).RELAY_HOURS, roles, selection: provider && model ? { provider, model, temperature: 0.2 } : null },
+    { signal: c.req.raw.signal },
+  );
+  if ("error" in out) return jsonError(c, 422, out.error);
+  return c.json(out);
+});
+
+/**
  * The Service Designer agent (LIB-27..32, LIB-39..41): one turn of a design conversation. The first
  * turn of a new service drafts it from the description; later turns, and every turn on an existing
  * service, change the service in the editor. Rate limited like chat, and like a form for guests.
@@ -945,23 +975,32 @@ app.delete("/api/moderator", (c) => {
   return c.json({ moderator: false });
 });
 
-/** Contact form -> Airtable. The Airtable token stays in the Worker. */
+/** Contact form -> the helpdesk Worker (as ClinüxFlow's), else Airtable. Tokens stay in the Worker. */
 app.post("/api/contact", async (c) => {
   if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
   if (!(await withinLimit("form", c.env.FORM_LIMITER, `contact:${ip(c)}`))) return jsonError(c, 429, "Too many messages. Please try again later.");
   const parsed = contactSchema.safeParse((await readJson(c, MAX_FORM_BODY)).body);
   if (!parsed.success) return jsonError(c, 422, parsed.error.issues[0]?.message ?? "Invalid form.");
   if (parsed.data.company) return c.json({ ok: true }); // honeypot: silently drop bots
-  const { AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME } = settings(c.env);
-  if (!AIRTABLE_API_TOKEN || !AIRTABLE_BASE_ID) return jsonError(c, 503, "The contact form is not configured.");
-  const { name, email, message } = parsed.data;
+  const { HELPDESK_URL, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME } = settings(c.env);
+  const { name, email, message, organisation } = parsed.data;
+  const failed = () => jsonError(c, 502, "That didn't send. Please write to helpdesk@yaxb.ai.");
+  if (HELPDESK_URL) {
+    const res = await fetch(HELPDESK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "email", name, clinic: organisation, email, message }),
+    }).catch(() => null);
+    const body = (await res?.json().catch(() => null)) as { success?: boolean } | null;
+    return res?.ok && body?.success ? c.json({ ok: true }) : failed();
+  }
+  if (!AIRTABLE_API_TOKEN || !AIRTABLE_BASE_ID) return jsonError(c, 503, "The contact form is not configured. Please write to helpdesk@yaxb.ai.");
   const res = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_NAME)}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${AIRTABLE_API_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ records: [{ fields: { Name: name, email, message } }], typecast: false }),
+    body: JSON.stringify({ records: [{ fields: { Name: name, email, message: organisation ? `${organisation}: ${message}` : message } }], typecast: false }),
   }).catch(() => null);
-  if (!res?.ok) return jsonError(c, 502, "We couldn't send your message. Please email support@yaxb.ai.");
-  return c.json({ ok: true });
+  return res?.ok ? c.json({ ok: true }) : failed();
 });
 
 /** Newsletter signup -> Mailchimp (double opt-in). */

@@ -32,7 +32,9 @@ const inputType = computed(() =>
           ? "email"
           : props.field.entity === "phone"
             ? "tel"
-            : "text",
+            : props.field.entity === "url"
+              ? "url"
+              : "text",
 );
 const pickSource = (sid: string) => emit("change", props.sources?.find((s) => s.id === sid) ?? null);
 const target = (e: Event) => e.target as HTMLInputElement;

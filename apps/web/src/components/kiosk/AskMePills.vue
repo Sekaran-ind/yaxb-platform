@@ -4,10 +4,16 @@
 // preferences. At the front desk: End session, and the staff lock.
 import { LogOut, Lock, MessagesSquare, RotateCcw, SlidersHorizontal, UserRound } from "@lucide/vue";
 import { cn } from "@/lib/cn";
+import { computed } from "vue";
 
-defineProps<{ restricted: boolean; /** Only New and Conversations, inside another surface's pills (the catalogue's Ask Me). */ conversationOnly?: boolean; onAskMe: boolean; canNew: boolean; threads: number; drawerOpen: boolean; nickname: string | null }>();
+const props = defineProps<{ restricted: boolean; /** Only New and Conversations, inside another surface's pills (the catalogue's Ask Me). */ conversationOnly?: boolean; onAskMe: boolean; canNew: boolean; threads: number; drawerOpen: boolean; nickname: string | null }>();
 const emit = defineEmits<{ new: []; conversations: []; profile: []; prefs: []; endSession: []; unlock: [] }>();
 const pill = "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm text-gray-600 transition hover:bg-surface hover:text-ink";
+/**
+ * The words go when the screens area is narrow (the title stays as the hint). Inside the catalogue's
+ * pills (conversationOnly) they follow the catalogue's cut-off, so the group stays on the tab row.
+ */
+const words = computed(() => (props.conversationOnly ? "@max-[64rem]/screens:sr-only" : "@max-[48rem]/screens:sr-only"));
 const initials = (n: string) =>
   n
     .split(/\s+/)
@@ -25,9 +31,9 @@ const initials = (n: string) =>
     </template>
     <template v-else>
       <template v-if="onAskMe">
-        <button v-if="canNew" type="button" :class="pill" title="New conversation" @click="emit('new')"><RotateCcw class="size-4" aria-hidden="true" /><span class="max-sm:sr-only">New</span></button>
+        <button v-if="canNew" type="button" :class="pill" title="New conversation" @click="emit('new')"><RotateCcw class="size-4" aria-hidden="true" /><span :class="words">New</span></button>
         <button type="button" :class="cn(pill, drawerOpen && 'bg-surface text-ink shadow-sm')" :aria-expanded="drawerOpen" aria-controls="threads-drawer" title="Conversations" @click="emit('conversations')">
-          <MessagesSquare class="size-4" aria-hidden="true" /><span class="max-sm:sr-only">Conversations</span><span v-if="threads" class="rounded-full bg-surface px-1.5 text-[11px] text-ink">{{ threads }}</span>
+          <MessagesSquare class="size-4" aria-hidden="true" /><span :class="words">Conversations</span><span v-if="threads" class="rounded-full bg-surface px-1.5 text-[11px] text-ink">{{ threads }}</span>
         </button>
       </template>
       <template v-if="!conversationOnly">
