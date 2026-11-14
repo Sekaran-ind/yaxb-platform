@@ -179,6 +179,8 @@ export type LibraryOptions = {
   audit?: (e: AuditEvent) => Promise<void>;
   /** Read an entry's audit trail. */
   auditTrail?: (targetId: string) => Promise<AuditEvent[]>;
+  /** Told about every review (the Service Designer learns from drafts). Its failures don't fail the review. */
+  onReviewed?: (entry: LibraryEntry, decision: "accepted" | "rejected", note: string | null, reviewer: LibraryActor) => Promise<unknown>;
   now?: () => Date;
 };
 
@@ -471,6 +473,7 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
       };
       await store.putEntry(next);
       await audit(a, accepted ? "library.entry_accepted" : "library.entry_rejected", id, { id: e.doc_id, revision: e.revision });
+      await options.onReviewed?.(next, accepted ? "accepted" : "rejected", next.review_note, a).catch(() => undefined);
       return next;
     },
 

@@ -17,6 +17,7 @@ import { MEMORY_PATH, SKILLS_ROOT } from "../notebook/index.js";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import { CompositeBackend, createDeepAgent, createFilesystemMiddleware, registerHarnessProfile, StateBackend, StoreBackend, type FsToolName, type SubAgent } from "deepagents";
 import { createAgent, createMiddleware, todoListMiddleware } from "langchain";
+import { DESIGNER_AGENT } from "../designer/index.js";
 import type { AgentEvent, Todo } from "../events/index.js";
 import { KIOSK_LEAN_PROMPT, KIOSK_SYSTEM_PROMPT, RESEARCHER_PROMPT, SAFETY_REVIEWER_PROMPT } from "./prompts.js";
 import type { buildTools } from "./tools.js";
@@ -145,6 +146,23 @@ export function createKioskAgent(model: BaseChatModel, tools: ReturnType<typeof 
     ...(options.memory ? { memory: [MEMORY_PATH] } : {}),
     ...(options.skills ? { skills: [SKILLS_ROOT] } : {}),
     name: AGENT_NAME,
+  });
+}
+
+/**
+ * The Service Designer agent (designer/): its own tools (find_similar_services, check_service,
+ * submit_design), scratch files for drafts, and its lessons as Deep Agents memory. The same
+ * protections as the kiosk's: no execute or delete, and no subagents at all.
+ */
+export function createServiceDesignerAgent(model: BaseChatModel, tools: StructuredToolInterface[], systemPrompt: string) {
+  return createDeepAgent({
+    model,
+    tools,
+    systemPrompt,
+    subagents: [],
+    middleware: [fsMiddleware(true), subagentGuard([])],
+    memory: [MEMORY_PATH],
+    name: DESIGNER_AGENT,
   });
 }
 

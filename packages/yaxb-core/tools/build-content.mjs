@@ -24,8 +24,10 @@ const content = {
   questionnaires: list("questionnaires", ".questionnaire.yaml"),
   // Nested services seeded into the Service Catalogue (not built into the kiosk).
   catalogue: list("catalogue", ".service.yaml"),
+  // Few-shot examples for the Service Designer agent: a narrative and the service it becomes.
+  designer: list("designer", ".example.yaml"),
   services: list("services", ".service.yaml"),
   screens: read(join(root, "screens.yaml")),
 };
 writeFileSync(fileURLToPath(new URL("../src/data/content.json", import.meta.url)), `${JSON.stringify(content, null, 2)}\n`);
-console.log(`content: ${skills.length} skills, ${content.journeys.length} journeys, ${content.questionnaires.length} questionnaires, ${content.catalogue.length} catalogue services, ${content.services.length} services`);
+console.log(`content: ${skills.length} skills, ${content.journeys.length} journeys, ${content.questionnaires.length} questionnaires, ${content.catalogue.length} catalogue services, ${content.designer.length} designer examples, ${content.services.length} services`);

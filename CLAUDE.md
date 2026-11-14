@@ -251,6 +251,17 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
   - JourneyPanel says "Next: <role> will complete this".
   - Not built: the handover queue to the finishing role (LIB-12); server-side slot filling for catalogue journeys.
 
+## The Service Designer agent (LIB-27..32)
+
+- **Core** `designer/` (export `./designer`):
+  - `kiosk.design({ narrative, selection, published, lessons, roles })` drafts a nested service from a narrative (`designInputSchema`, 20..4000 characters). It returns `{ yaml, title, problems, ok, notes, examples }` or `{ error }`, and stores nothing.
+  - Few-shot: `examplePool(kioskContent.designer, published)` holds the built-in examples (`content/designer/*.example.yaml`, `narrative` + `service`, compiled by the content test) and published services (`narrativeOf` writes their narrative). `pickExamples` gives the closest `PROMPT_EXAMPLES` (2) by shared words, always with a built-in one. `designerPrompt` holds the format, `FIELD_TYPES`, `SERVICE_INFO`, built-in roles, `DESIGNER_ICONS` (keep them in step with the web's `lib/icons.ts`) and the rules.
+  - The agent is `createServiceDesignerAgent` (`agent/harness.ts`): Deep Agents with tools `find_similar_services`, `check_service` (`checkDocument` plus `draftProblems`: a `when` reading its own screen's `answers.`, and `{{#if}}`-style blocks) and `submit_design`. It has the safe file tools and `subagentGuard([])`, and the lessons as Deep Agents `memory` (`/memories/AGENTS.md` from `lessonsMemory`). A submit with errors goes back, up to `REPAIR_ATTEMPTS` (3). Lean models, or an agent that never submits, get a direct reply (`yamlFromReply`) repaired the same way.
+  - Learning: `createDesignerService(store)` with `recorded` (a run: the draft, never the narrative), `link(run, entry, owner)` (author only, once), and `learn(entry, decision, note, reviewer)`, called through the library's `onReviewed`. `lessonFrom` uses `designChanges` (draft → reviewed): an unchanged acceptance teaches nothing. `addLesson` and `removeLesson` are for administrators. The agent reads the newest `LESSONS_IN_MEMORY` (30); the store keeps `MAX_LESSONS` (300).
+  - Stores: memory, and D1 `createD1DesignerStore` (migration 0008: `design_runs`, `design_lessons`).
+- **Worker**: `POST /api/library/design { narrative, provider, model }` (chat limiter for everyone, form limiter for guests too; returns the draft plus `run`). `POST /api/library/services` takes an optional `design` (the run id) and links it. `GET|POST /api/library/lessons` and `DELETE /api/library/lessons/:id` are for administrators only (`permissionsOf(a).manage`). `designer(env)` in `worker/kiosk.ts`; the library's `onReviewed` calls `learn`.
+- **Web**: `ServiceWorkspace` shows "Describe the service in your own words" for a new service. It uses the kiosk's model choice (`effectiveSelection`); without a model it says so. A draft folds the box into "Drafted by the AI… Describe it again". Catalogue → **AI designer** (`DesignerLessons.vue`, administrators) lists, adds and deletes lessons.
+
 ## Journey summaries
 
 - `journeys/summary.ts`:

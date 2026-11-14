@@ -12,6 +12,7 @@ import {
 import { feedbackSchema, newFeedbackItem, type FeedbackItem, type FeedbackStore } from "../feedback/index.js";
 import type { AuditEvent, Moderator, ModeratorStore } from "../moderators/index.js";
 import type { CustomRole, EntryRevision, Library, LibraryEntry, LibraryStore } from "../library/index.js";
+import { MAX_LESSONS, type DesignerStore, type DesignLesson, type DesignRun } from "../designer/index.js";
 import type { Kv, KvItem } from "./kv.js";
 
 export interface D1Like {
@@ -352,6 +353,41 @@ export function createD1LibraryStore(db: D1Like): LibraryStore {
         .prepare("INSERT INTO library_revisions (entry_id, revision, yaml, at, by_id, by_name, note) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")
         .bind(r.entry_id, r.revision, r.yaml, r.at, r.by_id, r.by_name, r.note)
         .run();
+    },
+  };
+}
+
+/** The Service Designer's drafts and lessons (migration 0008). */
+export function createD1DesignerStore(db: D1Like): DesignerStore {
+  const RUN_COLS = "id, owner_id, title, draft_yaml, ok, entry_id, outcome, created_at";
+  const LESSON_COLS = "id, text, source, decision, entry_id, run_id, created_at, created_by_name";
+  const run = (r: (Omit<DesignRun, "ok"> & { ok: number }) | null): DesignRun | null => (r ? { ...r, ok: Boolean(r.ok) } : null);
+  return {
+    async putRun(r) {
+      await db
+        .prepare(
+          `INSERT INTO design_runs (${RUN_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT (id) DO UPDATE SET title = ?3, draft_yaml = ?4, ok = ?5, entry_id = ?6, outcome = ?7`,
+        )
+        .bind(r.id, r.owner_id, r.title, r.draft_yaml, r.ok ? 1 : 0, r.entry_id, r.outcome, r.created_at)
+        .run();
+    },
+    run: async (id) => run(await db.prepare(`SELECT ${RUN_COLS} FROM design_runs WHERE id = ?1`).bind(id).first()),
+    runForEntry: async (entryId) => run(await db.prepare(`SELECT ${RUN_COLS} FROM design_runs WHERE entry_id = ?1 ORDER BY created_at DESC LIMIT 1`).bind(entryId).first()),
+    async lessons(limit = MAX_LESSONS) {
+      return (await db.prepare(`SELECT ${LESSON_COLS} FROM design_lessons ORDER BY created_at DESC LIMIT ?1`).bind(limit).all<DesignLesson>()).results;
+    },
+    async putLesson(l) {
+      await db
+        .prepare(`INSERT INTO design_lessons (${LESSON_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT (id) DO UPDATE SET text = ?2`)
+        .bind(l.id, l.text, l.source, l.decision, l.entry_id, l.run_id, l.created_at, l.created_by_name)
+        .run();
+      // Keep the newest MAX_LESSONS.
+      await db.prepare("DELETE FROM design_lessons WHERE id NOT IN (SELECT id FROM design_lessons ORDER BY created_at DESC LIMIT ?1)").bind(MAX_LESSONS).run();
+    },
+    async removeLesson(id) {
+      const had = await db.prepare("SELECT id FROM design_lessons WHERE id = ?1").bind(id).first();
+      await db.prepare("DELETE FROM design_lessons WHERE id = ?1").bind(id).run();
+      return Boolean(had);
     },
   };
 }

@@ -1,0 +1,63 @@
+# A few-shot example for the Service Designer agent: a service screen (the AI assistant writes a
+# short summary from the answers), and two journeys, one for tenants and one for the repairs team.
+narrative: |
+  A housing association wants tenants to report repairs. The tenant says which room, what is
+  broken, and how urgent it is. The assistant writes a one-paragraph summary for the repairs team.
+  Separately, someone on the repairs team should be able to record that a repair was finished,
+  with the job reference and a note.
+service: |
+  kind: service
+  id: housing-repairs
+  title: Repairs
+  summary: Report something broken at home.
+  icon: wrench
+  roles:
+    - { id: repairs-team, label: Repairs team, description: Plans and finishes repairs }
+  journeys:
+    - id: report-repair
+      title: Report a repair
+      summary: Tell us what is broken and how urgent it is.
+      icon: wrench
+      roles: { initiate: [visitor], complete: [repairs-team] }
+      screens:
+        - id: problem
+          title: The repair
+          ask: What needs repairing?
+          submitLabel: Continue
+          questions:
+            - { id: room, type: text, label: Which room, required: true }
+            - { id: problem, type: textarea, label: What is broken, required: true }
+            - id: urgency
+              type: select
+              label: How urgent
+              required: true
+              options:
+                - { value: emergency, label: "Emergency (water, gas, electricity)" }
+                - { value: soon, label: Within a week }
+                - { value: routine, label: When convenient }
+        - id: summary
+          title: Summary for the team
+          service: agent.ask
+          with:
+            message: "Write one short paragraph for a repairs team: room {{answers.problem.room}}, problem: {{answers.problem.problem}}, urgency: {{answers.problem.urgency}}. Facts only."
+        - id: done
+          title: Reported
+          result:
+            title: Your repair is reported
+            text: "{{steps.summary.text}}\n\nFor an emergency, also phone the repairs line now."
+    - id: finish-repair
+      title: Record a finished repair
+      icon: check
+      roles: { initiate: [repairs-team] }
+      screens:
+        - id: job
+          title: The job
+          submitLabel: Save
+          questions:
+            - { id: reference, type: text, label: Job reference, required: true }
+            - { id: note, type: textarea, label: What was done }
+        - id: done
+          title: Recorded
+          result:
+            title: "Job {{answers.job.reference}} recorded"
+            text: "{{answers.job.note}}"

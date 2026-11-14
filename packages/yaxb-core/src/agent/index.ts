@@ -17,7 +17,8 @@ import {
 } from "@langchain/core/messages";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
-import { journeyById, kioskContent, type Skill } from "../content/index.js";
+import { JOURNEY_SERVICES, journeyById, kioskContent, type Skill } from "../content/index.js";
+import { designInputSchema, DesignerError, designService, examplePool, type DesignerAgentFactory, type DesignLesson, type DesignResult } from "../designer/index.js";
 import type { Field } from "../journeys/index.js";
 import type { AgentEvent } from "../events/index.js";
 import { createKnowledgeService, curatedQA, knowledgeSources, type Passage, type Retriever } from "../knowledge/index.js";
@@ -40,7 +41,7 @@ import { ROUTE_LIMIT, routeTools } from "./routing.js";
 import type { TurnWeb } from "./tools.js";
 import { createMemoryFeedbackStore, feedbackSchema, summarizeFeedback, type FeedbackStore } from "../feedback/index.js";
 import { filterModeration, type ModerationStore, type ThreadState, type ThreadStore } from "../stores/index.js";
-import { createKioskAgent, createLeanKioskAgent, translate, type FinalState, type Harness, type HarnessOptions, type KioskAgent } from "./harness.js";
+import { createKioskAgent, createLeanKioskAgent, createServiceDesignerAgent, translate, type FinalState, type Harness, type HarnessOptions, type KioskAgent } from "./harness.js";
 import { deepPromptAddendum, turnPromptAddendum } from "./prompts.js";
 import { AUTO_ESCALATION_REASON, looksLikeEmergency } from "./safety.js";
 import { buildTools } from "./tools.js";
@@ -299,6 +300,41 @@ export function createKiosk(deps: KioskDeps) {
   }
 
   /**
+   * The Service Designer agent (designer/): a draft nested service from a narrative, with few-shot
+   * examples from content/designer and the published catalogue (`published`), and the reviewers'
+   * lessons as its memory. The draft is checked with the catalogue's compiler; nothing is saved here.
+   */
+  async function design(
+    input: { narrative: unknown; selection: Selection; published?: readonly { yaml: string }[]; lessons?: readonly DesignLesson[]; roles?: readonly string[] },
+    { signal }: { signal?: AbortSignal } = {},
+  ): Promise<DesignResult | { error: string }> {
+    const parsed = designInputSchema.safeParse({ narrative: input.narrative });
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "That description isn't valid." };
+    const { selection } = input;
+    const timeout = AbortSignal.timeout(limits.timeoutMs);
+    const runSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+    try {
+      const harness = resolveSelection(deps.env, selection).model.harness;
+      const model = await (deps.modelFactory ? deps.modelFactory(selection) : createChatModel(deps.env, selection));
+      return await designService(model, createServiceDesignerAgent as unknown as DesignerAgentFactory, {
+        narrative: parsed.data.narrative,
+        services: JOURNEY_SERVICES,
+        roles: input.roles,
+        pool: examplePool(kioskContent.designer, input.published ?? []),
+        lessons: input.lessons,
+        harness: harness === "lean" ? "lean" : "deep",
+        signal: runSignal,
+        recursionLimit: limits.recursionLimit,
+      });
+    } catch (e) {
+      if (e instanceof ProviderError || e instanceof DesignerError) return { error: e.message };
+      if (timeout.aborted) return { error: USER_MESSAGES.timeout };
+      deps.onError?.(e, { where: "design", provider: selection.provider, model: selection.model });
+      return { error: USER_MESSAGES.unavailable };
+    }
+  }
+
+  /**
    * Run one turn. Yields token / tool_start / tool_end / todos events, then (browser storage) one
    * `state`, then exactly one `done` or `error`. State is saved or returned only when the run completes.
    */
@@ -518,6 +554,7 @@ export function createKiosk(deps: KioskDeps) {
     forget: (threadId: string) => deps.threads.delete(threadId),
     vectorEnabled: knowledge.vectorEnabled,
     extract,
+    design,
     /** Record a session's feedback (validated; nothing identifying). */
     addFeedback: async (input: unknown) => feedback.add(feedbackSchema.parse(input)),
     /** Totals and comments for moderators (MOD-40). */

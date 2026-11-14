@@ -9,8 +9,9 @@ import { createMemoryRateLimiter } from "@sekaran-ind/yaxb-core/stores";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { settings, stringEnv, type Bindings } from "./env";
-import { catalogue, kiosk, library, moderators, reviews } from "./kiosk";
-import { ADMIN_ACTOR_ID, LibraryError, MAX_ENTRY_BYTES, type LibraryActor } from "@sekaran-ind/yaxb-core/library";
+import { catalogue, designer, kiosk, library, moderators, reviews } from "./kiosk";
+import { DesignerError, LESSONS_IN_MEMORY, MAX_NARRATIVE } from "@sekaran-ind/yaxb-core/designer";
+import { ADMIN_ACTOR_ID, LibraryError, MAX_ENTRY_BYTES, permissionsOf, type LibraryActor } from "@sekaran-ind/yaxb-core/library";
 import { proposalEntry, ReviewError, type Reviewer } from "@sekaran-ind/yaxb-core/reviews";
 import { auditEvent, looksLikeKey, MODERATOR_ROLES, statusOf, TeamRuleError } from "@sekaran-ind/yaxb-core/moderators";
 import { AVAILABILITY, roomName, teamMember } from "@sekaran-ind/yaxb-core/team";
@@ -523,7 +524,7 @@ async function libraryCall(c: Context<AppEnv>, fn: (a: LibraryActor, body: unkno
   try {
     return c.json((await fn(actor, body)) ?? { ok: true });
   } catch (e) {
-    if (e instanceof LibraryError) return jsonError(c, e.status, e.message);
+    if (e instanceof LibraryError || e instanceof DesignerError) return jsonError(c, e.status, e.message);
     throw e;
   }
 }
@@ -569,16 +570,72 @@ app.patch("/api/library/libraries/:id", (c) => libraryCall(c, (a, body) => libra
 app.post("/api/library/libraries/:id/:action{archive|restore}", (c) =>
   libraryCall(c, (a) => library(c.env).setLibraryStatus(a, c.req.param("id"), c.req.param("action") === "archive" ? "archived" : "active")),
 );
-/** A new service: { yaml, library? } (the default library when absent). */
+/** A new service: { yaml, library?, design? } (the default library when absent; `design`: the Service Designer draft it came from). */
 app.post("/api/library/services", (c) =>
   libraryCall(
     c,
-    (a, body) => {
-      const { library: lib, ...rest } = (body ?? {}) as { library?: unknown };
-      return library(c.env).createEntry(a, typeof lib === "string" ? lib : null, rest);
+    async (a, body) => {
+      const { library: lib, design, ...rest } = (body ?? {}) as { library?: unknown; design?: unknown };
+      const created = await library(c.env).createEntry(a, typeof lib === "string" ? lib : null, rest);
+      // Only the draft's own author links it, once; the agent then learns from this entry's review.
+      if (typeof design === "string" && design.length <= 64) await designer(c.env).link(design, created.entry.id, a.id);
+      return created;
     },
     { limited: true },
   ),
+);
+
+/**
+ * The Service Designer agent (LIB-27..32): a draft service from a narrative, with few-shot examples
+ * from the published catalogue and the lessons reviewers taught it. Nothing is saved but the draft
+ * (never the narrative); the author creates the entry, which is reviewed as usual. Anyone who may
+ * design may ask; it counts as a chat turn, and guests are also held to the form limit.
+ */
+const designRequestSchema = z.strictObject({
+  narrative: z.string().max(MAX_NARRATIVE + 200),
+  provider: z.string().min(1).max(60),
+  model: z.string().min(1).max(160),
+});
+app.post("/api/library/design", async (c) => {
+  await catalogue(c.env);
+  const actor = await libraryActor(c);
+  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, `design:${actor.id}`))) return jsonError(c, 429, "Too many requests in a short time. Please wait a minute.");
+  if (actor.guest && !(await withinLimit("form", c.env.FORM_LIMITER, `design:${actor.id}`))) return jsonError(c, 429, "Too many drafts in a short time. Please wait a minute.");
+  const parsed = designRequestSchema.safeParse((await readJson(c, MAX_FORM_BODY)).body);
+  if (!parsed.success) return jsonError(c, 422, parsed.error.issues[0]?.message ?? "Invalid request.");
+  const { narrative, provider, model } = parsed.data;
+  const [{ services, roles }, lessons] = await Promise.all([library(c.env).published([], { all: true }), designer(c.env).lessons(LESSONS_IN_MEMORY)]);
+  const out = await kiosk(c.env).design(
+    { narrative, selection: { provider, model, temperature: 0.2 }, published: services, lessons, roles: roles.map((r) => r.id) },
+    { signal: c.req.raw.signal },
+  );
+  if ("error" in out) return jsonError(c, 422, out.error);
+  const run = await designer(c.env).recorded(actor.id, out);
+  return c.json({ ...out, run: run.id });
+});
+
+/** What the Service Designer has learnt (administrators): read, add and delete lessons. */
+const mustManage = (a: LibraryActor) => {
+  if (!permissionsOf(a).manage) throw new LibraryError("Only administrators can change what the Service Designer has learnt.", 403);
+};
+app.get("/api/library/lessons", (c) =>
+  libraryCall(c, async (a) => {
+    mustManage(a);
+    return { lessons: await designer(c.env).lessons() };
+  }),
+);
+app.post("/api/library/lessons", (c) =>
+  libraryCall(c, async (a, body) => {
+    mustManage(a);
+    return { lesson: await designer(c.env).addLesson(body, a.name) };
+  }),
+);
+app.delete("/api/library/lessons/:id", (c) =>
+  libraryCall(c, async (a) => {
+    mustManage(a);
+    if (!(await designer(c.env).removeLesson(c.req.param("id")))) throw new LibraryError("That lesson isn't there any more.", 404);
+    return { removed: true };
+  }),
 );
 app.get("/api/library/entries/:id", (c) => libraryCall(c, (a) => library(c.env).entry(a, c.req.param("id"))));
 app.get("/api/library/entries/:id/audit", (c) => libraryCall(c, async (a) => ({ events: await library(c.env).auditTrail(a, c.req.param("id")) })));

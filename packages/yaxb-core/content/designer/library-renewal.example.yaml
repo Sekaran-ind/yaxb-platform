@@ -1,0 +1,32 @@
+# A few-shot example for the Service Designer agent (content/designer): a narrative someone might
+# write, and the nested service it should become. The test compiles every example.
+narrative: |
+  Our public library wants members to renew their books at the kiosk. They give their library card
+  number and how many books they have, and say whether any are overdue. Then they get a note telling
+  them to scan each book at the desk. Anyone can do it; no staff step is needed.
+service: |
+  kind: service
+  id: library-renewals
+  title: Library renewals
+  summary: Renew the books you have borrowed.
+  icon: book-open
+  journeys:
+    - id: renew-books
+      title: Renew your books
+      summary: Tell us your card and your books; the desk scans them.
+      icon: book-open
+      roles: { initiate: [visitor] }
+      screens:
+        - id: card
+          title: Your card
+          ask: Which library card are the books on?
+          submitLabel: Continue
+          questions:
+            - { id: card_number, type: text, label: Library card number, required: true, description: The number printed on the library card }
+            - { id: books, type: number, label: How many books, required: true }
+            - { id: overdue, type: boolean, label: Some are overdue, default: false }
+        - id: done
+          title: Renewal noted
+          result:
+            title: "Renewing {{answers.card.books}} books"
+            text: "Card: {{answers.card.card_number}}\n\nScan each book at the desk to finish the renewal. Overdue books may have a fee."

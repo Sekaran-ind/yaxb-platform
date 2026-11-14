@@ -1,0 +1,55 @@
+# A few-shot example for the Service Designer agent: choices, a question shown only when it
+# applies, a decision between endings, and a staff role that completes the journey.
+narrative: |
+  A bank branch wants customers to raise a complaint at the kiosk. They choose what it is about
+  (a card, an account, a loan, or suspected fraud), describe what happened, and say whether they
+  want a call back; if they do, we need a phone number. Suspected fraud must tell them to speak to
+  a person at the counter straight away. Everything else is logged for the complaints officer, who
+  completes it.
+service: |
+  kind: service
+  id: bank-complaints
+  title: Complaints
+  summary: Tell us what went wrong; the complaints officer follows it up.
+  icon: message-square
+  roles:
+    - { id: complaints-officer, label: Complaints officer, description: Reviews complaints and replies to customers }
+  journeys:
+    - id: raise-complaint
+      title: Raise a complaint
+      summary: Say what it is about and what happened.
+      icon: message-square
+      roles: { initiate: [visitor], complete: [complaints-officer] }
+      screens:
+        - id: details
+          title: Your complaint
+          ask: What is your complaint about?
+          submitLabel: Send
+          questions:
+            - id: topic
+              type: select
+              label: It is about
+              required: true
+              options:
+                - { value: card, label: A card }
+                - { value: account, label: An account }
+                - { value: loan, label: A loan }
+                - { value: fraud, label: Suspected fraud }
+            - { id: what_happened, type: textarea, label: What happened, required: true }
+            - { id: callback, type: boolean, label: Call me back, default: false }
+            - { id: phone, type: text, label: Phone number, required: true, when: "values.callback == true" }
+        - id: route
+          title: Where it goes
+          decide:
+            - { if: "answers.details.topic == 'fraud'", to: fraud }
+            - { to: logged }
+        - id: fraud
+          title: Speak to us now
+          result:
+            title: Please go to the counter now
+            text: Suspected fraud needs a person straight away. Show this screen at the counter.
+        - id: logged
+          title: Complaint logged
+          result:
+            title: Your complaint is logged
+            text: "About: {{answers.details.topic}}\n\nThe complaints officer will follow it up."

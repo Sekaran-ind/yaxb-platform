@@ -1,11 +1,12 @@
 import { createKiosk, type Kiosk } from "@sekaran-ind/yaxb-core/agent";
 import { JOURNEY_SERVICES, kioskContent } from "@sekaran-ind/yaxb-core/content";
 import { compileBundle } from "@sekaran-ind/yaxb-journeys/bundle";
+import { createDesignerService, type DesignerService } from "@sekaran-ind/yaxb-core/designer";
 import { createLibraryService, type LibraryService } from "@sekaran-ind/yaxb-core/library";
 import { createVectorizeRetriever } from "@sekaran-ind/yaxb-core/knowledge";
 import { createModeratorService, type ModeratorService } from "@sekaran-ind/yaxb-core/moderators";
 import { createReviewService, type ReviewService } from "@sekaran-ind/yaxb-core/reviews";
-import { createD1FeedbackStore, createD1Kv, createD1LibraryStore, createD1ModerationStore, createD1ModeratorStore, createD1ReviewStore, createD1ThreadStore } from "@sekaran-ind/yaxb-core/stores/d1";
+import { createD1FeedbackStore, createD1DesignerStore, createD1Kv, createD1LibraryStore, createD1ModerationStore, createD1ModeratorStore, createD1ReviewStore, createD1ThreadStore } from "@sekaran-ind/yaxb-core/stores/d1";
 import { KvStore } from "@sekaran-ind/yaxb-core/stores/kv";
 import { stringEnv, type Bindings } from "./env";
 
@@ -13,6 +14,7 @@ const kiosks = new WeakMap<object, Kiosk>();
 const moderatorServices = new WeakMap<object, ModeratorService>();
 const reviewServices = new WeakMap<object, ReviewService>();
 const libraryServices = new WeakMap<object, LibraryService>();
+const designerServices = new WeakMap<object, DesignerService>();
 const seeded = new WeakMap<object, Promise<unknown>>();
 
 /**
@@ -42,10 +44,23 @@ export function library(env: Bindings): LibraryService {
   let l = libraryServices.get(env);
   if (!l) {
     const audit = moderators(env).store;
-    l = createLibraryService(createD1LibraryStore(env.DB), { services: JOURNEY_SERVICES, audit: (e) => audit.audit(e), auditTrail: (id) => audit.auditLog({ targetId: id, limit: 200 }) });
+    l = createLibraryService(createD1LibraryStore(env.DB), {
+      services: JOURNEY_SERVICES,
+      audit: (e) => audit.audit(e),
+      auditTrail: (id) => audit.auditLog({ targetId: id, limit: 200 }),
+      // The Service Designer learns from every review of a service it drafted.
+      onReviewed: (entry, decision, note, reviewer) => designer(env).learn(entry, decision, note, reviewer.name),
+    });
     libraryServices.set(env, l);
   }
   return l;
+}
+
+/** The Service Designer's drafts and lessons, in D1 (LIB-27..32). */
+export function designer(env: Bindings): DesignerService {
+  let d = designerServices.get(env);
+  if (!d) designerServices.set(env, (d = createDesignerService(createD1DesignerStore(env.DB))));
+  return d;
 }
 
 /** Answers sent for review and moderators' reviews, in D1 (MOD-10..13, MOD-30..34). */
