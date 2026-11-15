@@ -15,6 +15,12 @@
 //   POST   /v1/mailbox/:id/pick  { by }                  take one (its body is deleted)
 //   GET    /v1/mailbox-status?ids=a,b                     waiting, delivered or expired
 //   GET    /v1/beacons    PUT /v1/beacons/:caseId         who holds which case (moderators' board)
+//   GET    /v2/collections/:name?since=<cursor>           sync v2 (SYN-1..6): changed rows since a cursor,
+//                                                          tombstones included → { protocol: 2, rows, cursor, more }
+//   PUT    /v2/collections/:name/:id  { baseVersion, data, conflict }   → 200 { row } | 409 { conflict, row }
+//   DELETE /v2/collections/:name/:id?baseVersion=&conflict=            → 200 | 409, a tombstone
+//   POST   /v2/collections/:name/batch  { ops: [{ op: put|delete, id, baseVersion, data }], conflict }
+//          (collections: notebooks, threads, schedule, service-data; conflict: reject-stale | last-write-wins)
 //   POST   /v1/events  (body: [event])                   a service's events (MET-2): facts, never answers
 //   GET    /v1/events?service=&since=                    a service's events, oldest first
 //
@@ -109,6 +115,42 @@ export function createBoxServer(config, { db = openDb(config.dbPath) } = {}) {
     return true;
   }
 
+  // Sync v2 (SYN-1..6; yaxb-core sync/protocol.ts): changes since a cursor, versions, tombstones,
+  // batches, and 409 with the box's copy for a stale write under reject-stale.
+  async function collectionsV2(req, res, url, name, rawId) {
+    if (!COLLECTIONS.includes(name)) throw new HttpError(404, 'No such collection.');
+    const body = req.method === 'PUT' || req.method === 'POST' ? await readJson(req) : null;
+    const policy = (url.searchParams.get('conflict') || body?.conflict) === 'last-write-wins' ? 'last-write-wins' : 'reject-stale';
+    const dataOf = (d) => (plainObject(d) ? d : null);
+    if (rawId === undefined) {
+      if (req.method !== 'GET') throw new HttpError(405, 'Method not allowed.');
+      return send(res, 200, { protocol: 2, ...db.changes(name, url.searchParams.get('since') || '') });
+    }
+    if (rawId === 'batch') {
+      if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.');
+      const ops = Array.isArray(body?.ops) ? body.ops.slice(0, 500) : [];
+      for (const op of ops) {
+        if (!plainObject(op) || !ID.test(String(op.id || ''))) throw new HttpError(400, 'Each op needs an id.');
+        if (op.op !== 'delete' && !dataOf(op.data)) throw new HttpError(400, `Op ${op.id}: data must be an object.`);
+        if (name === 'threads' && op.op !== 'delete' && !ID.test(String(op.data.notebookId || ''))) throw new HttpError(400, 'A conversation needs its notebookId.');
+      }
+      const results = db.batch(name, ops.map((op) => ({ id: String(op.id), baseVersion: Number(op.baseVersion || 0), data: op.op === 'delete' ? null : op.data, deleted: op.op === 'delete' })), policy);
+      return send(res, 200, { protocol: 2, results: results.map((r) => (r.ok ? { id: r.id, ok: true, row: r.row } : { id: r.id, conflict: true, row: r.row })) });
+    }
+    if (!ID.test(rawId)) throw new HttpError(400, 'Bad id.');
+    if (req.method === 'PUT') {
+      if (!dataOf(body?.data)) throw new HttpError(400, 'The body is { baseVersion, data: { … } }.');
+      if (name === 'threads' && !ID.test(String(body.data.notebookId || ''))) throw new HttpError(400, 'A conversation needs its notebookId.');
+      const r = db.write(name, { id: rawId, baseVersion: Number(body.baseVersion || 0), data: body.data }, policy);
+      return r.ok ? send(res, 200, { protocol: 2, row: r.row }) : send(res, 409, { conflict: true, row: r.row });
+    }
+    if (req.method === 'DELETE') {
+      const r = db.write(name, { id: rawId, baseVersion: Number(url.searchParams.get('baseVersion') || 0), deleted: true }, policy);
+      return r.ok ? send(res, 200, { protocol: 2, row: r.row }) : send(res, 409, { conflict: true, row: r.row });
+    }
+    throw new HttpError(405, 'Method not allowed.');
+  }
+
   async function route(req, res) {
     const url = new URL(req.url, 'http://box');
     const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
@@ -116,6 +158,7 @@ export function createBoxServer(config, { db = openDb(config.dbPath) } = {}) {
     if (req.method === 'OPTIONS') return send(res, 204);
     if (url.pathname === '/health') return send(res, 200, { ok: true, name: 'yaxb-box', version: VERSION });
     if (!tokenMatches(req.headers.authorization, config.token)) return send(res, 401, { error: 'The box token is missing or wrong.' });
+    if (parts[0] === 'v2' && parts[1] === 'collections') return collectionsV2(req, res, url, parts[2], parts[3]);
     if (parts[0] !== 'v1') throw new HttpError(404, 'Not found.');
 
     const [, resource, a, b] = parts;

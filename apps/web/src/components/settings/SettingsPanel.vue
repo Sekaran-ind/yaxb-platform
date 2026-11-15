@@ -2,6 +2,7 @@
 // Preferences, shown inside the kiosk (the profile button in the player): the visitor's profile,
 // language, layout, theme and voice first, then the knowledge, model and agent settings.
 import { LAYOUTS, type LayoutChoice } from "@sekaran-ind/yaxb-core/screens";
+import { offers } from "@/lib/surface";
 import { EMBEDDING_MODELS, embeddingModelFor } from "@sekaran-ind/yaxb-core/knowledge/semantic";
 import type { AgentSettings, LanguageCode } from "@sekaran-ind/yaxb-core/settings";
 import { Check, Lock, ServerCrash } from "@lucide/vue";
@@ -20,6 +21,7 @@ import { LANGUAGES } from "@/lib/languages";
 import BoxConnection from "./BoxConnection.vue";
 import FrontDeskSetup from "./FrontDeskSetup.vue";
 import ChildLockSetup from "./ChildLockSetup.vue";
+import BoxSync from "./BoxSync.vue";
 import { useChildMode } from "@/composables/child";
 import { casesCaps } from "@/composables/case-network";
 import ChoiceGrid from "./ChoiceGrid.vue";
@@ -57,8 +59,12 @@ const CASE_STORAGE = computed(() => [
 ]);
 const route = useRoute();
 const child = useChildMode();
-const sections = computed(() => (child.on.value ? SECTIONS.filter((x) => CHILD_SECTIONS.has(x.id)) : SECTIONS));
-const sectionFrom = (q: unknown) => (typeof q === "string" && sections.value.some((x) => x.id === q) ? q : "profile");
+/** The surface's own sections (SUR-3), then the child lock's limits. */
+const SURFACE_SECTIONS = SECTIONS.filter(
+  (x) => (x.id !== "front-desk" || offers("front-desk")) && (x.id !== "child" || offers("child-lock")) && (x.id !== "profile" || offers("profiles")),
+);
+const sections = computed(() => (child.on.value ? SURFACE_SECTIONS.filter((x) => CHILD_SECTIONS.has(x.id)) : SURFACE_SECTIONS));
+const sectionFrom = (q: unknown) => (typeof q === "string" && sections.value.some((x) => x.id === q) ? q : (sections.value[0]?.id ?? "language"));
 const section = ref(sectionFrom(route.query.prefs));
 watch(sections, () => (section.value = sectionFrom(section.value)));
 watch(
@@ -304,6 +310,7 @@ async function clearBrowser() {
           <p class="mt-1 mb-4 text-sm text-gray-500">Where notebooks, conversations and memory are kept. Switching doesn't move what's already stored.</p>
           <ChoiceGrid name="storage" :options="caps.storage" :value="agent.storage" @change="(storage) => setAgent({ storage })" />
           <BoxConnection v-if="agent.storage === 'box'" />
+          <BoxSync v-if="agent.storage === 'box'" />
           <div class="mt-4 flex flex-wrap items-center gap-3">
             <ConfirmAction
               label="Clear this browser's kiosk data"

@@ -22,6 +22,8 @@ const schema = z.object({
   MAILCHIMP_API_KEY: z.string().regex(/-[a-z]{2}\d+$/, "expected a Mailchimp key ending in -<dc>").optional(),
   MAILCHIMP_AUDIENCE_ID: z.string().optional(),
   KIOSK_BOX_ORIGINS: z.string().optional(),
+  /** The surface this Worker is (SUR-4, yaxb-core context): routes for features it lacks answer 404; unset: all. */
+  SURFACE: z.enum(["family", "business", "all"]).optional(),
   /**
    * Origins of the native app's pages (PLT-14), comma-separated. The app sends its session id in
    * X-Yaxb-Session instead of a cookie. Default: Capacitor's iOS and Android origins.

@@ -143,6 +143,10 @@ export type StepForm = {
   resultTitle: string;
   resultText: string;
   resultOk: string;
+  /** What the journey achieved here, for the dashboards (OUT-1). */
+  resultOutcome: string;
+  /** flow: parallel (JRN-46): the screens this one waits for, ids separated by commas. */
+  after: string;
 };
 
 export type JourneyForm = {
@@ -178,6 +182,8 @@ export const newStep = (id = "", kind: StepKind = "ask"): StepForm => ({
   resultTitle: "",
   resultText: "",
   resultOk: "",
+  resultOutcome: "",
+  after: "",
 });
 
 export const newJourneyForm = (id = ""): JourneyForm => {
@@ -219,6 +225,7 @@ export function journeyToForm(doc: Partial<Journey> | Record<string, unknown>): 
       resultTitle: str(result.title),
       resultText: str(result.text),
       resultOk: result.ok === undefined ? "" : str(result.ok),
+      resultOutcome: str(result.outcome),
     };
   });
   return {
@@ -271,7 +278,7 @@ export function formToJourney(f: JourneyForm): { ok: true; doc: Record<string, u
       step = { ...common, decide: branches(s.branches) };
     } else {
       const ok = s.resultOk.trim();
-      step = { ...common, final: true, result: compact({ title: s.resultTitle.trim(), text: s.resultText, ok: ok === "true" ? true : ok === "false" ? false : ok }) };
+      step = { ...common, final: true, result: compact({ title: s.resultTitle.trim(), text: s.resultText, ok: ok === "true" ? true : ok === "false" ? false : ok, outcome: s.resultOutcome.trim() }) };
     }
     // An ask step keeps `fields: []` so the compiler says what's missing; other empties go.
     steps[id] = Object.fromEntries(Object.entries(step).filter(([k, v]) => k === "fields" || !blank(v)));
@@ -326,6 +333,8 @@ export type JourneyDesign = {
   complete: string[];
   /** The first screen; empty: the first in the list. */
   start: string;
+  /** sequence: one screen after another; parallel (JRN-46): the screens that ask or run a service, in any order. */
+  flow: "sequence" | "parallel";
   screens: StepForm[];
 };
 
@@ -354,6 +363,7 @@ export const newJourneyDesign = (id = "new-journey", title = "New journey"): Jou
   initiate: [],
   complete: [],
   start: "",
+  flow: "sequence",
   screens: [
     { ...newScreen("questions", "ask"), label: "Questions", fieldsYaml: "- { id: name, type: text, label: Your name, required: true }" },
     { ...newScreen("done", "final"), label: "Done", resultTitle: "Thank you" },
@@ -394,12 +404,14 @@ export function designFromDoc(doc: Record<string, unknown>): { design: ServiceDe
         then: Array.isArray(next) ? "branches" : "step",
         next: typeof next === "string" ? next : "",
         branches: (Array.isArray(s.decide) ? s.decide : Array.isArray(next) ? next : []).map((b: Branch) => ({ ...(b?.if !== undefined ? { if: str(b.if) } : {}), to: str(b?.to) })),
+        after: Array.isArray(s.after) ? (s.after as unknown[]).map(str).join(", ") : "",
         resultTitle: str(result.title),
         resultText: str(result.text),
         resultOk: result.ok === undefined ? "" : str(result.ok),
+      resultOutcome: str(result.outcome),
       };
     });
-    return { id: str(j.id), title: str(j.title), summary: str(j.summary), icon: str(j.icon), initiate: strs(jr.initiate), complete: strs(jr.complete), start: str(j.start), screens };
+    return { id: str(j.id), title: str(j.title), summary: str(j.summary), icon: str(j.icon), initiate: strs(jr.initiate), complete: strs(jr.complete), start: str(j.start), flow: j.flow === "parallel" ? "parallel" : "sequence", screens };
   });
   return {
     design: {
@@ -436,22 +448,26 @@ export function designToDoc(d: ServiceDesign): { ok: true; doc: Record<string, u
   };
   const branches = (list: Branch[]) => list.map((b, i) => (i < list.length - 1 ? { if: (b.if ?? "").trim(), to: b.to.trim() } : { to: b.to.trim() }));
   const journeys = d.journeys.map((j) => {
+    const parallel = j.flow === "parallel";
     const screens = j.screens.map((s) => {
       const at = `journey '${j.id}' screen '${s.id}'`;
-      const then = s.then === "branches" ? branches(s.branches) : s.next.trim() || undefined;
+      // A task of a parallel journey has no next of its own; it may wait for others.
+      const task = parallel && (s.kind === "ask" || s.kind === "service");
+      const then = task ? undefined : s.then === "branches" ? branches(s.branches) : s.next.trim() || undefined;
+      const after = task ? s.after.split(/[\s,]+/).filter(Boolean) : [];
       const base = { id: s.id.trim(), title: s.label.trim(), stage: s.stage.trim(), icon: s.icon.trim() };
       let screen: Record<string, unknown>;
-      if (s.kind === "ask") screen = { ...base, ask: s.ask.trim(), questions: parse(at, s.fieldsYaml, "list") ?? [], submitLabel: s.submitLabel.trim(), role: s.role.trim(), next: then };
-      else if (s.kind === "service") screen = { ...base, service: s.service.trim(), with: parse(at, s.withYaml, "mapping"), onError: s.onError === "continue" ? "continue" : undefined, next: then };
+      if (s.kind === "ask") screen = { ...base, ask: s.ask.trim(), questions: parse(at, s.fieldsYaml, "list") ?? [], submitLabel: s.submitLabel.trim(), role: s.role.trim(), next: then, after: after.length ? after : undefined };
+      else if (s.kind === "service") screen = { ...base, service: s.service.trim(), with: parse(at, s.withYaml, "mapping"), onError: s.onError === "continue" ? "continue" : undefined, next: then, after: after.length ? after : undefined };
       else if (s.kind === "decide") screen = { ...base, decide: branches(s.branches) };
       else {
         const ok = s.resultOk.trim();
-        screen = { ...base, result: compact({ title: s.resultTitle.trim(), text: s.resultText, ok: ok === "true" ? true : ok === "false" ? false : ok }) };
+        screen = { ...base, result: compact({ title: s.resultTitle.trim(), text: s.resultText, ok: ok === "true" ? true : ok === "false" ? false : ok, outcome: s.resultOutcome.trim() }) };
       }
       return Object.fromEntries(Object.entries(screen).filter(([k, v]) => k === "questions" || !blank(v)));
     });
     const roles = compact({ initiate: j.initiate, complete: j.complete });
-    return compact({ id: j.id.trim(), title: j.title.trim(), summary: j.summary.trim(), icon: j.icon.trim(), roles: Object.keys(roles).length ? roles : undefined, start: j.start.trim(), screens });
+    return compact({ id: j.id.trim(), title: j.title.trim(), summary: j.summary.trim(), icon: j.icon.trim(), roles: Object.keys(roles).length ? roles : undefined, flow: parallel ? "parallel" : undefined, start: j.start.trim(), screens });
   });
   if (problems.length) return { ok: false, problems };
   return {

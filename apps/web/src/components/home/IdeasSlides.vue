@@ -7,6 +7,7 @@
 // #ideas-family and #ideas-business (the carousel's links) open that group's first idea.
 // Every card sits in the same grid cell, so the section keeps the tallest card's height.
 import { ArrowLeft, ArrowRight, Bike, Building2, GraduationCap, House, Scissors, UtensilsCrossed, Wrench, type LucideIcon } from "@lucide/vue";
+import { offers } from "@/lib/surface";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { cn } from "@/lib/cn";
 
@@ -28,7 +29,7 @@ const GROUPS: { id: Group; label: string }[] = [
   { id: "family", label: "Family and personal" },
 ];
 
-const IDEAS: Idea[] = [
+const ALL_IDEAS: Idea[] = [
   {
     group: "business",
     icon: Bike,
@@ -156,6 +157,9 @@ const IDEAS: Idea[] = [
   },
 ];
 
+/** `only`: one group's ideas, without the switch (a surface's own home page, SUR-2). */
+const props = defineProps<{ only?: Group }>();
+const IDEAS = props.only ? ALL_IDEAS.filter((x) => x.group === props.only) : ALL_IDEAS;
 const current = ref(0);
 const idea = computed(() => IDEAS[current.value]!);
 const go = (i: number) => (current.value = (i + IDEAS.length) % IDEAS.length);
@@ -193,7 +197,7 @@ function onKey(e: KeyboardEvent) {
 
     <!-- Controls: the two groups, then where you are and Previous/Next -->
     <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
-      <div class="flex flex-wrap gap-1 rounded-full bg-mist p-1 ring-1 ring-gray-200/70" role="group" aria-label="Kind of idea">
+      <div v-if="!only" class="flex flex-wrap gap-1 rounded-full bg-mist p-1 ring-1 ring-gray-200/70" role="group" aria-label="Kind of idea">
         <button
           v-for="g in GROUPS"
           :key="g.id"
@@ -235,7 +239,10 @@ function onKey(e: KeyboardEvent) {
             <ul class="mt-2 flex flex-wrap gap-1.5">
               <li v-for="r in i.roles" :key="r" class="chip">{{ r }}</li>
             </ul>
-            <div class="mt-auto pt-7"><RouterLink :to="designLink(i.idea)" class="btn-primary h-11 px-5">Design this service</RouterLink></div>
+            <div class="mt-auto pt-7">
+              <RouterLink v-if="offers('catalogue')" :to="designLink(i.idea)" class="btn-primary h-11 px-5">Design this service</RouterLink>
+              <RouterLink v-else to="/kiosk" class="btn-primary h-11 px-5">Try it in the kiosk</RouterLink>
+            </div>
           </div>
           <ol class="grid gap-px bg-gray-200/70 sm:grid-cols-2">
             <li v-for="(s, k) in i.steps" :key="s.title" class="bg-surface p-6">

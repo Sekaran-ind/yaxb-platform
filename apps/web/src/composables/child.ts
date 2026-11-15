@@ -7,6 +7,7 @@
 // - Commands can't change the knowledge settings.
 // Only the PIN turns the device lock off; an Under 18 profile stays in child mode while it is open.
 import { computed } from "vue";
+import { offers } from "@/lib/surface";
 import { useAccount } from "./account";
 import { settings, updateSettings } from "./settings";
 
@@ -24,7 +25,8 @@ export const childLock = computed(() => settings.child.on);
 export function useChildMode() {
   const account = useAccount();
   const minor = computed(() => account.profile.value?.ageRange === "under-18");
-  const on = computed(() => settings.child.on || minor.value);
+  // Only on a surface that offers it (SUR-3): the business surface has no child lock or family profiles.
+  const on = computed(() => offers("child-lock") && (settings.child.on || minor.value));
   return { on, minor, lock: childLock };
 }
 

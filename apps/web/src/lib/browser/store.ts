@@ -5,6 +5,7 @@
 //   server     conversations on the server (D1); notebooks still in IndexedDB
 // Nothing here is sent anywhere except with a chat turn, as that turn's context.
 import type { Notebook, NotebookSource } from "@sekaran-ind/yaxb-core/notebook";
+import { trackWrite } from "./sync-hook";
 import { createBoxClient, type BoxClient } from "@sekaran-ind/yaxb-core/stores/box";
 import type { ThreadState } from "@sekaran-ind/yaxb-core/stores";
 import type { StorageId } from "@sekaran-ind/yaxb-core/settings";
@@ -145,6 +146,26 @@ function boxStore(client: BoxClient): KioskStore {
 
 export type BoxConnection = { url: string; token: string };
 
+/** A local store whose writes go to the box at the next sync (composables/sync.ts). */
+function syncedStore(local: KioskStore): KioskStore {
+  return {
+    ...local,
+    kind: "box",
+    putNotebook: async (n) => (await local.putNotebook(n), trackWrite("notebooks", n.id, n)),
+    async deleteNotebook(id) {
+      const threads = await local.listThreads(id);
+      await local.deleteNotebook(id);
+      trackWrite("notebooks", id, null);
+      for (const t of threads) trackWrite("threads", t.id, null);
+    },
+    putThread: async (t) => (await local.putThread(t), trackWrite("threads", t.id, t)),
+    deleteThread: async (id) => (await local.deleteThread(id), trackWrite("threads", id, null)),
+  };
+}
+
+/** The local copy, for rows pulled from the box (written without reporting them back). */
+export const boxMirror = (): KioskStore | null => (typeof indexedDB === "undefined" ? null : indexedDbStore("box"));
+
 /**
  * The store for a storage setting. Box needs a connection (Settings -> Storage). Falls back to
  * session memory when IndexedDB isn't available (some private windows).
@@ -152,7 +173,9 @@ export type BoxConnection = { url: string; token: string };
 export function storeFor(kind: StorageId, box?: BoxConnection | null): KioskStore {
   if (kind === "box") {
     if (!box?.url || !box.token) throw new Error("Connect a yaxb-box in Settings → Storage first.");
-    return boxStore(createBoxClient(box));
+    // Sync v2 (SYN-5): a copy on this device that works offline, synced with the box.
+    if (typeof indexedDB === "undefined") return boxStore(createBoxClient(box));
+    return syncedStore(indexedDbStore("box"));
   }
   if (kind === "session" || typeof indexedDB === "undefined") return memoryStore();
   return indexedDbStore(kind);

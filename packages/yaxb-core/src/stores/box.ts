@@ -3,6 +3,7 @@
 // local server all use the same client.
 import type { Kv, KvItem } from "./kv.js";
 import type { ThreadState, ThreadStore } from "./index.js";
+import type { ConflictPolicy, SyncCollection, SyncOp, SyncResult, SyncRow } from "../sync/index.js";
 
 export type BoxRecord<T> = { id: string; parent: string | null; data: T; updatedAt: string };
 
@@ -60,6 +61,12 @@ export function createBoxClient({ url, token, fetch: fetchImpl = globalThis.fetc
     get: async <T>(collection: "notebooks" | "threads", id: string) => (await call<BoxRecord<T>>(`/v1/${collection}/${enc(id)}`))?.data ?? null,
     put: async (collection: "notebooks" | "threads", id: string, data: object) => void (await call(`/v1/${collection}/${enc(id)}`, { method: "PUT", body: data })),
     delete: async (collection: "notebooks" | "threads", id: string) => void (await call(`/v1/${collection}/${enc(id)}`, { method: "DELETE" })),
+    /** Sync v2 (SYN-1): what changed in a collection since a cursor, tombstones included. */
+    changes: async (collection: SyncCollection, since: string) =>
+      (await call<{ rows: SyncRow[]; cursor: string; more: boolean }>(`/v2/collections/${enc(collection)}?since=${enc(since)}`)) ?? { rows: [], cursor: since, more: false },
+    /** Sync v2: many writes with the versions this device last saw; a stale one comes back as a conflict with the box's copy. */
+    batch: async (collection: SyncCollection, ops: SyncOp[], policy: ConflictPolicy = "reject-stale") =>
+      (await call<{ results: SyncResult[] }>(`/v2/collections/${enc(collection)}/batch`, { method: "POST", body: { ops, conflict: policy } }))?.results ?? [],
     /** The box as a Kv, for KvStore (Deep Agents' StoreBackend). */
     kv(): Kv {
       return {

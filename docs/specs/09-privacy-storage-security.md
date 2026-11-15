@@ -33,3 +33,14 @@
 | SEC-4 | Server-side fetching of websites (KNW-21) must refuse private and local addresses, re-check redirects, and cap size and time. | Built |
 | SEC-5 | Moderator keys (MOD-20) must be random, at least 128 bits, shown once, stored hashed, revocable and optionally expiring; administrator access uses a separate secret. | Built |
 | SEC-6 | A local box must use TLS and a bearer token, and accept browser requests only from the kiosk's configured origins. | Built |
+
+## Sync with the box (v2)
+
+| ID | Requirement | Status |
+|---|---|---|
+| SYN-1 | The box keeps a version for every row (notebooks, conversations, schedules, service data) and a change sequence, so a device pulls only what changed since its cursor. | Built |
+| SYN-2 | A write names the version the device last saw; a stale one is refused with the box's copy (or always applied when asked, last write wins). | Built |
+| SYN-3 | A delete is a tombstone, pulled like any change, so an offline device can't bring a deleted row back unnoticed; deleting a notebook deletes its conversations. | Built |
+| SYN-4 | The older routes keep working alongside: a blind write still bumps the version, and a delete still leaves a tombstone. | Built |
+| SYN-5 | With Storage set to the box, the kiosk keeps notebooks, conversations, the Scheduler and its loaded services on the device and syncs them: at start, every minute, soon after a change, and when the network comes back. Changes made offline are kept and sent later. | Built |
+| SYN-6 | A row changed here and on the box goes on a conflict list (Preferences → Storage) in plain words, where a person keeps this device's copy or the box's; nothing is decided for them. | Built |

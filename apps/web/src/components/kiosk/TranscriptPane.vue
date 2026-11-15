@@ -5,6 +5,7 @@
 // conversation; a request's reference (R-XXXXXX) shows where that request is. Journeys and
 // references stay in the conversation, so opening it later shows where they are.
 import { MAX_MESSAGE_CHARS } from "@sekaran-ind/yaxb-core/schemas";
+import { offers } from "@/lib/surface";
 import { ArrowUp, Bot, CalendarDays, CheckCircle2, Circle, CircleDot, HardDrive, Inbox, LayoutGrid, ListChecks, Loader2, Mic, MicOff, Paperclip, Plus, ShieldCheck, UserRoundCog, Wrench } from "@lucide/vue";
 import type { ServiceHandler } from "@sekaran-ind/yaxb-core/journeys";
 import { CASE_REF } from "@sekaran-ind/yaxb-core/cases";
@@ -140,8 +141,8 @@ const fileInput = ref<HTMLInputElement | null>(null);
 const MENU_ITEM = "flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-ink outline-none hover:bg-mist focus-visible:bg-mist focus-visible:ring-2 focus-visible:ring-brand/40";
 const SLASH = computed(() => [
   { cmd: "/journeys", label: "Start a journey here", icon: ListChecks },
-  ...(props.member && !props.restricted ? [{ cmd: "/staff", label: "Staff journeys and requests waiting for you", icon: UserRoundCog }] : []),
-  { cmd: "/request", label: "Check a request by its reference", icon: Inbox },
+  ...(props.member && !props.restricted && offers("staff") ? [{ cmd: "/staff", label: "Staff journeys and requests waiting for you", icon: UserRoundCog }] : []),
+  ...(offers("requests") ? [{ cmd: "/request", label: "Check a request by its reference", icon: Inbox }] : []),
   // Quick tools and the Scheduler (not at the front desk).
   ...(props.restricted
     ? []

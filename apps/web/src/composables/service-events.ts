@@ -14,7 +14,7 @@ const MAX_QUEUE = 500;
 export const storageOf = (entryId: string | null) => (entryId ? (catalogue.value.find((s) => s.entry_id === entryId)?.storage ?? "none") : "none");
 
 /** Record one fact about a service's journey (nothing happens for a service without storage). */
-export function recordEvent(entryId: string | null, e: { journey: string; kind: EventKind; run: string; step?: string | null; role?: string | null; ms?: number | null; ok?: boolean | null; staff?: boolean }) {
+export function recordEvent(entryId: string | null, e: { journey: string; kind: EventKind; run: string; step?: string | null; role?: string | null; ms?: number | null; ok?: boolean | null; outcome?: string | null; staff?: boolean }) {
   if (!entryId || storageOf(entryId) === "none") return;
   const { staff, ...rest } = e;
   queue.push(newEvent({ ...rest, service: entryId, ms: rest.ms === undefined || rest.ms === null ? null : Math.max(0, Math.round(rest.ms)), actor: staff && kioskViewer.value.member ? (kioskViewer.value.name ?? null) : null }));

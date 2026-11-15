@@ -13,6 +13,7 @@ import { createMachine, type AnyStateMachine } from "xstate";
 import { toDirectedGraph } from "@xstate/graph";
 import type { Branch, Journey, Step } from "./journeys.js";
 import { VISITOR_ROLE } from "./roles.js";
+import { afterTasks, journeyTasks } from "./run.js";
 
 export const FAILED_STATE = "(failed)";
 
@@ -40,6 +41,24 @@ function exits(s: Step): { event: string; to: string; label: string | null }[] {
 /** The journey as an XState machine (structure only: no actions, no guards; every branch is an event). */
 export function journeyMachine(j: Journey): AnyStateMachine {
   const states: Record<string, unknown> = {};
+  if (j.flow === "parallel") {
+    // The tasks are regions of one parallel state; when all are done, the ending part.
+    const tasks = journeyTasks(j);
+    const end = afterTasks(j);
+    states.tasks = {
+      type: "parallel",
+      states: Object.fromEntries(
+        tasks.map((id) => [id, { initial: "pending", description: j.steps[id]!.label ?? id, states: { pending: { on: { READY: "ready" } }, ready: { on: { DONE: "done" } }, done: { type: "final" } } }]),
+      ),
+      ...(end ? { onDone: { target: end } } : {}),
+    };
+    for (const [id, st] of Object.entries(j.steps)) {
+      if (tasks.includes(id)) continue;
+      const out = exits(st).filter((e) => j.steps[e.to]);
+      states[id] = kindOf(st) === "final" ? { type: "final", description: st.label ?? id } : { description: st.label ?? id, on: Object.fromEntries(out.map((e) => [e.event, { target: e.to }])) };
+    }
+    return createMachine({ id: j.id, initial: "tasks", states } as never);
+  }
   let failed = false;
   for (const [id, s] of Object.entries(j.steps)) {
     const out = exits(s).filter((e) => e.to === FAILED_STATE || j.steps[e.to]);
@@ -50,8 +69,55 @@ export function journeyMachine(j: Journey): AnyStateMachine {
   return createMachine({ id: j.id, initial: j.steps[j.start] ? j.start : Object.keys(j.steps)[0], states } as never);
 }
 
+/** A parallel journey's graph: tasks by how deep their `after` goes, then the ending part below. */
+function parallelGraph(j: Journey): FlowGraph {
+  const tasks = journeyTasks(j);
+  const end = afterTasks(j);
+  const edges: FlowEdge[] = [];
+  const dependents = new Set(tasks.flatMap((t) => j.steps[t]!.after ?? []));
+  for (const t of tasks) for (const d of j.steps[t]!.after ?? []) if (tasks.includes(d)) edges.push({ from: d, to: t, event: "AFTER", label: null });
+  for (const t of tasks) {
+    const st = j.steps[t]!;
+    if (end && !dependents.has(t)) edges.push({ from: t, to: end, event: "ALL_DONE", label: "when every task is done" });
+    if (st.service && st.onError !== "continue") edges.push({ from: t, to: FAILED_STATE, event: "ERROR", label: "if it fails" });
+  }
+  for (const [id, st] of Object.entries(j.steps)) if (!tasks.includes(id)) for (const e of exits(st)) if (e.to === FAILED_STATE || j.steps[e.to]) edges.push({ from: id, ...e });
+  // Depth: a task one row below what it waits for; the ending part below the deepest task.
+  const taskDepth = new Map<string, number>();
+  const depthOf = (t: string, seen = new Set<string>()): number => {
+    if (taskDepth.has(t)) return taskDepth.get(t)!;
+    if (seen.has(t)) return 0;
+    seen.add(t);
+    const deps = (j.steps[t]!.after ?? []).filter((d) => tasks.includes(d));
+    const d = deps.length ? 1 + Math.max(...deps.map((x) => depthOf(x, seen))) : 0;
+    taskDepth.set(t, d);
+    return d;
+  };
+  tasks.forEach((t) => depthOf(t));
+  const depth = new Map<string, number>(taskDepth);
+  const first = Math.max(-1, ...taskDepth.values()) + 1;
+  if (end) {
+    depth.set(end, first);
+    const queue = [end];
+    while (queue.length) {
+      const at = queue.shift()!;
+      for (const e of edges.filter((x) => x.from === at && !tasks.includes(x.to))) if (!depth.has(e.to)) (depth.set(e.to, depth.get(at)! + 1), queue.push(e.to));
+    }
+  }
+  const failing = edges.some((e) => e.to === FAILED_STATE);
+  if (failing && !depth.has(FAILED_STATE)) depth.set(FAILED_STATE, first);
+  const base = Math.max(0, ...depth.values()) + 1;
+  const ids = [...Object.keys(j.steps), ...(failing ? [FAILED_STATE] : [])];
+  const nodes: FlowNode[] = ids.map((id) => {
+    const st = j.steps[id];
+    return { id, label: st ? (st.label ?? id) : "Failed", kind: st ? kindOf(st) : "failed", role: st?.role ?? null, depth: depth.get(id) ?? base, reachable: depth.has(id) };
+  });
+  return { journey: j.id, start: tasks[0] ?? end ?? j.start, nodes, edges };
+}
+
 /** The machine's graph, with each step's kind, role and depth (its distance from the start). */
 export function journeyGraph(j: Journey): FlowGraph {
+  if (j.flow === "parallel") return parallelGraph(j);
   const directed = toDirectedGraph(journeyMachine(j));
   const edges: FlowEdge[] = [];
   const ids: string[] = [];
@@ -109,8 +175,13 @@ export function journeyGraph(j: Journey): FlowGraph {
 export function waysThrough(j: Journey): { end: string; steps: string[]; via: (string | null)[] }[] {
   const g = journeyGraph(j);
   const prev = new Map<string, FlowEdge>();
-  const seen = new Set([g.start]);
-  const queue = [g.start];
+  // A parallel journey: every task (in the order of what they wait for), then from the ending part.
+  const depthOf = (id: string) => g.nodes.find((n) => n.id === id)?.depth ?? 0;
+  const tasks = j.flow === "parallel" ? journeyTasks(j).sort((a, b) => depthOf(a) - depthOf(b)) : [];
+  const from = j.flow === "parallel" ? afterTasks(j) : g.start;
+  if (!from) return [];
+  const seen = new Set([from, ...tasks]);
+  const queue = [from];
   while (queue.length) {
     const at = queue.shift()!;
     for (const e of g.edges.filter((x) => x.from === at)) {
@@ -125,7 +196,8 @@ export function waysThrough(j: Journey): { end: string; steps: string[]; via: (s
     .map((n) => {
       const steps = [n.id];
       const via: (string | null)[] = [];
-      for (let e = prev.get(n.id); e; e = prev.get(e.from)) (steps.unshift(e.from), via.unshift(e.label));
+      for (let e = prev.get(n.id); e && !tasks.includes(e.from); e = prev.get(e.from)) (steps.unshift(e.from), via.unshift(e.label));
+      if (tasks.length) return { end: n.id, steps: [...tasks, ...steps], via: [...tasks.slice(1).map(() => null), "when every task is done", ...via] };
       return { end: n.id, steps, via };
     });
 }

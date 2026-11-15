@@ -291,6 +291,7 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
 ## Service storage and events (LIB-60..62, MET-1..2)
 
 - **Core** `metrics/` (export `./metrics`): `SERVICE_STORAGE` (none, box, server), `EVENT_KINDS`, `serviceEventSchema` (strict: facts only), `newEvent`, `EventStore` (memory; D1 `createD1EventStore`, migration 0012 `service_events`), `serviceMetrics(events, journeys)` (starts, finishes, completion, hand-overs, open/closed/declined requests, weeks, and per journey a funnel, median time, waits per role, reassignments, failures, forms filled from words) and `activityLog`. Library entries carry `storage` (migration 0012), set by `setEntryStorage` (administrators); `published()` gives each service's `state` and `storage`.
+- **Outcomes** (OUT-1..3): `result.outcome` (yaxb-journeys `OUTCOME_ID`, kept by `ServiceDesign`'s `resultOutcome`) comes back in `RunState.result.outcome`; `JourneyPanel` records `journey.outcome` (event field `outcome`); `serviceMetrics` gives `outcomes` per journey and service (labels from `journeys[].outcomes`).
 - **Box**: `/v1/events` (POST a batch, GET `?service=&since=`).
 - **Worker**: `PUT /api/library/entries/:id/storage` (server needs `CASES_CENTRAL`, the paid plan), `POST /api/events` (only for services stored on the server), `GET /api/events?service=` (administrators, moderators, reviewers).
 - **Web**: `composables/service-events.ts` (`recordEvent`, batched, kept offline) fed by `JourneyPanel` (started, screen reached, finished, handed, stopped, step failed, form filled from words, a member's answer) and request actions (`CaseView`: picked up, closed, declined; `RequestBoard`: reassigned). `AddServiceFlow.vue` (Add, People, Storage) in My notebook → Services, and "People and storage" on a loaded service.
@@ -317,6 +318,27 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
 ## My work and service dashboards (WRK-1..2, MET-3..5)
 
 - Staff sections `work` and `dashboards` (yaxb-journeys `STAFF_SECTIONS`, `content/services/staff.service.yaml`; My work opens first). `components/moderation/MyWork.vue`: `caseQueue` (mine, started), `/api/agent/moderation?state=open`, `/api/reviews/answers?state=open`. `components/moderation/ServiceDashboard.vue` (`?service=<entry id>`): `loadEvents(entryId)` in `composables/service-events.ts` (box `/v1/events`, or `/api/events`), core `serviceMetrics` and `activityLog`; single-series bars with their numbers as text.
+
+## Running journeys on XState; parallel journeys (JRN-45..49)
+
+- yaxb-journeys `run.ts`: `createRunner` runs every journey on an XState actor (sequence: a state per step with `enter`/`asking`/`waiting`/`run`/`route`; a hop counter keeps "went round in circles"). `flow: parallel` (Journey) with `after:` (Step): the tasks are regions of a `tasks` parallel state (pending → ready → active → done), then the first non-task step; `focus(step)`, `RunState.tasks` (`TaskState`), `journeyTasks`, `afterTasks`; `replay` answers tasks in any order. `settle()` waits for running services and focuses this person's first ready task. Nested services take `flow` and screen `after`; `ServiceDesign` keeps them (`JourneyDesign.flow`, `StepForm.after`). Vue `JourneyTasks` in `JourneyRunner` and the web's `JourneyPanel`. `machine.ts` has a parallel graph (`parallelGraph`).
+
+## Sync with the box (SYN-1..6)
+
+- Box: records carry `version`, `deleted`, `seq` (migration 4); `/v2/collections/:name` (GET `?since=`, PUT/DELETE with `baseVersion`, POST `/batch`, `conflict` reject-stale | last-write-wins); collections notebooks, threads, schedule, service-data; v1 writes bump versions, v1 deletes tombstone.
+- Core `sync/` (export `./sync`): `applyWrite`, cursors, `createSyncEngine({ remote, shadows, adapters })` (`track`, `sync`, `conflicts`, `resolve(key, "mine" | "theirs")`), `createMemoryShadows`, `boxRemote`; box client `changes` and `batch`.
+- Web: Storage "box" is a local IndexedDB copy (`storeFor` → `syncedStore`) whose writes go through `lib/browser/sync-hook.ts` `trackWrite` (also the Scheduler and `library.ts`'s loaded services, `SERVICE_DATA_ID`); `lib/browser/sync-shadows.ts` (IndexedDB `yaxb-sync`); `composables/sync.ts` (`startSync` from App.vue, `syncState`, `syncConflicts`, `resolveConflict`, `syncPulls`); `components/settings/BoxSync.vue` in Preferences → Storage.
+
+## Businesses (tenants) and join links (TEN-1..8)
+
+- Core `tenants/` (export `./tenants`): `createTenantService(store, { issueMember })` (`createTenant`, `directory`, `issueToken` (`autoAccept` only for a new business's first administrator), `tokens`, `revokeToken`, `preview`, `redeem` → claim, `requests`, `decide`, `status`, `collect` → key, made then), memory and D1 stores (migrations 0013, 0014). D1 member and library stores take `{ tenant }` and scope every query (a key hash finds its member anywhere; `library_roles` is keyed by tenant and id); the audit log has a tenant.
+- Worker: `tenantContext` (AsyncLocalStorage, `worker/node-modules.d.ts`) set per request from the member cookie (or `?tenant=` on GETs); `moderators(env, tenant)`, `library(env, tenant)`, `reviews(env, tenant)` default to it; sign-in runs in the key's tenant. Routes `/api/directory`, `/api/tenants`, `/api/tenant`, `/api/tenant/join-links[/:id]`, `/api/tenant/join-requests[/:id/decide]`, `/api/join/:token`, `/api/join-requests/:id[/collect]` (claim in `X-Yaxb-Claim`). Web: `moderation/JoinLinks.vue` in Administration, `pages/JoinPage.vue` (`/join/:token`).
+
+## Surfaces (SUR-1..6)
+
+- Core `context/` (export `./context`): `resolveContext({ surface, tenant, jurisdiction })`, `offers`, `servesApi`, `surfaceName` (as clinux-core's; "realm" is kept for the regulatory context).
+- `vite build --mode family|business` → `wrangler.family.jsonc` (anjal-family) or `wrangler.business.jsonc` (anjal-business), into `dist/family|business`, `VITE_SURFACE`; scripts `dev:`, `build:`, `preview:`, `deploy:` per surface (build right before preview or deploy: wrangler follows the last build). Web `lib/surface.ts` (`offers`, `SURFACE`, `SURFACE_NAME`) gates the router (home page, catalogue, join), navbar, Quick tools, slash commands, Preferences sections, profiles and the child lock; `pages/FamilyHomePage.vue`, `pages/BusinessHomePage.vue`; `HeroCarousel` shows a surface's slides and features, `IdeasSlides only`. The Worker answers 404 on routes its surface lacks (`SURFACE` var).
+- Windows builds: vite.config.ts normalises the drive letter (Git Bash's `c:` vs PowerShell's `C:` made two copies of vue-router's keys).
 
 ## Journey summaries
 

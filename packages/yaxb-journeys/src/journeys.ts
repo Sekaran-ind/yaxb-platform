@@ -46,7 +46,8 @@ export type Step = {
   onError?: "fail" | "continue";
   decide?: Branch[];
   final?: boolean;
-  result?: { title?: string; text?: string; ok?: boolean | string };
+  /** `outcome`: what the journey achieved, an id the dashboards count (OUT-1), never templated. */
+  result?: { title?: string; text?: string; ok?: boolean | string; outcome?: string };
   next?: string | Branch[];
   label?: string;
   stage?: string;
@@ -58,6 +59,11 @@ export type Step = {
    * answer, it waits there: the journey is handed over (a case, which the host stores).
    */
   role?: string;
+  /**
+   * flow: parallel only (JRN-46): the tasks this one waits for. Without any, a task is available
+   * as soon as the journey starts.
+   */
+  after?: string[];
   /** The questionnaire this ask step uses; its questions are in `fields`. */
   questionnaire?: string;
   /** The questionnaire's pages, by field id (absent for a step with its own fields). */
@@ -76,13 +82,21 @@ export type Journey = {
   category?: string;
   /** Who may start the journey and who finishes it (roles.ts). */
   roles?: JourneyRoles;
+  /**
+   * sequence (the default): one step after another from `start`. parallel (JRN-46): the steps that
+   * ask or run a service are tasks, available together unless they wait for others (`after`);
+   * when every task is done the journey carries on from its first other step (a decision or a result).
+   */
+  flow?: "sequence" | "parallel";
   start: string;
   steps: Record<string, Step>;
 };
 
-const JOURNEY_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "category", "roles", "start", "steps"]);
-const STEP_KEYS = new Set(["ask", "fields", "questionnaire", "service", "with", "onError", "decide", "final", "result", "next", "label", "stage", "icon", "submitLabel", "role"]);
+const JOURNEY_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "category", "roles", "flow", "start", "steps"]);
+const STEP_KEYS = new Set(["ask", "fields", "questionnaire", "service", "with", "onError", "decide", "final", "result", "next", "label", "stage", "icon", "submitLabel", "role", "after"]);
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
+/** An outcome id: lower-case words joined by '-', optionally dotted (registration.approved). */
+export const OUTCOME_ID = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*$/;
 const SERVICE = /^[a-z][a-z0-9-]*(?:\.[a-z][a-zA-Z0-9-]*)+$/;
 const SCOPE_ROOTS = new Set(["answers", "steps", "context"]);
 
@@ -112,6 +126,34 @@ export function journeyProblems(doc: unknown, { services, questionnaires = [], r
   }
   const ids = new Set(Object.keys(steps));
   if (typeof j.start === "string" && !ids.has(j.start)) problems.push(`start: no step '${j.start}'`);
+  if (j.flow !== undefined && j.flow !== "sequence" && j.flow !== "parallel") problems.push("flow is sequence or parallel");
+  const parallel = j.flow === "parallel";
+  const all = steps as Record<string, Record<string, unknown>>;
+  const taskIds = new Set(Object.keys(all).filter((id) => {
+    const s = all[id];
+    return s && typeof s === "object" && s.final === undefined && s.decide === undefined && (s.ask !== undefined || s.questionnaire !== undefined || s.service !== undefined);
+  }));
+  if (parallel) {
+    if (!taskIds.size) problems.push("a parallel journey needs at least one step that asks or runs a service (a task)");
+    if (!Object.keys(all).some((id) => !taskIds.has(id))) problems.push("a parallel journey needs a step to end on once every task is done (a decision or a result)");
+    // after: other tasks, and no task waiting on itself, round a circle.
+    const deps = (id: string) => (Array.isArray(all[id]?.after) ? (all[id]!.after as unknown[]).filter((x): x is string => typeof x === "string") : []);
+    const seen = new Set<string>();
+    const visiting = new Set<string>();
+    const loops = (id: string): boolean => {
+      if (visiting.has(id)) return true;
+      if (seen.has(id)) return false;
+      visiting.add(id);
+      const found = deps(id).some((d) => taskIds.has(d) && loops(d));
+      visiting.delete(id);
+      seen.add(id);
+      return found;
+    };
+    for (const id of taskIds) if (loops(id)) {
+      problems.push(`step '${id}': its after goes round in a circle`);
+      break;
+    }
+  }
 
   const checkTarget = (at: string, to: unknown) => {
     if (typeof to !== "string" || !ids.has(to)) problems.push(`${at}: no step '${String(to)}'`);
@@ -168,10 +210,24 @@ export function journeyProblems(doc: unknown, { services, questionnaires = [], r
       if (s.ask === undefined && s.questionnaire === undefined) problems.push(`${at}: only a step with questions is answered by a role`);
     }
     if (s.onError !== undefined && s.onError !== "fail" && s.onError !== "continue") problems.push(`${at}: onError is fail or continue`);
+    if (s.after !== undefined) {
+      if (!parallel) problems.push(`${at}: after is for parallel journeys (flow: parallel)`);
+      else if (!taskIds.has(id)) problems.push(`${at}: only a task (a step that asks or runs a service) waits with after`);
+      else if (!Array.isArray(s.after) || !s.after.every((x) => typeof x === "string")) problems.push(`${at}: after is a list of step ids`);
+      else for (const d of s.after as string[]) if (d === id) problems.push(`${at}: a task can't wait for itself`);
+      else if (!taskIds.has(d)) problems.push(`${at}: after: no task '${d}'`);
+    }
+    // A parallel journey's tasks have no way out of their own: the journey goes on when all are done.
+    if (parallel && taskIds.has(id)) {
+      if (s.next !== undefined) problems.push(`${at}: a task in a parallel journey has no next`);
+      continue;
+    }
     if (s.decide !== undefined) checkBranches(`${at} decide`, s.decide);
     if (s.final !== undefined) {
       if (s.next !== undefined) problems.push(`${at}: a final step has no next`);
       checkTemplate(at, s.result);
+      const outcome = (s.result as { outcome?: unknown } | undefined)?.outcome;
+      if (outcome !== undefined && (typeof outcome !== "string" || !OUTCOME_ID.test(outcome))) problems.push(`${at}: outcome is an id such as registration-approved (lower-case words, '-' or '.')`);
     } else if (s.decide === undefined) {
       if (s.next === undefined) problems.push(`${at}: next is required`);
       else if (typeof s.next === "string") checkTarget(`${at} next`, s.next);
@@ -252,11 +308,14 @@ export type RunState = {
   steps: Record<string, unknown>;
   /** Steps passed, in order, for the progress list. */
   trail: { step: string; label: string; stage?: string; ok: boolean }[];
-  result: { title: string; text: string; ok: boolean } | null;
+  result: { title: string; text: string; ok: boolean; outcome: string | null } | null;
   error: string | null;
+  /** flow: parallel (JRN-46): every task and where it stands, while the tasks are open. */
+  tasks?: TaskState[];
 };
 
-const MAX_TRANSITIONS = 200;
+/** A parallel journey's task: waiting for others (pending), ready to work on, being asked, waiting for its role, running, or done. */
+export type TaskState = { step: string; label: string; role: string | null; status: "pending" | "ready" | "asking" | "waiting" | "running" | "done"; after: string[] };
 
 /**
  * The trail as progress to show: the screens that asked something and the services that ran.
@@ -271,153 +330,6 @@ export function progressOf(journey: Pick<Journey, "steps">, trail: RunState["tra
   });
 }
 
-/**
- * Runs a journey: services run on their own, ask steps wait for `answer()`. `onChange` gets every
- * new state. Handlers are the surface's; a missing one fails the run with a clear message.
- */
-export function createRunner(
-  journey: Journey,
-  {
-    services = {},
-    context = {},
-    onChange,
-    actor: firstActor,
-  }: { services?: Record<string, ServiceHandler>; context?: Scope; onChange?: (s: RunState) => void; actor?: RunActor } = {},
-) {
-  const blank = (): RunState => ({ status: "idle", current: null, waiting: null, prompt: null, answers: {}, steps: {}, trail: [], result: null, error: null });
-  let state: RunState = blank();
-  let actor = firstActor;
-  let controller: AbortController | null = null;
-
-  const set = (patch: Partial<RunState>) => {
-    state = { ...state, ...patch };
-    onChange?.(state);
-    return state;
-  };
-  const scope = (): Scope => ({ answers: state.answers, steps: state.steps, context });
-  const nextOf = (step: Step): string | null => {
-    const n = step.decide ?? step.next;
-    if (n === undefined) return null;
-    if (typeof n === "string") return n;
-    return n.find((b) => b.if === undefined || holds(b.if, scope()))?.to ?? null;
-  };
-  const record = (step: Step, ok: boolean) =>
-    (state = { ...state, trail: [...state.trail, { step: step.id, label: step.label ?? step.id, stage: step.stage, ok }] });
-
-  async function advance(from: string | null): Promise<RunState> {
-    let id = from;
-    for (let i = 0; i < MAX_TRANSITIONS && id; i++) {
-      const step = journey.steps[id];
-      if (!step) return set({ status: "failed", current: id, error: `The journey has no step "${id}".` });
-      if (step.final) {
-        record(step, true);
-        const r = (render(step.result ?? {}, scope()) ?? {}) as { title?: unknown; text?: unknown; ok?: unknown };
-        const ok = r.ok === undefined ? true : r.ok === true || r.ok === "true";
-        return set({ status: "done", current: id, prompt: null, waiting: null, result: { title: String(r.title ?? journey.title), text: String(r.text ?? ""), ok } });
-      }
-      if (step.ask !== undefined && !(id in state.answers)) {
-        if (actor && !mayAnswer(step, actor)) return set({ status: "waiting", current: id, prompt: null, waiting: { step: id, role: step.role ?? null } });
-        return set({ status: "asking", current: id, waiting: null, prompt: { step: id, text: step.ask, fields: step.fields ?? [], sections: step.sections, submitLabel: step.submitLabel } });
-      }
-      if (step.service) {
-        const handler = Object.hasOwn(services, step.service) ? services[step.service] : undefined;
-        set({ status: "running", current: id, prompt: null, waiting: null });
-        try {
-          if (!handler) throw new Error(`"${step.service}" isn't available here.`);
-          controller = new AbortController();
-          const out = await handler(render(step.with ?? {}, scope()), { journey, step, scope: scope(), signal: controller.signal });
-          state = { ...state, steps: { ...state.steps, [id]: typeof out === "string" ? { text: out } : (out ?? {}) } };
-          record(step, true);
-        } catch (e) {
-          if (controller?.signal.aborted) return set({ status: "failed", error: "Stopped." });
-          const message = e instanceof Error ? e.message : String(e);
-          state = { ...state, steps: { ...state.steps, [id]: { error: message } } };
-          record(step, false);
-          if (step.onError !== "continue") return set({ status: "failed", current: id, error: message });
-        } finally {
-          controller = null;
-        }
-      } else {
-        record(step, true);
-      }
-      id = nextOf(step);
-    }
-    return set({ status: "failed", error: id ? "The journey went round in circles." : "The journey stopped without an ending." });
-  }
-
-  return {
-    get state() {
-      return state;
-    },
-    start: () => {
-      state = blank();
-      return advance(journey.start);
-    },
-    /** What to store when the run is handed over (or to keep it). */
-    snapshot: (): RunSnapshot => ({ current: state.current, answers: state.answers, steps: state.steps, trail: state.trail }),
-    /** Carry on from a stored run, as someone else (the journey's next role) or the same person. */
-    resume: (snap: RunSnapshot, as?: RunActor) => {
-      if (as) actor = as;
-      state = { ...blank(), answers: snap.answers, steps: snap.steps, trail: snap.trail };
-      return advance(snap.current ?? journey.start);
-    },
-    /** Hand a waiting run to another actor in place (the designer's preview: "continue as"). */
-    continueAs: (as: RunActor) => {
-      actor = as;
-      return advance(state.current ?? journey.start);
-    },
-    /** Answer the current ask step. Returns problems instead of advancing when an answer is missing. */
-    async answer(values: Record<string, unknown>): Promise<RunState | { problems: string[] }> {
-      if (state.status !== "asking" || !state.prompt) return { problems: ["Nothing is waiting for an answer."] };
-      const step = journey.steps[state.prompt.step]!;
-      const problems = formProblems(step.fields ?? [], values, scope());
-      if (problems.length) return { problems };
-      const kept = keptAnswers(step.fields ?? [], values, scope());
-      state = { ...state, answers: { ...state.answers, [step.id]: kept } };
-      if (step.service) return advance(step.id);
-      record(step, true);
-      return advance(nextOf(step));
-    },
-    stop() {
-      controller?.abort();
-      return set({ status: "failed", error: "Stopped." });
-    },
-  };
-}
-
-export type Runner = ReturnType<typeof createRunner>;
-
-/**
- * Runs a journey again from its stored answers and service results, without asking anyone or
- * calling any service, to see where it stands. The server uses it to check a handed-over run (every
- * answer valid for its step, in the order the journey reaches them) and to find who answers next,
- * which the client never says. The result waits at the first step without an answer, or has ended.
- */
-export async function replay(
-  journey: Journey,
-  run: Pick<RunSnapshot, "answers" | "steps">,
-  context: Scope = {},
-): Promise<{ ok: true; state: RunState; answered: string[] } | { ok: false; problems: string[] }> {
-  const recorded: ServiceHandler = async (_input, { step }) => {
-    const out = Object.hasOwn(run.steps, step.id) ? run.steps[step.id] : undefined;
-    if (out === undefined) throw new Error(`The step "${step.label ?? step.id}" hasn't run.`);
-    if (out && typeof out === "object" && typeof (out as { error?: unknown }).error === "string") throw new Error((out as { error: string }).error);
-    return out;
-  };
-  const names = [...new Set(Object.values(journey.steps).flatMap((s) => (s.service ? [s.service] : [])))];
-  const runner = createRunner(journey, { services: Object.fromEntries(names.map((n) => [n, recorded])), context });
-  let state = await runner.start();
-  const answered: string[] = [];
-  for (let i = 0; i < MAX_TRANSITIONS && state.status === "asking" && state.prompt; i++) {
-    const at = state.prompt.step;
-    if (!Object.hasOwn(run.answers, at)) break;
-    answered.push(at);
-    const r = await runner.answer(run.answers[at]!);
-    if ("problems" in r) return { ok: false, problems: r.problems.map((p) => `${journey.steps[at]?.label ?? at}: ${p}`) };
-    state = r;
-  }
-  const extra = Object.keys(run.answers).filter((k) => !answered.includes(k));
-  if (extra.length) return { ok: false, problems: [`Answers for steps the journey didn't reach: ${extra.join(", ")}.`] };
-  if (state.status === "failed") return { ok: false, problems: [state.error ?? "The journey failed."] };
-  return { ok: true, state, answered };
-}
+// The runner (createRunner, replay, journeyTasks, afterTasks) runs every journey on its XState
+// machine: see run.ts.
+export * from "./run.js";

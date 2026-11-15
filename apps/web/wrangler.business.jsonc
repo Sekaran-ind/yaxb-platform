@@ -1,0 +1,59 @@
+{
+  // Anjal for Business: the kiosk, its front desk, the Service Catalogue, requests and staff (SUR-1..6): the same app as wrangler.jsonc, built with `vite build --mode business`.
+  // The YAXB web surface on Cloudflare Workers: the Vue app as static assets, and worker/index.ts
+  // (Hono + yaxb-core's agent) for /api. Built and run by Vite's Cloudflare plugin.
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "anjal-business",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+
+  // The Worker runs first so every page gets the security headers (CSP); unknown paths fall back
+  // to index.html for the Vue router.
+  "assets": { "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": true },
+
+  // Free plan for now: 10 ms of CPU per request (waiting on the model doesn't count). If chat or the
+  // designer fail with error 1102 (exceeded resources), move to Workers Paid and add back:
+  //   "limits": { "cpu_ms": 60000 },
+  "observability": { "enabled": true },
+
+  // Threads, the moderation queue and the agent's long-term store. Create once with
+  // `npx wrangler d1 create yaxb` and put the id here; local dev works without it.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "anjal-business",
+      // Create with `npx wrangler d1 create anjal-business` and put its id here.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "../../packages/yaxb-core/migrations"
+    }
+  ],
+
+  // The team's signaling relay (worker/team.ts, TEAM-10/20/50): presence and pairing for
+  // device-to-device chat and calls. It forwards offers, answers and ICE candidates only.
+  "durable_objects": { "bindings": [{ "name": "TEAM", "class_name": "TeamHub" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TeamHub"] }],
+
+  // Per-session chat limit and per-IP form limit. namespace_id is any number unique to your account.
+  "ratelimits": [
+    { "name": "CHAT_LIMITER", "namespace_id": "4101", "simple": { "limit": 20, "period": 60 } },
+    { "name": "FORM_LIMITER", "namespace_id": "4102", "simple": { "limit": 5, "period": 60 } }
+  ],
+
+  // Optional vector search over the knowledge base. Uncomment both, then ingest documents with
+  // `{ text, source }` metadata embedded by the same model (see packages/yaxb-core/src/knowledge).
+  // "vectorize": [{ "binding": "VECTORIZE", "index_name": "yaxb-knowledge" }],
+  // "ai": { "binding": "AI" },
+
+  // Non-secret settings. Secrets (provider keys, SESSION_SECRET, MODERATOR_TOKEN, MCP_SERVERS,
+  // AIRTABLE_*, MAILCHIMP_*) are set with `npx wrangler secret put <NAME>`, and locally in .dev.vars.
+  "vars": {
+    // Which surface this Worker is (yaxb-core context): routes for features it lacks answer 404.
+    "SURFACE": "business",
+    "AIRTABLE_TABLE_NAME": "Contacts",
+    // The contact form's messages go to the helpdesk Worker (shared with ClinüxFlow), which emails helpdesk@yaxb.ai.
+    "HELPDESK_URL": "https://helpdesk.tsekaran1949.workers.dev",
+    // yaxb-box addresses the kiosk page may call (Storage: Local box), space separated.
+    "KIOSK_BOX_ORIGINS": "https://192.168.1.14:47870"
+  }
+}

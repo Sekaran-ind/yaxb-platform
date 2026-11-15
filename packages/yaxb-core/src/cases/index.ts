@@ -48,7 +48,8 @@ export type Case = {
   created_at: string;
   updated_at: string;
   closed_at: string | null;
-  result: { title: string; text: string; ok: boolean } | null;
+  /** The journey's result; `outcome` (OUT-1) on cases stored since outcomes exist. */
+  result: { title: string; text: string; ok: boolean; outcome?: string | null } | null;
   run: RunSnapshot;
   journey: Journey;
   /** The device a visitor started it on: their later screens come back there (devices storage). */

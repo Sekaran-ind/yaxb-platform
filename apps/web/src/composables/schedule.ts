@@ -9,6 +9,7 @@ import { useAccount } from "@/composables/account";
 import { loadedServices } from "@/composables/library";
 import { effectiveSelection, settings } from "@/composables/settings";
 import { extractWithModel } from "@/lib/browser/slots";
+import { trackWrite } from "@/lib/browser/sync-hook";
 import type { ProvidersResponse } from "@/lib/types";
 
 const DB = "yaxb-schedule";
@@ -35,7 +36,21 @@ async function all(): Promise<ScheduleItem[]> {
     req.onerror = () => resolve([]);
   });
 }
+/** Rows pulled from the box (sync v2): written here without being reported back. */
+export async function applyScheduleRow(id: string, data: unknown | null) {
+  if (data === null) await removeRaw(id);
+  else await putRaw(data as ScheduleItem);
+  items.value = await all();
+}
 async function put(item: ScheduleItem) {
+  await putRaw(item);
+  trackWrite("schedule", item.id, item);
+}
+async function remove(id: string) {
+  await removeRaw(id);
+  trackWrite("schedule", id, null);
+}
+async function putRaw(item: ScheduleItem) {
   const d = await db();
   if (!d) return void memory.set(item.id, { ...item });
   await new Promise<void>((resolve) => {
@@ -44,7 +59,7 @@ async function put(item: ScheduleItem) {
     tx.oncomplete = tx.onerror = () => resolve();
   });
 }
-async function remove(id: string) {
+async function removeRaw(id: string) {
   const d = await db();
   if (!d) return void memory.delete(id);
   await new Promise<void>((resolve) => {

@@ -67,7 +67,7 @@ const waitingLabel = computed(() => (c.value?.waiting_step ? (c.value.journey.st
 const run = computed(() => {
   const x = c.value;
   if (!x) return null;
-  const state: RunState = { status: x.result ? "done" : "asking", current: x.run.current, waiting: null, prompt: null, answers: x.run.answers, steps: x.run.steps, trail: x.run.trail, result: x.result, error: null };
+  const state: RunState = { status: x.result ? "done" : "asking", current: x.run.current, waiting: null, prompt: null, answers: x.run.answers, steps: x.run.steps, trail: x.run.trail, result: x.result ? { ...x.result, outcome: x.result.outcome ?? null } : null, error: null };
   return summarizeRun(x.journey, state);
 });
 

@@ -223,7 +223,7 @@ journeys: what a person can do with the service, each with
       - a question screen: id, title, ask (the prompt), submitLabel, role (who answers it: one of the roles; leave it out for the person who started the journey), questions: [{ id, type, label, required, options, description, default, when }]
       - a service screen: id, title, service: <name>, with: { the service's input, using {{answers.<screen>.<question>}} }
       - a decision screen: id, title, decide: [{ if: "answers.<screen>.<question> == 'value'", to: <screen id> }, { to: <screen id> }]
-      - a result screen, which ends the journey: id, title, result: { title, text } (may use {{answers.<screen>.<question>}} and {{steps.<service screen>.text}})
+      - a result screen, which ends the journey: id, title, result: { title, text, outcome } (title and text may use {{answers.<screen>.<question>}} and {{steps.<service screen>.text}}; outcome is a plain id for what the journey achieved there, such as registration-approved or registration-refused, counted on the service's dashboard)
 
 Question types: ${FIELD_TYPES.join(", ")}. A select needs options [{ value, label }]. \`when: "values.<other question> == true"\` asks a question only when it applies: on its own screen a question reads values.<question>, never answers.<this screen>.<question>.
 When a journey passes between people (a visitor asks, staff approve, then the visitor finishes it), give the staff's screens a role: the kiosk hands the journey over at that screen, as a request with a reference, and it waits in that role's work queue; the screens after it without a role go back to the person who started it. Only question screens have a role.

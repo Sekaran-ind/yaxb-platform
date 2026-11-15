@@ -143,3 +143,49 @@ test('events: a service keeps its journeys facts, once each, and lists them sinc
   const later = await (await call('/v1/events?service=svc-1&since=2026-11-16T09:30:00Z')).json();
   assert.deepEqual(later.items.map((x) => x.id), ['ev-2']);
 });
+
+test('sync v2: changes since a cursor, versions, 409 on a stale write, tombstones, batches, v1 alongside (SYN-1..4)', async () => {
+  const json = async (r) => ({ status: r.status, body: await r.json() });
+  // A device creates a schedule item (baseVersion 0) and a second write with the version it saw.
+  let r = await json(await call('/v2/collections/schedule/mum', { method: 'PUT', body: { baseVersion: 0, data: { title: "Mum's birthday" } } }));
+  assert.equal(r.status, 200);
+  assert.equal(r.body.row.version, 1);
+  r = await json(await call('/v2/collections/schedule/mum', { method: 'PUT', body: { baseVersion: 1, data: { title: "Mum's birthday", date: '2027-03-03' } } }));
+  assert.equal(r.body.row.version, 2);
+  // Another device still on version 1: refused, with the box's copy.
+  r = await json(await call('/v2/collections/schedule/mum', { method: 'PUT', body: { baseVersion: 1, data: { title: 'Old' } } }));
+  assert.equal(r.status, 409);
+  assert.equal(r.body.conflict, true);
+  assert.equal(r.body.row.data.date, '2027-03-03');
+  // ...unless it asks for last-write-wins.
+  r = await json(await call('/v2/collections/schedule/mum?conflict=last-write-wins', { method: 'PUT', body: { baseVersion: 1, data: { title: 'Forced' } } }));
+  assert.equal(r.body.row.version, 3);
+  // Changes since nothing: the row, once; since the cursor: nothing new.
+  r = await json(await call('/v2/collections/schedule'));
+  assert.deepEqual(r.body.rows.map((x) => [x.id, x.version]), [['mum', 3]]);
+  const cursor = r.body.cursor;
+  r = await json(await call(`/v2/collections/schedule?since=${cursor}`));
+  assert.deepEqual(r.body.rows, []);
+  // A batch: one new, one stale.
+  r = await json(await call('/v2/collections/schedule/batch', { method: 'POST', body: { ops: [{ op: 'put', id: 'dentist', baseVersion: 0, data: { title: 'Dentist' } }, { op: 'put', id: 'mum', baseVersion: 1, data: { title: 'x' } }] } }));
+  assert.deepEqual(r.body.results.map((x) => [x.id, Boolean(x.ok), Boolean(x.conflict)]), [['dentist', true, false], ['mum', false, true]]);
+  // A delete is a tombstone, pulled like any change, and gone from v1 lists.
+  r = await json(await call('/v2/collections/schedule/dentist?baseVersion=1', { method: 'DELETE' }));
+  assert.equal(r.body.row.deleted, true);
+  r = await json(await call(`/v2/collections/schedule?since=${cursor}`));
+  assert.deepEqual(r.body.rows.map((x) => [x.id, x.deleted, x.data]), [['dentist', true, null]]);
+  r = await json(await call('/v1/schedule'));
+  assert.deepEqual(r.body.items.map((x) => x.id), ['mum']);
+  // A v1 write bumps the version, so v2 devices see it; a v1 notebook delete tombstones its conversations.
+  await call('/v1/notebooks/nbsync', { method: 'PUT', body: { title: 'Home' } });
+  await call('/v1/threads/tsync', { method: 'PUT', body: { notebookId: 'nbsync', title: 'Hello' } });
+  await call('/v1/notebooks/nbsync', { method: 'PUT', body: { title: 'Home 2' } });
+  r = await json(await call('/v2/collections/notebooks'));
+  assert.equal(r.body.rows.find((x) => x.id === 'nbsync').version, 2);
+  await call('/v1/notebooks/nbsync', { method: 'DELETE' });
+  r = await json(await call('/v2/collections/threads'));
+  assert.deepEqual(r.body.rows.filter((x) => x.id === 'tsync').map((x) => [x.id, x.deleted]), [['tsync', true]]);
+  // Unknown collections and bad bodies are refused.
+  assert.equal((await call('/v2/collections/secrets')).status, 404);
+  assert.equal((await call('/v2/collections/threads/t2', { method: 'PUT', body: { baseVersion: 0, data: { title: 'no notebook' } } })).status, 400);
+});

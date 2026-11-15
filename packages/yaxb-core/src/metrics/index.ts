@@ -27,6 +27,8 @@ export const EVENT_KINDS = [
   // The Legal Guardian (CON-6): a person agreed to (or declined) a role's consent form, by version.
   "consent.given",
   "consent.declined",
+  // What a journey achieved (OUT-1): its result screen's `outcome`, in the event's `outcome`.
+  "journey.outcome",
 ] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 
@@ -52,12 +54,14 @@ export const serviceEventSchema = z.strictObject({
   ok: z.boolean().nullable(),
   /** A staff member's name, for their own actions; never a visitor's. */
   actor: z.string().max(80).nullable(),
+  /** journey.outcome: the result screen's outcome id (OUT-1). Older events have none. */
+  outcome: z.string().regex(/^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*$/).max(64).nullable().default(null),
 });
 export type ServiceEvent = z.infer<typeof serviceEventSchema>;
 export const eventBatchSchema = z.array(serviceEventSchema).min(1).max(200);
 
-export function newEvent(e: Omit<ServiceEvent, "id" | "at" | "step" | "role" | "ms" | "ok" | "actor"> & Partial<Pick<ServiceEvent, "step" | "role" | "ms" | "ok" | "actor">>, now = new Date()): ServiceEvent {
-  return { id: crypto.randomUUID(), at: now.toISOString(), step: null, role: null, ms: null, ok: null, actor: null, ...e };
+export function newEvent(e: Omit<ServiceEvent, "id" | "at" | "step" | "role" | "ms" | "ok" | "actor" | "outcome"> & Partial<Pick<ServiceEvent, "step" | "role" | "ms" | "ok" | "actor" | "outcome">>, now = new Date()): ServiceEvent {
+  return { id: crypto.randomUUID(), at: now.toISOString(), step: null, role: null, ms: null, ok: null, actor: null, outcome: null, ...e };
 }
 
 /** Somewhere to keep events: the box, or the server's D1. */
@@ -104,7 +108,10 @@ export type JourneyMetrics = {
   /** Forms filled from people's own words. */
   words: number;
   funnel: Funnel;
+  /** What the journey achieved (OUT-1): each outcome and how often, most first. */
+  outcomes: Outcome[];
 };
+export type Outcome = { outcome: string; label: string; count: number };
 export type ServiceMetrics = {
   started: number;
   finished: number;
@@ -117,6 +124,8 @@ export type ServiceMetrics = {
   /** Starts and finishes per week (Monday, UTC), oldest first. */
   weeks: { week: string; started: number; finished: number }[];
   journeys: JourneyMetrics[];
+  /** Every journey's outcomes together, most first. */
+  outcomes: Outcome[];
 };
 
 const median = (xs: number[]) => {
@@ -136,7 +145,16 @@ export function weekOf(iso: string): string {
  * The dashboard's numbers from a service's events. `journeys` names them and gives each journey's
  * screens in run order (for the funnel); journeys with events but not listed still count.
  */
-export function serviceMetrics(events: readonly ServiceEvent[], journeys: readonly { id: string; title: string; steps: { id: string; label: string }[] }[] = []): ServiceMetrics {
+export function serviceMetrics(
+  events: readonly ServiceEvent[],
+  journeys: readonly { id: string; title: string; steps: { id: string; label: string }[]; outcomes?: { id: string; label: string }[] }[] = [],
+): ServiceMetrics {
+  const outcomeLabel = (id: string) => journeys.flatMap((j) => j.outcomes ?? []).find((o) => o.id === id)?.label ?? id;
+  const tally = (es: readonly ServiceEvent[]): Outcome[] => {
+    const n = new Map<string, number>();
+    for (const e of es) if (e.kind === "journey.outcome" && e.outcome) n.set(e.outcome, (n.get(e.outcome) ?? 0) + 1);
+    return [...n].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([outcome, count]) => ({ outcome, label: outcomeLabel(outcome), count }));
+  };
   const byJourney = new Map<string, ServiceEvent[]>();
   for (const e of events) byJourney.set(e.journey, [...(byJourney.get(e.journey) ?? []), e]);
   const ids = [...new Set([...journeys.map((j) => j.id), ...byJourney.keys()])];
@@ -173,6 +191,7 @@ export function serviceMetrics(events: readonly ServiceEvent[], journeys: readon
       failed: [...failed].map(([step, n]) => ({ step, count: n })),
       words: count(es, "form.words"),
       funnel: steps.map((s) => ({ step: s.id, label: s.label, reached: runsAt.get(s.id)?.size ?? 0, stoppedHere: stops.get(s.id) ?? 0 })),
+      outcomes: tally(es),
     };
   });
 
@@ -201,6 +220,7 @@ export function serviceMetrics(events: readonly ServiceEvent[], journeys: readon
     declined: declinedRuns.size,
     weeks: [...weeks].sort(([a], [b]) => a.localeCompare(b)).map(([week, v]) => ({ week, ...v })),
     journeys: perJourney,
+    outcomes: tally(events),
   };
 }
 

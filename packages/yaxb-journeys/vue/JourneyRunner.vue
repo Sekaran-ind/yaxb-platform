@@ -5,6 +5,7 @@
 // With an `actor`, it stops where someone else answers (a screen with another role) and says who
 // has it now; "Continue as" hands it to them in place (the preview's way to try a hand-over).
 import { createRunner, fieldProblem, fieldVisible, progressOf, roleLabel, type Journey, type Role, type RunActor, type RunState, type Runner, type Scope, type ServiceHandler } from "@sekaran-ind/yaxb-journeys/journeys";
+import JourneyTasks from "./JourneyTasks.vue";
 import type { NavMode } from "@sekaran-ind/yaxb-journeys/screens";
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import Glyph from "./Glyph.vue";
@@ -138,6 +139,7 @@ async function copy() {
       <div class="yj-row"><button type="button" class="yj-btn yj-btn-primary" @click="emit('continueAs', state.waiting.role)">Continue as {{ nameOf(state.waiting.role) }}</button></div>
     </div>
 
+    <JourneyTasks v-if="state?.tasks?.length" :tasks="state.tasks" @focus="(step) => runner?.focus(step)" />
     <form v-if="state?.status === 'asking' && state.prompt" class="yj-card yj-stack" novalidate @submit.prevent="submit">
       <p class="yj-title">{{ state.prompt.text }}</p>
       <QuestionnaireForm

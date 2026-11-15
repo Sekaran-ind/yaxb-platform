@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import BrandLogo from "./BrandLogo.vue";
+import { offers } from "@/lib/surface";
 import { Menu, X } from "@lucide/vue";
 import { computed, ref } from "vue";
 import { useChildMode } from "@/composables/child";
@@ -19,7 +20,7 @@ const LINKS = [
 const route = useRoute();
 // The child safety lock hides the Service Catalogue (CHL-5).
 const child = useChildMode();
-const links = computed(() => (child.on.value ? LINKS.filter((l) => l.to !== "/catalogue") : LINKS));
+const links = computed(() => (child.on.value || !offers("catalogue") ? LINKS.filter((l) => l.to !== "/catalogue") : LINKS));
 const menuOpen = ref(false);
 const contactOpen = ref(false);
 </script>

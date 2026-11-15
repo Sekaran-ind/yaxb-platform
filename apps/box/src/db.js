@@ -1,7 +1,11 @@
 // yaxb-box's one SQLite database (node:sqlite), replicated by Litestream (deploy/litestream.yml).
 //
-//   records   notebooks and conversations: (collection, id) -> JSON, with an optional parent
-//             (a conversation's notebook) for listing
+//   records   notebooks, conversations, schedules and service data: (collection, id) -> JSON, with
+//             an optional parent (a conversation's notebook) for listing. Sync v2 (SYN-1..6, after
+//             Cübo's protocol): every row has a version (writes so far), a delete is a tombstone
+//             (deleted = 1), and seq orders every change so a device pulls only what changed since
+//             its cursor. v1 (whole lists, blind writes) is served from the same rows: a v1 write
+//             bumps the version and a v1 delete leaves a tombstone, so v2 devices see both.
 //   kv        a LangGraph store for Deep Agents' StoreBackend: (namespace, key) -> JSON value
 //   mailbox   cases on their way between devices (LIB-42..48): kept until someone with the role
 //             picks one up or it expires; picking it up deletes its body
@@ -14,7 +18,10 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-export const COLLECTIONS = ['notebooks', 'threads'];
+export const COLLECTIONS = ['notebooks', 'threads', 'schedule', 'service-data'];
+export const PAGE_SIZE = 500;
+export const encodeCursor = (seq) => `c${Number(seq || 0).toString(36)}`;
+export const decodeCursor = (cursor) => (/^c[0-9a-z]+$/.test(String(cursor || '')) ? parseInt(String(cursor).slice(1), 36) : 0);
 export const ID = /^[A-Za-z0-9_-]{1,64}$/;
 export const NAMESPACE = /^[A-Za-z0-9_.:-]{1,200}$/;
 
@@ -61,6 +68,12 @@ const MIGRATIONS = [
      body TEXT NOT NULL
    );
    CREATE INDEX events_service ON events (service, at);`,
+  // Sync v2: versions, tombstones and a change sequence on records.
+  `ALTER TABLE records ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+   ALTER TABLE records ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE records ADD COLUMN seq INTEGER NOT NULL DEFAULT 0;
+   UPDATE records SET seq = rowid;
+   CREATE INDEX records_seq ON records (collection, seq);`,
 ];
 
 export function openDb(path) {
@@ -83,13 +96,16 @@ export function openDb(path) {
   }
 
   const s = {
-    get: db.prepare('SELECT id, parent, data, updated_at FROM records WHERE collection = ? AND id = ?'),
-    list: db.prepare('SELECT id, parent, data, updated_at FROM records WHERE collection = ? ORDER BY updated_at DESC LIMIT ?'),
-    listByParent: db.prepare('SELECT id, parent, data, updated_at FROM records WHERE collection = ? AND parent = ? ORDER BY updated_at DESC LIMIT ?'),
-    put: db.prepare(`INSERT INTO records (collection, id, parent, data, updated_at) VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(collection, id) DO UPDATE SET parent = excluded.parent, data = excluded.data, updated_at = excluded.updated_at`),
-    del: db.prepare('DELETE FROM records WHERE collection = ? AND id = ?'),
-    delByParent: db.prepare('DELETE FROM records WHERE collection = ? AND parent = ?'),
+    get: db.prepare('SELECT id, parent, data, updated_at FROM records WHERE collection = ? AND id = ? AND deleted = 0'),
+    list: db.prepare('SELECT id, parent, data, updated_at FROM records WHERE collection = ? AND deleted = 0 ORDER BY updated_at DESC LIMIT ?'),
+    listByParent: db.prepare('SELECT id, parent, data, updated_at FROM records WHERE collection = ? AND parent = ? AND deleted = 0 ORDER BY updated_at DESC LIMIT ?'),
+    row: db.prepare('SELECT id, parent, data, updated_at, version, deleted, seq FROM records WHERE collection = ? AND id = ?'),
+    nextSeq: db.prepare('SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM records'),
+    write: db.prepare(`INSERT INTO records (collection, id, parent, data, updated_at, version, deleted, seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(collection, id) DO UPDATE SET parent = excluded.parent, data = excluded.data, updated_at = excluded.updated_at,
+        version = excluded.version, deleted = excluded.deleted, seq = excluded.seq`),
+    childIds: db.prepare('SELECT id FROM records WHERE collection = ? AND parent = ? AND deleted = 0'),
+    changes: db.prepare('SELECT id, parent, data, updated_at, version, deleted, seq FROM records WHERE collection = ? AND seq > ? ORDER BY seq LIMIT ?'),
     kvGet: db.prepare('SELECT namespace, key, value, created_at, updated_at FROM kv WHERE namespace = ? AND key = ?'),
     kvPut: db.prepare(`INSERT INTO kv (namespace, key, value, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(namespace, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`),
@@ -115,6 +131,40 @@ export function openDb(path) {
     s.bcPurge.run(at);
   };
 
+  /** A row on the wire (sync v2): { id, version, deleted, updatedAt, data }; a tombstone has no data. */
+  const envelope = (r) => {
+    let data = null;
+    if (!r.deleted) {
+      try {
+        data = JSON.parse(r.data);
+      } catch {
+        data = null;
+      }
+    }
+    return { id: r.id, version: r.version, deleted: !!r.deleted, updatedAt: r.updated_at, data };
+  };
+  const parentOf = (collection, data) => (collection === 'threads' && data && typeof data.notebookId === 'string' ? data.notebookId : null);
+
+  /**
+   * One write (SYN-2): { ok, row } with the next version, or { conflict, row } with the box's copy
+   * when baseVersion isn't the current version under 'reject-stale'; 'last-write-wins' always
+   * applies. A delete leaves a tombstone; deleting a notebook tombstones its conversations.
+   */
+  function write(collection, { id, baseVersion = 0, data = null, deleted = false }, policy = 'reject-stale') {
+    const current = s.row.get(collection, id);
+    const have = current?.version || 0;
+    if (policy === 'reject-stale' && Number(baseVersion || 0) !== have) return { conflict: true, row: current ? envelope(current) : null };
+    if (deleted && (!current || current.deleted)) return { ok: true, row: current ? envelope(current) : null };
+    const at = new Date().toISOString();
+    const body = deleted ? current.data : JSON.stringify({ ...(data && typeof data === 'object' && !Array.isArray(data) ? data : {}), id });
+    const parent = deleted ? current.parent : parentOf(collection, data);
+    s.write.run(collection, id, parent, body, at, have + 1, deleted ? 1 : 0, s.nextSeq.get().seq);
+    if (deleted && collection === 'notebooks') {
+      for (const t of s.childIds.all('threads', id)) write('threads', { id: t.id, deleted: true }, 'last-write-wins');
+    }
+    return { ok: true, row: envelope(s.row.get(collection, id)) };
+  }
+
   const record = (r) => {
     try {
       return { id: r.id, parent: r.parent, data: JSON.parse(r.data), updatedAt: r.updated_at };
@@ -138,17 +188,49 @@ export function openDb(path) {
     },
     list: (collection, { parent, limit = 500 } = {}) =>
       (parent === undefined ? s.list.all(collection, limit) : s.listByParent.all(collection, parent, limit)).map(record).filter(Boolean),
+    // v1: a blind write (last write wins), still a new version, so v2 devices see it.
     put: (collection, id, parent, data) => {
-      const at = new Date().toISOString();
-      s.put.run(collection, id, parent ?? null, JSON.stringify(data), at);
-      return { id, parent: parent ?? null, data, updatedAt: at };
+      const r = write(collection, { id, data: { ...data, ...(parent ? { notebookId: parent } : {}) } }, 'last-write-wins').row;
+      return { id, parent: parent ?? null, data: r.data, updatedAt: r.updatedAt };
+    },
+    // ── sync v2 ──
+    write: (collection, op, policy) => {
+      db.exec('BEGIN');
+      try {
+        const r = write(collection, op, policy);
+        db.exec('COMMIT');
+        return r;
+      } catch (e) {
+        db.exec('ROLLBACK');
+        throw e;
+      }
+    },
+    /** Many writes in one transaction: a result per op, in order. */
+    batch: (collection, ops, policy) => {
+      db.exec('BEGIN');
+      try {
+        const results = ops.map((op) => ({ id: op.id, ...write(collection, op, policy) }));
+        db.exec('COMMIT');
+        return results;
+      } catch (e) {
+        db.exec('ROLLBACK');
+        throw e;
+      }
+    },
+    /** What changed since a cursor, oldest first, tombstones included: { rows, cursor, more }. */
+    changes: (collection, cursor, limit = PAGE_SIZE) => {
+      const since = decodeCursor(cursor);
+      const rows = s.changes.all(collection, since, limit + 1);
+      const page = rows.slice(0, limit);
+      return { rows: page.map(envelope), cursor: encodeCursor(page.at(-1)?.seq ?? since), more: rows.length > limit };
     },
     /** Deleting a notebook deletes its conversations. */
+    // v1: a delete leaves a tombstone (and a notebook's conversations too), so an offline v2
+    // device can't push the row back unnoticed.
     delete: (collection, id) => {
       db.exec('BEGIN');
       try {
-        if (collection === 'notebooks') s.delByParent.run('threads', id);
-        s.del.run(collection, id);
+        write(collection, { id, deleted: true }, 'last-write-wins');
         db.exec('COMMIT');
       } catch (e) {
         db.exec('ROLLBACK');

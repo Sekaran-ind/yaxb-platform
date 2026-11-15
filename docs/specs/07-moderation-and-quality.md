@@ -71,3 +71,16 @@ Check: `packages/yaxb-core/test/reviews.test.ts` (the worked example, fewer than
 | MET-3 | Service dashboards (For staff) read a service's events from where it keeps them (the box, or the server for administrators, moderators and reviewers). A service without storage says it keeps no records and has no dashboard. | Built |
 | MET-4 | A dashboard shows journeys started and finished, completion, requests open, closed and declined, journeys started per week, and per journey a funnel (how many reached each screen, how many stopped there), the median time, how long each role takes to pick a request up, reassignments, failing services and forms filled from words. Bars carry their numbers as text and a hover hint. | Built |
 | MET-5 | The activity log lists what staff did on requests (picked up, answered, closed, declined, reassigned), by name and time, newest first; never a visitor or an answer. | Built |
+
+## Businesses (tenants) and join links
+
+| ID | Requirement | Status |
+|---|---|---|
+| TEN-1 | Each business in the directory is a tenant with its own members and catalogue; everything from before belongs to the default one. | Built |
+| TEN-2 | Every request acts for one business: a signed-in member's own, or a business named in the address when reading its published services; members and the catalogue (libraries, services, roles) are kept to it, and a key signs its member into their own business. | Built |
+| TEN-3 | Two businesses may use the same service id or role name. | Built |
+| TEN-4 | A business's administrator makes a join link for a role (uses and hours); it is shown once and only its hash is kept; open links can be withdrawn. | Built |
+| TEN-5 | Anyone with a link sees the business and the role and asks to join with their name; nothing else is sent. | Built |
+| TEN-6 | The administrator accepts (choosing the role) or declines. | Built |
+| TEN-7 | Once accepted, the person's page collects their own member key, created then and shown once; it is never stored, and can't be collected twice. | Built |
+| TEN-8 | The deployment's administrator adds a business; its first administrator joins with a one-use link that needs no decision. The directory lists the businesses. | Built |

@@ -146,6 +146,18 @@
     "./guardian": {
       "types": "./dist/guardian/index.d.ts",
       "default": "./dist/guardian/index.js"
+    },
+    "./sync": {
+      "types": "./dist/sync/index.d.ts",
+      "default": "./dist/sync/index.js"
+    },
+    "./tenants": {
+      "types": "./dist/tenants/index.d.ts",
+      "default": "./dist/tenants/index.js"
+    },
+    "./context": {
+      "types": "./dist/context/index.d.ts",
+      "default": "./dist/context/index.js"
     }
   },
   "files": [

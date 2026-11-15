@@ -48,7 +48,13 @@ watch(chosen, load, { immediate: true });
 const journeys = computed(() => {
   if (!chosen.value) return [];
   const b = compileBundle(chosen.value.yaml, { services: JOURNEY_SERVICES });
-  return b.journeys.map((j) => ({ id: j.id, title: j.title, steps: Object.entries(j.steps).map(([id, st]) => ({ id, label: st.label ?? id })) }));
+  return b.journeys.map((j) => ({
+    id: j.id,
+    title: j.title,
+    steps: Object.entries(j.steps).map(([id, st]) => ({ id, label: st.label ?? id })),
+    // An outcome is named by its result screen's title (untemplated), else its id.
+    outcomes: Object.values(j.steps).flatMap((st) => (st.result?.outcome ? [{ id: st.result.outcome, label: st.result.title && !st.result.title.includes("{{") ? st.result.title : st.result.outcome }] : [])),
+  }));
 });
 const m = computed(() => serviceMetrics(events.value, journeys.value));
 const log = computed(() => activityLog(events.value).slice(0, 50));
@@ -112,6 +118,16 @@ const STORAGE: Record<string, string> = { box: "on the organisation's box", serv
         <div class="rounded-2xl bg-mist p-3"><dt class="text-xs text-gray-600">Closed · declined</dt><dd class="text-2xl font-semibold text-ink">{{ m.closed }} <span class="text-sm font-normal text-gray-500">· {{ m.declined }}</span></dd></div>
       </dl>
 
+      <!-- What the service achieved (OUT-1) -->
+      <div v-if="m.outcomes.length" class="space-y-2">
+        <h3 class="font-semibold text-ink">Outcomes</h3>
+        <ul class="flex flex-wrap gap-2">
+          <li v-for="o in m.outcomes" :key="o.outcome" class="rounded-2xl bg-mist px-3 py-2 text-sm" :title="o.outcome">
+            <span class="text-body">{{ o.label }}</span> <span class="font-semibold tabular-nums text-ink">{{ o.count }}</span>
+          </li>
+        </ul>
+      </div>
+
       <!-- Journeys started per week (one series: no legend; finished is the text beside each bar) -->
       <div v-if="weeks.length" class="space-y-2">
         <h3 class="font-semibold text-ink">Journeys started per week</h3>
@@ -148,6 +164,7 @@ const STORAGE: Record<string, string> = { box: "on the organisation's box", serv
           <template v-if="j.reassigned"><dt class="text-gray-500">Reassigned</dt><dd class="text-body">{{ j.reassigned }}</dd></template>
           <template v-if="j.failed.length"><dt class="text-gray-500">Services that failed</dt><dd class="text-body">{{ j.failed.map((f) => `${f.step} (${f.count})`).join(", ") }}</dd></template>
           <template v-if="j.words"><dt class="text-gray-500">Forms filled from people's words</dt><dd class="text-body">{{ j.words }}</dd></template>
+          <template v-if="j.outcomes.length"><dt class="text-gray-500">Outcomes</dt><dd class="text-body">{{ j.outcomes.map((o) => `${o.label}: ${o.count}`).join(" · ") }}</dd></template>
         </dl>
       </article>
 

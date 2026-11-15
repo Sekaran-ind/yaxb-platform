@@ -5,6 +5,7 @@
 // kiosk notebook (its documents and SOPs, RST-3) belongs to the service: staff see and edit it here,
 // and a front-desk kiosk answers from it (`serviceDocuments`).
 import type { StorageId } from "@sekaran-ind/yaxb-core/settings";
+import { syncPulls } from "@/composables/sync";
 import { computed, ref, shallowRef, watch, type Ref } from "vue";
 import { logActivity } from "./account";
 import type { NotebookSource } from "@sekaran-ind/yaxb-core/notebook";
@@ -52,7 +53,7 @@ export function useNotebook(storage: Ref<StorageId>, activeId: Ref<string | null
   );
 
   watch(
-    [store, version, () => scope.value.owner, () => scope.value.staff],
+    [store, version, syncPulls, () => scope.value.owner, () => scope.value.staff],
     async () => {
       try {
         let list = await store.value.listNotebooks();

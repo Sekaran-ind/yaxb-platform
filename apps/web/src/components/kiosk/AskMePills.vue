@@ -3,6 +3,7 @@
 // Me, a new conversation and the conversations drawer; always, the visitor's profile and the
 // preferences. At the front desk: End session, and the staff lock.
 import { Lock, LogOut, MessagesSquare, RotateCcw, ShieldCheck, SlidersHorizontal, UserRound } from "@lucide/vue";
+import { offers } from "@/lib/surface";
 import { cn } from "@/lib/cn";
 
 defineProps<{ restricted: boolean; /** Only New and Conversations, inside another surface's pills (the catalogue's Ask Me). */ conversationOnly?: boolean; onAskMe: boolean; canNew: boolean; threads: number; drawerOpen: boolean; nickname: string | null; /** The child safety lock is on (CHL-8): a pill says so. */ child?: boolean }>();
@@ -36,7 +37,7 @@ const initials = (n: string) =>
         </button>
       </template>
       <template v-if="!conversationOnly">
-      <button type="button" :class="cn(pill, 'px-2', nickname && 'text-ink')" :aria-label="nickname ? `Your profile (${nickname})` : 'Sign in'" :title="nickname ? `${nickname}: your profile` : 'Sign in'" @click="emit('profile')">
+      <button v-if="offers('profiles')" type="button" :class="cn(pill, 'px-2', nickname && 'text-ink')" :aria-label="nickname ? `Your profile (${nickname})` : 'Sign in'" :title="nickname ? `${nickname}: your profile` : 'Sign in'" @click="emit('profile')">
         <span v-if="nickname" class="grid size-6 place-items-center rounded-full bg-brand-dark text-[10px] font-semibold text-on-brand">{{ initials(nickname) }}</span>
         <UserRound v-else class="size-4" aria-hidden="true" />
       </button>
