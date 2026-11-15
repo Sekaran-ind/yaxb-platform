@@ -23,8 +23,7 @@
     {
       "binding": "DB",
       "database_name": "anjal-business",
-      // Create with `npx wrangler d1 create anjal-business` and put its id here.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "35d78ba1-0c81-498b-abe9-ec6dd174302f",
       "migrations_dir": "../../packages/yaxb-core/migrations"
     }
   ],

@@ -23,8 +23,7 @@
     {
       "binding": "DB",
       "database_name": "anjal-family",
-      // Create with `npx wrangler d1 create anjal-family` and put its id here.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "3ff23c41-3ae1-46fc-ab2d-4870f25572d6",
       "migrations_dir": "../../packages/yaxb-core/migrations"
     }
   ],
