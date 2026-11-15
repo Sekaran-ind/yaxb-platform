@@ -1,6 +1,6 @@
 {
   "appId": "ai.yaxb.kiosk",
-  "appName": "YAXB Kiosk",
+  "appName": "Anjal.ai",
   "webDir": "../web/dist/native",
   "backgroundColor": "#fafaf9",
   "android": { "allowMixedContent": false, "captureInput": true },

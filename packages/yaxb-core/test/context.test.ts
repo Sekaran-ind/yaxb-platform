@@ -13,6 +13,7 @@ describe("context", () => {
     expect(offers(business, "catalogue")).toBe(true);
     expect(resolveContext().surface).toBe("all");
     expect(surfaceName(family)).toBe("Anjal Family");
+    expect(surfaceName(resolveContext({}))).toBe("Yaxb.ai");
   });
 
   it("refuses an unknown surface or a malformed jurisdiction", () => {
