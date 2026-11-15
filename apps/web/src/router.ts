@@ -1,6 +1,7 @@
 import { createRouter, createWebHashHistory, createWebHistory, type RouteRecordRaw } from "vue-router";
 import { NATIVE } from "./lib/platform";
 import { useChildMode } from "@/composables/child";
+import { offers, SURFACE, SURFACE_NAME } from "@/lib/surface";
 import { settings } from "./composables/settings";
 
 // Pages load on demand, so the home page doesn't download the kiosk (or its models' code).
@@ -19,8 +20,15 @@ export const router = createRouter({
   // The app's pages are files on the device: hash URLs need no server.
   history: NATIVE ? createWebHashHistory() : createWebHistory(),
   routes: NATIVE ? NATIVE_ROUTES : [
-    { path: "/", component: () => import("./pages/HomePage.vue"), meta: { title: "Anjal.ai" } },
+    // Each surface has its own home page (SUR-2); the combined site keeps the full one.
+    {
+      path: "/",
+      component: SURFACE === "family" ? () => import("./pages/FamilyHomePage.vue") : SURFACE === "business" ? () => import("./pages/BusinessHomePage.vue") : () => import("./pages/HomePage.vue"),
+      meta: { title: SURFACE_NAME },
+    },
     { path: "/kiosk", component: () => import("./pages/KioskPage.vue"), meta: { title: "AI Kiosk" } },
+    // Joining a business with a link (TEN-5..7).
+    ...(offers("join") ? [{ path: "/join/:token", component: () => import("./pages/JoinPage.vue"), meta: { title: "Join" } }] : []),
     // The staff pages live inside the kiosk (Services → For staff); their old addresses open the section.
     { path: "/kiosk/curate", redirect: staff("moderation") },
     { path: "/kiosk/review", redirect: staff("review") },
@@ -31,8 +39,12 @@ export const router = createRouter({
     // Preferences open inside the kiosk (KioskPreferences); old links and commands still land there.
     { path: "/settings", redirect: (to) => ({ path: "/kiosk", query: { prefs: typeof to.query.section === "string" ? to.query.section : "profile" } }) },
     // The Service Catalogue (LIB-14): anyone designs services (journeys, screens, roles); reviewers publish them for kiosks.
-    { path: "/catalogue", component: () => import("./pages/CataloguePage.vue"), meta: { title: "Service catalogue" } },
-    { path: "/studio", redirect: "/catalogue" },
+    ...(offers("catalogue")
+      ? [
+          { path: "/catalogue", component: () => import("./pages/CataloguePage.vue"), meta: { title: "Service catalogue" } },
+          { path: "/studio", redirect: "/catalogue" },
+        ]
+      : []),
     { path: "/contact", component: () => import("./pages/ContactPage.vue"), meta: { title: "Contact" } },
     { path: "/faq", component: () => import("./pages/FaqPage.vue"), meta: { title: "FAQ" } },
     { path: "/terms-conditions", component: () => import("./pages/TermsPage.vue"), meta: { title: "Terms & Privacy" } },
@@ -58,5 +70,5 @@ router.beforeEach((to) => {
 
 router.afterEach((to) => {
   const title = to.meta.title as string | undefined;
-  document.title = NATIVE ? "Anjal" : !title || title === "Anjal.ai" ? "Anjal.ai" : `${title} | Anjal.ai`;
+  document.title = NATIVE ? "Anjal" : !title || title === SURFACE_NAME ? SURFACE_NAME : `${title} | ${SURFACE_NAME}`;
 });

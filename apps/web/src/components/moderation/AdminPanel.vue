@@ -8,6 +8,7 @@ import { Copy, KeyRound, Lock, LogOut, Pencil, RefreshCw, RotateCw, ShieldAlert,
 import { ConfirmAction } from "@sekaran-ind/yaxb-journeys/vue";
 import { computed, onMounted, ref } from "vue";
 import { roleCatalogue, roleName, loadLibraryContent } from "@/composables/library";
+import JoinLinks from "./JoinLinks.vue";
 import { cn } from "@/lib/cn";
 
 type Row = Moderator & { status: ModeratorStatus };
@@ -217,6 +218,8 @@ onMounted(load);
           </table>
         </div>
       </section>
+
+      <JoinLinks :roles="roleOptions" />
 
       <section class="card p-5">
         <h3 class="font-semibold text-ink">Audit log</h3>

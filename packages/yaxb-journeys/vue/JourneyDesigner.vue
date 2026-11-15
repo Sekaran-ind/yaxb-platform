@@ -151,6 +151,14 @@ const open = ref<number | null>(0);
           <input :id="id('summary')" v-model="j.summary" class="yj-input" />
         </div>
       </div>
+      <div class="yj-row yj-mt">
+        <span class="yj-field-label">How the screens happen</span>
+        <div class="yj-segment" role="group" aria-label="How the screens happen">
+          <button type="button" :aria-pressed="j.flow !== 'parallel'" :disabled="readonly" @click="j.flow = 'sequence'">One after another</button>
+          <button type="button" :aria-pressed="j.flow === 'parallel'" :disabled="readonly" @click="j.flow = 'parallel'">In any order</button>
+        </div>
+      </div>
+      <p v-if="j.flow === 'parallel'" class="yj-small yj-muted">The screens that ask or run a service are tasks, done in any order (a screen may wait for others). When all are done, the journey carries on from the first decision or result.</p>
       <div class="yj-form-grid yj-mt">
         <RolePicker v-model="j.initiate" :roles="roles" legend="Who may start it" with-visitor :disabled="readonly" hint="None ticked, or Visitor: anyone at the kiosk." />
         <RolePicker v-model="j.complete" :roles="roles" legend="Who finishes it" :disabled="readonly" hint="None ticked: whoever started it." />
@@ -265,10 +273,18 @@ const open = ref<number | null>(0);
                   <label :for="id(`rx${i}`)" class="yj-field-label">Result text</label>
                   <textarea :id="id(`rx${i}`)" v-model="s.resultText" class="yj-input" rows="3" />
                 </div>
+                <div class="yj-span-2">
+                  <label :for="id(`ro${i}`)" class="yj-field-label">Outcome <span class="yj-muted">(optional: what the journey achieved, counted on the dashboard)</span></label>
+                  <input :id="id(`ro${i}`)" v-model="s.resultOutcome" class="yj-input yj-mono" placeholder="registration-approved" spellcheck="false" />
+                </div>
               </template>
             </div>
 
-            <div v-if="s.kind !== 'final'" class="yj-stack">
+            <div v-if="j.flow === 'parallel' && (s.kind === 'ask' || s.kind === 'service')" class="yj-stack">
+              <label :for="id(`after${i}`)" class="yj-field-label">Waits for <span class="yj-muted">(screen ids, commas; empty: available from the start)</span></label>
+              <input :id="id(`after${i}`)" v-model="s.after" class="yj-input yj-mono" placeholder="venue, food" spellcheck="false" />
+            </div>
+            <div v-else-if="s.kind !== 'final'" class="yj-stack">
               <div v-if="s.kind !== 'decide'" class="yj-row">
                 <span class="yj-field-label">Then</span>
                 <div class="yj-segment" role="group" :aria-label="`Then, after screen ${s.id}`">

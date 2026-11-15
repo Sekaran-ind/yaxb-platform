@@ -127,7 +127,7 @@ describe("the Legal Guardian", () => {
     const plain = await kiosk.guardian({ yaml: YAML });
     expect("consent" in plain && plain.via).toBe("draft");
     expect("consent" in plain && plain.consent.version).toBe(1);
-    const r = await kiosk.guardian({ yaml: `${YAML}consent: { version: 3, forms: [{ role: visitor, title: Old, points: [old], agree: OK }] }\n`, selection: { provider: "anthropic", model: "claude-haiku-5-5" } });
+    const r = await kiosk.guardian({ yaml: `${YAML}consent: { version: 3, forms: [{ role: visitor, title: Old, points: [old], agree: OK }] }\n`, selection: { provider: "anthropic", model: "claude-haiku-5-5", temperature: 0.2 } });
     if (!("consent" in r)) throw new Error(r.error);
     expect(r.via).toBe("assistant");
     expect(r.consent.version).toBe(4);

@@ -5,6 +5,7 @@
 //   mini  a compact card: orb and mic, one screen at a time
 // Owns the conversation, voice, notebook and journey handlers, and passes them to the screens.
 import { aboutKiosk, confirmText, PROFILE_FORM, profileFields, profilePatch, type CommandEffect, type CommandMatch } from "@sekaran-ind/yaxb-core/commands";
+import { offers } from "@/lib/surface";
 import { kioskContent } from "@sekaran-ind/yaxb-core/content";
 import type { ServiceHandler } from "@sekaran-ind/yaxb-core/journeys";
 import { composeLocalAnswer, composeWebAnswer, EMBEDDING_MODELS, looksLikeEmergency, type LocalAnswer } from "@sekaran-ind/yaxb-core/knowledge/semantic";
@@ -145,7 +146,7 @@ watch(
     }
   },
 );
-const showPicker = computed(() => !props.embedded && !restricted.value && account.list.value.length > 0 && !account.profile.value && !visitorChosen.value);
+const showPicker = computed(() => offers("profiles") && !props.embedded && !restricted.value && account.list.value.length > 0 && !account.profile.value && !visitorChosen.value);
 const { data: catalog, error: catalogError } = useProviders();
 const { data: caps } = useCapabilities();
 const feedback = useFeedback();

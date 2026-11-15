@@ -216,30 +216,34 @@ export function createD1FeedbackStore(db: D1Like): FeedbackStore {
 }
 
 /** Moderators, profiles and the audit log on D1 (migrations/0004_moderators.sql). */
-export function createD1ModeratorStore(db: D1Like): ModeratorStore {
+/**
+ * Members on D1, scoped to one tenant (TEN-2): every query keeps to `tenant`, except finding a
+ * member by their key hash, which looks across tenants (signing in tells the Worker the tenant).
+ */
+export function createD1ModeratorStore(db: D1Like, { tenant = "default" }: { tenant?: string } = {}): ModeratorStore {
   type Row = Omit<Moderator, "roles"> & { roles: string };
-  const COLS = "id, name, label, roles, status, key_prefix, created_at, expires_at, last_seen_at, reviews";
+  const COLS = "id, name, label, roles, status, key_prefix, created_at, expires_at, last_seen_at, reviews, tenant_id AS tenant";
   const mod = (r: Row | null): Moderator | null => (r ? { ...r, roles: JSON.parse(r.roles) as Moderator["roles"] } : null);
   return {
     async list() {
-      const { results } = await db.prepare(`SELECT ${COLS} FROM moderators ORDER BY name`).all<Row>();
+      const { results } = await db.prepare(`SELECT ${COLS} FROM moderators WHERE tenant_id = ?1 ORDER BY name`).bind(tenant).all<Row>();
       return results.map((r) => mod(r)!);
     },
     async get(id) {
-      return mod(await db.prepare(`SELECT ${COLS} FROM moderators WHERE id = ?1`).bind(id).first<Row>());
+      return mod(await db.prepare(`SELECT ${COLS} FROM moderators WHERE id = ?1 AND tenant_id = ?2`).bind(id, tenant).first<Row>());
     },
     async byKeyHash(hash) {
       return mod(await db.prepare(`SELECT ${COLS} FROM moderators WHERE key_hash = ?1`).bind(hash).first<Row>());
     },
     async keyHashOf(id) {
-      return (await db.prepare("SELECT key_hash FROM moderators WHERE id = ?1").bind(id).first<{ key_hash: string }>())?.key_hash ?? null;
+      return (await db.prepare("SELECT key_hash FROM moderators WHERE id = ?1 AND tenant_id = ?2").bind(id, tenant).first<{ key_hash: string }>())?.key_hash ?? null;
     },
     async create(m, keyHash) {
       await db
-        .prepare("INSERT INTO moderators (id, name, label, roles, status, key_hash, key_prefix, created_at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)")
-        .bind(m.id, m.name, m.label, JSON.stringify(m.roles), m.status, keyHash, m.key_prefix, m.created_at, m.expires_at)
+        .prepare("INSERT INTO moderators (id, name, label, roles, status, key_hash, key_prefix, created_at, expires_at, tenant_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)")
+        .bind(m.id, m.name, m.label, JSON.stringify(m.roles), m.status, keyHash, m.key_prefix, m.created_at, m.expires_at, tenant)
         .run();
-      return { ...m, last_seen_at: null, reviews: 0 };
+      return { ...m, last_seen_at: null, reviews: 0, tenant };
     },
     async update(id, patch, keyHash) {
       const sets: string[] = [];
@@ -248,11 +252,11 @@ export function createD1ModeratorStore(db: D1Like): ModeratorStore {
         values.push(v);
         sets.push(`${col} = ?${values.length}`);
       };
-      for (const [k, v] of Object.entries(patch)) put(k, k === "roles" ? JSON.stringify(v) : v);
+      for (const [k, v] of Object.entries(patch)) if (k !== "tenant") put(k, k === "roles" ? JSON.stringify(v) : v);
       if (keyHash) put("key_hash", keyHash);
       if (sets.length) {
-        values.push(id);
-        await db.prepare(`UPDATE moderators SET ${sets.join(", ")} WHERE id = ?${values.length}`).bind(...values).run();
+        values.push(id, tenant);
+        await db.prepare(`UPDATE moderators SET ${sets.join(", ")} WHERE id = ?${values.length - 1} AND tenant_id = ?${values.length}`).bind(...values).run();
       }
       return this.get(id);
     },
@@ -261,9 +265,10 @@ export function createD1ModeratorStore(db: D1Like): ModeratorStore {
       return r ? { ...r, languages: JSON.parse(r.languages), sources: JSON.parse(r.sources), preferences: JSON.parse(r.preferences) } : null;
     },
     async remove(id) {
+      const had = await db.prepare("SELECT id FROM moderators WHERE id = ?1 AND tenant_id = ?2").bind(id, tenant).first();
+      if (!had) return false;
       await db.prepare("DELETE FROM moderator_profiles WHERE moderator_id = ?1").bind(id).run();
-      const had = await db.prepare("SELECT id FROM moderators WHERE id = ?1").bind(id).first();
-      await db.prepare("DELETE FROM moderators WHERE id = ?1").bind(id).run();
+      await db.prepare("DELETE FROM moderators WHERE id = ?1 AND tenant_id = ?2").bind(id, tenant).run();
       return Boolean(had);
     },
     async putProfile(p) {
@@ -276,13 +281,14 @@ export function createD1ModeratorStore(db: D1Like): ModeratorStore {
     },
     async audit(e) {
       await db
-        .prepare("INSERT INTO audit (id, at, actor_type, actor_id, actor_name, action, target_id, details) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)")
-        .bind(e.id, e.at, e.actor_type, e.actor_id, e.actor_name, e.action, e.target_id, e.details ? JSON.stringify(e.details) : null)
+        .prepare("INSERT INTO audit (id, at, actor_type, actor_id, actor_name, action, target_id, details, tenant_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)")
+        .bind(e.id, e.at, e.actor_type, e.actor_id, e.actor_name, e.action, e.target_id, e.details ? JSON.stringify(e.details) : null, tenant)
         .run();
     },
     async auditLog({ limit = 100, actorId, targetId, before } = {}) {
       const where: string[] = [];
       const values: unknown[] = [];
+      where.push(`tenant_id = ?${values.push(tenant)}`);
       if (actorId) where.push(`actor_id = ?${values.push(actorId)}`);
       if (targetId) where.push(`target_id = ?${values.push(targetId)}`);
       if (before) where.push(`at < ?${values.push(before)}`);
@@ -296,55 +302,57 @@ export function createD1ModeratorStore(db: D1Like): ModeratorStore {
   };
 }
 
-/** The journey library on D1 (migrations/0006_library.sql). */
-export function createD1LibraryStore(db: D1Like): LibraryStore {
+/** The journey library on D1 (migrations/0006_library.sql), scoped to one tenant (TEN-3). */
+export function createD1LibraryStore(db: D1Like, { tenant = "default" }: { tenant?: string } = {}): LibraryStore {
   const ENTRY_COLS =
     "id, library_id, kind, doc_id, title, yaml, status, revision, published_yaml, published_revision, owner_id, owner_name, submitted_by, submitted_by_name, submitted_at, reviewed_by, reviewed_by_name, reviewed_at, review_note, created_at, updated_at, updated_by_name, storage";
   const role = (r: { id: string; label: string; description: string | null; created_at: string }): CustomRole => ({ id: r.id, label: r.label, created_at: r.created_at, ...(r.description ? { description: r.description } : {}) });
   return {
     async roles() {
-      const { results } = await db.prepare("SELECT id, label, description, created_at FROM library_roles ORDER BY label").all<{ id: string; label: string; description: string | null; created_at: string }>();
+      const { results } = await db.prepare("SELECT id, label, description, created_at FROM library_roles WHERE tenant_id = ?1 ORDER BY label").bind(tenant).all<{ id: string; label: string; description: string | null; created_at: string }>();
       return results.map(role);
     },
     async putRole(r) {
       await db
-        .prepare("INSERT INTO library_roles (id, label, description, created_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (id) DO UPDATE SET label = ?2, description = ?3")
-        .bind(r.id, r.label, r.description ?? null, r.created_at)
+        .prepare("INSERT INTO library_roles (id, label, description, created_at, tenant_id) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT (tenant_id, id) DO UPDATE SET label = ?2, description = ?3")
+        .bind(r.id, r.label, r.description ?? null, r.created_at, tenant)
         .run();
     },
     async removeRole(id) {
-      const had = await db.prepare("SELECT id FROM library_roles WHERE id = ?1").bind(id).first();
-      await db.prepare("DELETE FROM library_roles WHERE id = ?1").bind(id).run();
+      const had = await db.prepare("SELECT id FROM library_roles WHERE id = ?1 AND tenant_id = ?2").bind(id, tenant).first();
+      await db.prepare("DELETE FROM library_roles WHERE id = ?1 AND tenant_id = ?2").bind(id, tenant).run();
       return Boolean(had);
     },
     async libraries() {
-      return (await db.prepare("SELECT id, name, description, status, created_by, created_at, updated_at FROM libraries ORDER BY name").all<Library>()).results;
+      return (await db.prepare("SELECT id, name, description, status, created_by, created_at, updated_at FROM libraries WHERE tenant_id = ?1 ORDER BY name").bind(tenant).all<Library>()).results;
     },
     async library(id) {
-      return db.prepare("SELECT id, name, description, status, created_by, created_at, updated_at FROM libraries WHERE id = ?1").bind(id).first<Library>();
+      return db.prepare("SELECT id, name, description, status, created_by, created_at, updated_at FROM libraries WHERE id = ?1 AND tenant_id = ?2").bind(id, tenant).first<Library>();
     },
     async putLibrary(l) {
       await db
         .prepare(
-          "INSERT INTO libraries (id, name, description, status, created_by, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT (id) DO UPDATE SET name = ?2, description = ?3, status = ?4, updated_at = ?7",
+          "INSERT INTO libraries (id, name, description, status, created_by, created_at, updated_at, tenant_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT (id) DO UPDATE SET name = ?2, description = ?3, status = ?4, updated_at = ?7 WHERE libraries.tenant_id = ?8",
         )
-        .bind(l.id, l.name, l.description, l.status, l.created_by, l.created_at, l.updated_at)
+        .bind(l.id, l.name, l.description, l.status, l.created_by, l.created_at, l.updated_at, tenant)
         .run();
     },
     async entries(libraryId) {
-      const sql = `SELECT ${ENTRY_COLS} FROM library_entries ${libraryId ? "WHERE library_id = ?1 " : ""}ORDER BY kind, title`;
+      const sql = `SELECT ${ENTRY_COLS} FROM library_entries WHERE tenant_id = ?1 ${libraryId ? "AND library_id = ?2 " : ""}ORDER BY kind, title`;
       const stmt = db.prepare(sql);
-      return (await (libraryId ? stmt.bind(libraryId) : stmt).all<LibraryEntry>()).results;
+      return (await (libraryId ? stmt.bind(tenant, libraryId) : stmt.bind(tenant)).all<LibraryEntry>()).results;
     },
     async entry(id) {
-      return db.prepare(`SELECT ${ENTRY_COLS} FROM library_entries WHERE id = ?1`).bind(id).first<LibraryEntry>();
+      return db.prepare(`SELECT ${ENTRY_COLS} FROM library_entries WHERE id = ?1 AND tenant_id = ?2`).bind(id, tenant).first<LibraryEntry>();
     },
     async putEntry(e) {
       const cols = ENTRY_COLS.split(", ");
       const updates = cols.slice(1).map((c, i) => `${c} = ?${i + 2}`).join(", ");
+      const t = cols.length + 1;
+      // An id another tenant owns is never taken over.
       await db
-        .prepare(`INSERT INTO library_entries (${ENTRY_COLS}) VALUES (${cols.map((_, i) => `?${i + 1}`).join(", ")}) ON CONFLICT (id) DO UPDATE SET ${updates}`)
-        .bind(...cols.map((c) => (e as Record<string, unknown>)[c] ?? null))
+        .prepare(`INSERT INTO library_entries (${ENTRY_COLS}, tenant_id) VALUES (${cols.map((_, i) => `?${i + 1}`).join(", ")}, ?${t}) ON CONFLICT (id) DO UPDATE SET ${updates} WHERE library_entries.tenant_id = ?${t}`)
+        .bind(...cols.map((c) => (e as Record<string, unknown>)[c] ?? null), tenant)
         .run();
     },
     async revisions(entryId) {

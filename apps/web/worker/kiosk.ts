@@ -10,11 +10,30 @@ import { createReviewService, type ReviewService } from "@sekaran-ind/yaxb-core/
 import { createD1CaseStore, createD1EventStore, createD1FeedbackStore, createD1Relay, createD1DesignerStore, createD1Kv, createD1LibraryStore, createD1ModerationStore, createD1ModeratorStore, createD1ReviewStore, createD1ThreadStore } from "@sekaran-ind/yaxb-core/stores/d1";
 import { KvStore } from "@sekaran-ind/yaxb-core/stores/kv";
 import { stringEnv, type Bindings } from "./env";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { createD1TenantStore, createTenantService, DEFAULT_TENANT, type TenantService } from "@sekaran-ind/yaxb-core/tenants";
+
+/**
+ * The business (tenant, TEN-2) a request acts for: set once per request by the /api middleware
+ * (a member's own tenant, or the default one), so every service below is scoped without each route
+ * passing it along.
+ */
+export const tenantContext = new AsyncLocalStorage<string>();
+export const currentTenant = () => tenantContext.getStore() ?? DEFAULT_TENANT;
+/** One service per tenant, per isolate. */
+function perTenant<T>(cache: WeakMap<object, Map<string, T>>, env: Bindings, tenant: string, make: () => T): T {
+  let byTenant = cache.get(env);
+  if (!byTenant) cache.set(env, (byTenant = new Map()));
+  let s = byTenant.get(tenant);
+  if (!s) byTenant.set(tenant, (s = make()));
+  return s;
+}
 
 const kiosks = new WeakMap<object, Kiosk>();
-const moderatorServices = new WeakMap<object, ModeratorService>();
-const reviewServices = new WeakMap<object, ReviewService>();
-const libraryServices = new WeakMap<object, LibraryService>();
+const moderatorServices = new WeakMap<object, Map<string, ModeratorService>>();
+const reviewServices = new WeakMap<object, Map<string, ReviewService>>();
+const libraryServices = new WeakMap<object, Map<string, LibraryService>>();
+const tenantServices = new WeakMap<object, TenantService>();
 const designerServices = new WeakMap<object, DesignerService>();
 const caseServices = new WeakMap<object, CaseService>();
 const seeded = new WeakMap<object, Promise<unknown>>();
@@ -25,6 +44,8 @@ const seeded = new WeakMap<object, Promise<unknown>>();
  */
 export async function catalogue(env: Bindings): Promise<LibraryService> {
   const l = library(env);
+  // The kiosk's own services are the default tenant's; another business starts with its own.
+  if (currentTenant() !== DEFAULT_TENANT) return l;
   let s = seeded.get(env);
   if (!s) seeded.set(env, (s = l.seed(kioskContent.catalogue.map((c) => c.yaml)).catch(() => seeded.delete(env))));
   await s;
@@ -42,20 +63,17 @@ async function catalogueFields(env: Bindings, journey: string, step: string) {
 }
 
 /** The Service Catalogue in D1 (LIB-1..20), checked against this kiosk's handlers; audited in the moderators' log. */
-export function library(env: Bindings): LibraryService {
-  let l = libraryServices.get(env);
-  if (!l) {
-    const audit = moderators(env).store;
-    l = createLibraryService(createD1LibraryStore(env.DB), {
+export function library(env: Bindings, tenant = currentTenant()): LibraryService {
+  return perTenant(libraryServices, env, tenant, () => {
+    const audit = moderators(env, tenant).store;
+    return createLibraryService(createD1LibraryStore(env.DB, { tenant }), {
       services: JOURNEY_SERVICES,
       audit: (e) => audit.audit(e),
       auditTrail: (id) => audit.auditLog({ targetId: id, limit: 200 }),
       // The Service Designer learns from every review of a service it drafted.
       onReviewed: (entry, decision, note, reviewer) => designer(env).learn(entry, decision, note, reviewer.name),
     });
-    libraryServices.set(env, l);
-  }
-  return l;
+  });
 }
 
 /**
@@ -92,17 +110,25 @@ export function designer(env: Bindings): DesignerService {
 }
 
 /** Answers sent for review and moderators' reviews, in D1 (MOD-10..13, MOD-30..34). */
-export function reviews(env: Bindings): ReviewService {
-  let r = reviewServices.get(env);
-  if (!r) reviewServices.set(env, (r = createReviewService(createD1ReviewStore(env.DB), moderators(env).store)));
-  return r;
+export function reviews(env: Bindings, tenant = currentTenant()): ReviewService {
+  return perTenant(reviewServices, env, tenant, () => createReviewService(createD1ReviewStore(env.DB), moderators(env, tenant).store));
 }
 
 /** Moderators, their keys and profiles, and the audit log, in D1 (MOD-20..25). */
-export function moderators(env: Bindings): ModeratorService {
-  let m = moderatorServices.get(env);
-  if (!m) moderatorServices.set(env, (m = createModeratorService(createD1ModeratorStore(env.DB))));
-  return m;
+export function moderators(env: Bindings, tenant = currentTenant()): ModeratorService {
+  return perTenant(moderatorServices, env, tenant, () => createModeratorService(createD1ModeratorStore(env.DB, { tenant })));
+}
+
+/** The directory's businesses and their join links (TEN-1..8). A joining member is made in their business. */
+export function tenants(env: Bindings): TenantService {
+  let t = tenantServices.get(env);
+  if (!t) tenantServices.set(env, (t = createTenantService(createD1TenantStore(env.DB), { issueMember: (tenant, input, actor) => moderators(env, tenant).issue(input, actor) })));
+  return t;
+}
+
+/** A member's tenant, from their id (the session cookie names the member, not the tenant). */
+export async function tenantOfMember(env: Bindings, id: string): Promise<string | null> {
+  return (await env.DB.prepare("SELECT tenant_id FROM moderators WHERE id = ?1").bind(id).first<{ tenant_id: string }>())?.tenant_id ?? null;
 }
 
 /**

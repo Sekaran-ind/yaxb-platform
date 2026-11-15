@@ -1517,3 +1517,69 @@ button.yj-crumb:hover {
 .yj-fd-faded path {
   stroke-dasharray: 5 4;
 }
+
+/* A parallel journey's tasks (JRN-47). */
+.yj-tasks {
+  display: grid;
+  gap: 0.4rem;
+}
+.yj-tasks-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.yj-task {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid var(--yj-line);
+  border-radius: 999px;
+  background: var(--yj-surface);
+  padding: 0.3rem 0.75rem;
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--yj-body);
+}
+.yj-task:disabled {
+  cursor: default;
+}
+.yj-task-ready {
+  cursor: pointer;
+  border-color: var(--yj-strong);
+  color: var(--yj-ink);
+}
+.yj-task-ready:hover {
+  background: var(--yj-mist);
+}
+.yj-task-asking {
+  border-color: var(--yj-accent);
+  background: var(--yj-mist);
+  color: var(--yj-ink);
+  font-weight: 600;
+}
+.yj-task-done {
+  opacity: 0.7;
+}
+.yj-task-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--yj-line);
+}
+.yj-task-ready .yj-task-dot,
+.yj-task-asking .yj-task-dot {
+  background: var(--yj-accent);
+}
+.yj-task-done .yj-task-dot {
+  background: var(--yj-success);
+}
+.yj-task-waiting .yj-task-dot {
+  background: var(--yj-warning);
+}
+.yj-task-note {
+  color: var(--yj-muted);
+  font-weight: 400;
+}

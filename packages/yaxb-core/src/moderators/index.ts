@@ -41,6 +41,8 @@ export type Moderator = {
   expires_at: string | null;
   last_seen_at: string | null;
   reviews: number;
+  /** The business (tenant, TEN-1) the member belongs to; absent: the default one. */
+  tenant?: string;
 };
 
 export type ModeratorProfile = {
@@ -64,6 +66,12 @@ export const AUDIT_ACTIONS = {
   "moderator.profile_updated": "Moderator profile changed",
   "moderator.removed": "Member removed",
   "moderator.reinstated": "Member reinstated with a new key",
+  "tenant.created": "Business added to the directory",
+  "join.link_issued": "Join link issued",
+  "join.link_withdrawn": "Join link withdrawn",
+  "join.accepted": "Join request accepted",
+  "join.declined": "Join request declined",
+  "join.collected": "Joined with a new key",
   "moderation.viewed": "Moderation queue opened",
   "moderation.handled": "Escalated question handled",
   "answer.reviewed": "Answer reviewed",

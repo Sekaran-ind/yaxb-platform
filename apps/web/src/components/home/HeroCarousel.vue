@@ -6,6 +6,7 @@
 // who prefer reduced motion; it can be paused, stepped with the arrows or the dots, and swiped.
 // Every slide sits in the same grid cell, so the panel keeps the tallest slide's height.
 import { ArrowLeft, ArrowRight, ArrowRightLeft, Baby, Bike, BookOpen, CalendarHeart, HardDrive, Languages, LayoutGrid, MessagesSquare, Pause, Play, ShieldCheck, Smartphone, Sparkles, UserRound, WifiOff, Workflow, type LucideIcon } from "@lucide/vue";
+import { SURFACE } from "@/lib/surface";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import BaseModal from "@/components/site/BaseModal.vue";
 import { cn } from "@/lib/cn";
@@ -13,19 +14,25 @@ import { BRAND } from "@/lib/legal";
 import { SITE_WIDTH } from "@/lib/site-width";
 
 const SLIDES = ["Anjal.ai", "Family and personal", "Small business", "What's in the kiosk"] as const;
+/** The slides this surface shows (SUR-2): its own story, then what's in the kiosk. */
+const SHOWN: number[] = SURFACE === "family" ? [1, 3] : SURFACE === "business" ? [2, 3] : [0, 1, 2, 3];
 const INTERVAL = 9000;
 
-const FEATURES: { icon: LucideIcon; title: string; short: string; body: string }[] = [
-  { icon: MessagesSquare, title: "Ask Me", short: "Cited answers in 14 languages", body: "Ask by voice or text in 14 languages. Every answer names its source, says so when nothing covers the question, and passes emergencies straight to a person." },
-  { icon: BookOpen, title: "My notebook", short: "Your documents and websites", body: "Add documents, PDFs and whole websites. The kiosk answers from them, remembers what matters, and keeps them on your device." },
-  { icon: Workflow, title: "Quick tools and journeys", short: "Forms that fill from your words", body: "Guided services, one screen at a time. Say it in your own words and the form fills itself; you check it before it goes." },
-  { icon: ArrowRightLeft, title: "Requests between people", short: "Handed to the right person", body: "A customer starts, staff finish. Each request gets a reference and moves to the right person's device, with its status in the conversation." },
-  { icon: Sparkles, title: "Service Catalogue and AI designer", short: "Services from a description", body: "Describe a service in plain words. The designer drafts its journeys, screens and roles; a reviewer publishes it for any kiosk." },
-  { icon: CalendarHeart, title: "Scheduler", short: "Birthdays and key dates", body: "Birthdays, anniversaries, to-dos and every service's key dates in one place. \"Next Friday at 4\" is understood on the device." },
-  { icon: Baby, title: "Child safety lock", short: "Safe for children", body: "A parent turns it on with a PIN, or a profile is set as under 18. Answers are written for a child, nothing for adults, no web search, and worrying questions go to a trusted adult and the moderators. Settings and staff areas stay locked." },
-  { icon: UserRound, title: "Profiles and the front desk", short: "Private profiles, a locked kiosk", body: "\"Who's using Anjal?\" keeps each person's notebook apart, encrypted. Restricted Mode locks a shared kiosk to Ask Me behind a staff PIN." },
-  { icon: ShieldCheck, title: "Quality you can measure", short: "Moderated and measured", body: "Moderators check flagged answers and rate them. Each notebook gets an F1 score week by week, with the weakest answers listed first." },
+/** Each feature names the surfaces it belongs to (SUR-2); the combined site shows them all. */
+const ALL_FEATURES: { icon: LucideIcon; title: string; short: string; body: string; surfaces: ("family" | "business")[] }[] = [
+  { icon: MessagesSquare, title: "Ask Me", short: "Cited answers in 14 languages", body: "Ask by voice or text in 14 languages. Every answer names its source, says so when nothing covers the question, and passes emergencies straight to a person." , surfaces: ["family", "business"] },
+  { icon: BookOpen, title: "My notebook", short: "Your documents and websites", body: "Add documents, PDFs and whole websites. The kiosk answers from them, remembers what matters, and keeps them on your device." , surfaces: ["family", "business"] },
+  { icon: Workflow, title: "Quick tools and journeys", short: "Forms that fill from your words", body: "Guided services, one screen at a time. Say it in your own words and the form fills itself; you check it before it goes." , surfaces: ["family", "business"] },
+  { icon: ArrowRightLeft, title: "Requests between people", short: "Handed to the right person", body: "A customer starts, staff finish. Each request gets a reference and moves to the right person's device, with its status in the conversation." , surfaces: ["business"] },
+  { icon: Sparkles, title: "Service Catalogue and AI designer", short: "Services from a description", body: "Describe a service in plain words. The designer drafts its journeys, screens and roles; a reviewer publishes it for any kiosk." , surfaces: ["business"] },
+  { icon: CalendarHeart, title: "Scheduler", short: "Birthdays and key dates", body: "Birthdays, anniversaries, to-dos and every service's key dates in one place. \"Next Friday at 4\" is understood on the device." , surfaces: ["family", "business"] },
+  { icon: Baby, title: "Child safety lock", short: "Safe for children", body: "A parent turns it on with a PIN, or a profile is set as under 18. Answers are written for a child, nothing for adults, no web search, and worrying questions go to a trusted adult and the moderators. Settings and staff areas stay locked." , surfaces: ["family"] },
+  { icon: UserRound, title: "Profiles", short: "Private profiles", body: "\"Who's using Anjal?\" keeps each person's notebook and Scheduler apart, encrypted on the device.", surfaces: ["family"] },
+  { icon: UserRound, title: "The front desk", short: "A locked public kiosk", body: "Restricted Mode turns the kiosk into a front desk for chosen services, behind a staff PIN. Nothing about a visitor stays on it.", surfaces: ["business"] },
+  { icon: ShieldCheck, title: "Quality you can measure", short: "Moderated and measured", body: "Moderators check flagged answers and rate them. Each notebook gets an F1 score week by week, with the weakest answers listed first." , surfaces: ["business"] },
 ];
+
+const FEATURES = SURFACE === "all" ? ALL_FEATURES : ALL_FEATURES.filter((f) => (f.surfaces as string[]).includes(SURFACE));
 
 const RUNS_ON: { icon: LucideIcon; label: string }[] = [
   { icon: LayoutGrid, label: "Full, Pod or Mini kiosk" },
@@ -43,7 +50,7 @@ const featuresOpen = ref(false);
 const reduced = ref(false);
 const moving = computed(() => !paused.value && !hovering.value && !focused.value && !featuresOpen.value && !reduced.value);
 
-const go = (i: number) => (current.value = (i + SLIDES.length) % SLIDES.length);
+const go = (i: number) => (current.value = (i + SHOWN.length) % SHOWN.length);
 let timer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
   reduced.value = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
@@ -65,7 +72,9 @@ function touchEnd(e: TouchEvent) {
 }
 
 const slideClass = (i: number) =>
-  cn("col-start-1 row-start-1 grid items-center gap-12 transition duration-500 lg:grid-cols-[1.1fr_1fr]", i === current.value ? "visible opacity-100" : "invisible opacity-0");
+  cn("col-start-1 row-start-1 grid items-center gap-12 transition duration-500 lg:grid-cols-[1.1fr_1fr]", SHOWN[current.value] === i ? "visible opacity-100" : "invisible opacity-0");
+/** "2 of 4": a slide's place among the shown ones. */
+const place = (i: number) => `${SHOWN.indexOf(i) + 1} of ${SHOWN.length}`;
 </script>
 
 <template>
@@ -85,7 +94,7 @@ const slideClass = (i: number) =>
     <div :class="cn('mx-auto pt-14 pb-10 md:pt-20', SITE_WIDTH)">
       <div class="grid" aria-live="off">
         <!-- 1. Anjal -->
-        <div :class="slideClass(0)" role="group" aria-roledescription="slide" :aria-label="`1 of 4: ${SLIDES[0]}`" :inert="current !== 0">
+        <div v-if="SHOWN.includes(0)" :class="slideClass(0)" role="group" aria-roledescription="slide" :aria-label="`${place(0)}: ${SLIDES[0]}`" :inert="SHOWN[current] !== 0">
           <div>
             <p class="eyebrow">{{ BRAND }} · for business and home</p>
             <h1 class="mt-4 text-4xl font-semibold tracking-[-0.035em] text-balance text-ink md:text-6xl">Where businesses meet their customers, and families stay close.</h1>
@@ -112,10 +121,10 @@ const slideClass = (i: number) =>
         </div>
 
         <!-- 2. Family and personal -->
-        <div :class="slideClass(1)" role="group" aria-roledescription="slide" :aria-label="`2 of 4: ${SLIDES[1]}`" :inert="current !== 1">
+        <div v-if="SHOWN.includes(1)" :class="slideClass(1)" role="group" aria-roledescription="slide" :aria-label="`${place(1)}: ${SLIDES[1]}`" :inert="SHOWN[current] !== 1">
           <div>
             <p class="eyebrow">Family and personal</p>
-            <h2 class="mt-4 text-4xl font-semibold tracking-[-0.035em] text-balance text-ink md:text-5xl">Stay connected, in a space that's yours.</h2>
+            <component :is="SHOWN[0] === 1 ? 'h1' : 'h2'" class="mt-4 text-4xl font-semibold tracking-[-0.035em] text-balance text-ink md:text-5xl">Stay connected, in a space that's yours.</component>
             <p class="mt-6 max-w-xl text-lg text-pretty text-gray-600">The family shares one context: the manuals, circulars, recipes and dates everyone needs, asked about in each person's own language. Profiles are encrypted, a shared kiosk can be locked, and nothing leaves your devices unless you choose.</p>
             <div class="mt-9 flex flex-wrap items-center gap-3">
               <a href="#ideas-family" class="btn-primary h-11 px-6">Ideas for families</a>
@@ -141,10 +150,10 @@ const slideClass = (i: number) =>
         </div>
 
         <!-- 3. Small business -->
-        <div :class="slideClass(2)" role="group" aria-roledescription="slide" :aria-label="`3 of 4: ${SLIDES[2]}`" :inert="current !== 2">
+        <div v-if="SHOWN.includes(2)" :class="slideClass(2)" role="group" aria-roledescription="slide" :aria-label="`${place(2)}: ${SLIDES[2]}`" :inert="SHOWN[current] !== 2">
           <div>
             <p class="eyebrow">Small business</p>
-            <h2 class="mt-4 text-4xl font-semibold tracking-[-0.035em] text-balance text-ink md:text-5xl">Connect with your customers. Get found on Anjal.ai.</h2>
+            <component :is="SHOWN[0] === 2 ? 'h1' : 'h2'" class="mt-4 text-4xl font-semibold tracking-[-0.035em] text-balance text-ink md:text-5xl">Connect with your customers. Get found on Anjal.ai.</component>
             <p class="mt-6 max-w-xl text-lg text-pretty text-gray-600">Put your catalogue and prices in a notebook and design your services, from a booking to a quote. Customers ask in their own language, start a request, and your team accepts it with a date. Publish your services and new customers find you on Anjal.ai.</p>
             <div class="mt-9 flex flex-wrap items-center gap-3">
               <a
@@ -175,7 +184,7 @@ const slideClass = (i: number) =>
         </div>
 
         <!-- 4. What's in the kiosk -->
-        <div :class="slideClass(3)" role="group" aria-roledescription="slide" :aria-label="`4 of 4: ${SLIDES[3]}`" :inert="current !== 3">
+        <div v-if="SHOWN.includes(3)" :class="slideClass(3)" role="group" aria-roledescription="slide" :aria-label="`${place(3)}: ${SLIDES[3]}`" :inert="SHOWN[current] !== 3">
           <div>
             <p class="eyebrow">What's in the kiosk</p>
             <h2 class="mt-4 text-4xl font-semibold tracking-[-0.035em] text-balance text-ink md:text-5xl">Everything in one kiosk.</h2>
@@ -205,10 +214,10 @@ const slideClass = (i: number) =>
         <button type="button" class="grid size-9 place-items-center rounded-full ring-1 ring-gray-200 hover:bg-mist" aria-label="Previous slide" @click="go(current - 1)"><ArrowLeft class="size-4" /></button>
         <div class="flex items-center gap-1.5 px-1">
           <button
-            v-for="(label, i) in SLIDES"
-            :key="label"
+            v-for="(n, i) in SHOWN"
+            :key="n"
             type="button"
-            :aria-label="`Show slide ${i + 1}: ${label}`"
+            :aria-label="`Show slide ${i + 1}: ${SLIDES[n]}`"
             :aria-current="i === current ? 'true' : undefined"
             :class="cn('h-2 rounded-full transition-all', i === current ? 'w-7 bg-ink' : 'w-2 bg-gray-300 hover:bg-gray-400')"
             @click="go(i)"

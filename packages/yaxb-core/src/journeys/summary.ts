@@ -1,7 +1,7 @@
 // Journey summaries (docs/specs/05-journeys-and-forms.md, JRN-20..22): what a journey does, built
 // from its definition so it is always current, and what a finished run did.
 import { LANGUAGES } from "../schemas/index.js";
-import { journeyRolesNeeded, progressOf, type Field, type Journey, type RunState, type Step } from "./index.js";
+import { afterTasks, journeyRolesNeeded, journeyTasks, progressOf, type Field, type Journey, type RunState, type Step } from "./index.js";
 
 /** Where a service's work happens, for the visitor. */
 export type ServiceWhere = "device" | "assistant" | "notebook";
@@ -51,7 +51,11 @@ const kindOf = (s: Step): JourneyStepSummary["kind"] => (s.final ? "final" : s.a
 
 function order(journey: Journey): string[] {
   const seen: string[] = [];
-  const queue = [journey.start];
+  // A parallel journey (JRN-46): its tasks first, as listed, then on from the first other step.
+  const tasks = journeyTasks(journey);
+  seen.push(...tasks);
+  const after = tasks.length ? afterTasks(journey) : null;
+  const queue = [tasks.length ? (after ?? journey.start) : journey.start];
   while (queue.length) {
     const id = queue.shift()!;
     if (seen.includes(id) || !journey.steps[id]) continue;

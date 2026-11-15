@@ -24,6 +24,7 @@ import { actCase, deliveryText, resendCase, startCase, type CaseDetail } from "@
 import type { CaseSummary, Delivery } from "@sekaran-ind/yaxb-core/cases";
 import { useConsent } from "@/composables/consent";
 import ConsentGate from "./ConsentGate.vue";
+import { JourneyTasks } from "@sekaran-ind/yaxb-journeys/vue";
 
 const props = defineProps<{
   journey: Journey;
@@ -251,6 +252,9 @@ watch(
     if (s === "done" && !finishedRun) {
       finishedRun = true;
       record("journey.finished", { ms: Date.now() - runStarted, ok: state.value?.result?.ok ?? null, staff: Boolean(props.resume) });
+      // What it achieved (OUT-1), when its result screen names an outcome.
+      const outcome = state.value?.result?.outcome;
+      if (outcome) record("journey.outcome", { step: state.value?.current ?? null, outcome, ok: state.value?.result?.ok ?? null });
     }
   },
 );
@@ -377,6 +381,8 @@ onBeforeUnmount(() => {
       <li v-if="state.status === 'asking'" class="inline-flex items-center gap-1 rounded-full bg-mist px-2.5 py-1 text-gray-600"><Circle class="size-3.5" aria-hidden="true" /> {{ currentLabel }}</li>
     </ol>
 
+    <!-- A parallel journey (JRN-47): its tasks, any order; pick a ready one to work on it now. -->
+    <JourneyTasks v-if="state?.tasks?.length" :tasks="state.tasks" :role-name="roleName" @focus="(step) => runner.focus(step)" />
     <form v-if="state?.status === 'asking' && state.prompt" class="card space-y-3 p-4" @submit.prevent="submit">
       <p class="font-medium text-ink">{{ state.prompt.text }}</p>
       <!-- In the conversation, the message box below fills this form (LIB-56); elsewhere, its own box. -->

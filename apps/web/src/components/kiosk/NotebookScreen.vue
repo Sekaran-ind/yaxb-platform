@@ -3,6 +3,7 @@
 // adds, the memory the assistant keeps, and this notebook's conversations, kept in the store the
 // Storage setting picks. A turn sends them to the assistant as context.
 import { NOTEBOOK_LIMITS } from "@sekaran-ind/yaxb-core/notebook";
+import { offers } from "@/lib/surface";
 import { STORAGE_OPTIONS } from "@sekaran-ind/yaxb-core/settings";
 import { Brain, ClipboardPaste, Eye, FileText, Globe, Loader2, MessagesSquare, Plus, RefreshCw, Trash2, Upload } from "@lucide/vue";
 import { ConfirmAction } from "@sekaran-ind/yaxb-journeys/vue";
@@ -247,6 +248,7 @@ async function deleteThread(id: string) {
 
     <!-- The services added to this kiosk (LIB-49): their journeys run in the conversation. -->
     <CatalogueServices
+      v-if="offers('catalogue')"
       :staff="staff"
       :doc-count="nb.serviceDocumentCount"
       @start="(id) => emit('startJourney', id)"

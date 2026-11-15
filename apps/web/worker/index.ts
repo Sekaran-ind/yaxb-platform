@@ -9,18 +9,21 @@ import { createMemoryRateLimiter } from "@sekaran-ind/yaxb-core/stores";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { settings, stringEnv, type Bindings } from "./env";
-import { cases, catalogue, designer, kiosk, library, moderators, relay, reviews, serviceEvents } from "./kiosk";
+import { cases, catalogue, currentTenant, designer, kiosk, library, moderators, relay, reviews, serviceEvents, tenantContext, tenantOfMember, tenants } from "./kiosk";
+import { DEFAULT_TENANT, SLUG, TenantError } from "@sekaran-ind/yaxb-core/tenants";
+import { resolveContext, servesApi } from "@sekaran-ind/yaxb-core/context";
 import { eventBatchSchema } from "@sekaran-ind/yaxb-core/metrics";
 import { beaconSchema, CaseError, envelopeSchema, MAX_CASE_RUN, MAX_ENVELOPE, mayReassign, RELAY_MAX_HOURS, staffingOf, type Envelope } from "@sekaran-ind/yaxb-core/cases";
 import { DesignerError, historyOf, LESSONS_IN_MEMORY, MAX_NARRATIVE } from "@sekaran-ind/yaxb-core/designer";
 import { ADMIN_ACTOR_ID, LibraryError, MAX_ENTRY_BYTES, permissionsOf, type LibraryActor } from "@sekaran-ind/yaxb-core/library";
 import { proposalEntry, ReviewError, type Reviewer } from "@sekaran-ind/yaxb-core/reviews";
-import { auditEvent, looksLikeKey, MODERATOR_ROLES, statusOf, TeamRuleError } from "@sekaran-ind/yaxb-core/moderators";
+import { auditEvent, hashKey, looksLikeKey, MODERATOR_ROLES, statusOf, TeamRuleError } from "@sekaran-ind/yaxb-core/moderators";
 import { AVAILABILITY, memberStatus, roomName, teamMember } from "@sekaran-ind/yaxb-core/team";
 import { HUB_HEADERS } from "./team";
 
 export { TeamHub } from "./team";
-import { clientId, fromApp, isAdmin, moderatorCookie, moderatorOf, safeEqual, sessionId, setAdminCookie, setModeratorCookie } from "./session";
+import { clientId, fromApp, isAdmin, MODERATOR_COOKIE, moderatorCookie, moderatorOf, safeEqual, sessionId, setAdminCookie, setModeratorCookie } from "./session";
+import { getCookie } from "hono/cookie";
 
 export type AppEnv = { Bindings: Bindings; Variables: { reviewer: Reviewer } };
 
@@ -86,6 +89,30 @@ async function readJson(c: Context<AppEnv>, max: number): Promise<{ body: unknow
 }
 
 // ---- API ------------------------------------------------------------------------------------------
+
+/** This Worker's surface (SUR-4): routes for features it doesn't offer answer 404 (yaxb-core context). */
+app.use("/api/*", async (c, next) => {
+  const ctx = resolveContext({ surface: settings(c.env).SURFACE });
+  if (!servesApi(ctx, new URL(c.req.url).pathname)) return jsonError(c, 404, "Not found.");
+  await next();
+});
+
+/**
+ * The business a request acts for (TEN-2): a signed-in member's own; otherwise `?tenant=<short
+ * name>` for reading a business's published services from the directory; otherwise the default.
+ * Every service below is scoped to it (kiosk.ts tenantContext).
+ */
+app.use("/api/*", async (c, next) => {
+  let tenant = DEFAULT_TENANT;
+  const cookie = getCookie(c, MODERATOR_COOKIE) ?? "";
+  const id = cookie.slice(0, Math.max(cookie.indexOf("."), 0));
+  if (/^[0-9a-f-]{36}$/.test(id)) tenant = (await tenantOfMember(c.env, id)) ?? DEFAULT_TENANT;
+  else {
+    const asked = c.req.query("tenant");
+    if (asked && SLUG.test(asked) && c.req.method === "GET") tenant = (await tenants(c.env).tenant(asked))?.id ?? DEFAULT_TENANT;
+  }
+  return tenantContext.run(tenant, () => next());
+});
 
 app.use("/api/*", async (c, next) => {
   // CORS for the native app's origins only (PLT-14); no credentials: its session is a header.
@@ -264,12 +291,17 @@ app.post("/api/moderator", async (c) => {
   const parsed = signInSchema.safeParse((await readJson(c, MAX_FORM_BODY)).body);
   if (!parsed.success) return jsonError(c, 401, "That key isn't right.");
   const token = parsed.data.token.trim();
-  const svc = moderators(c.env);
   if (looksLikeKey(token)) {
-    const m = await svc.signIn(token);
-    if (!m) return jsonError(c, 401, "That key isn't right, or it has been revoked or has expired.");
-    setModeratorCookie(c, await moderatorCookie(c, m, await svc.store.keyHashOf(m.id)));
-    return c.json({ moderator: true, name: m.name, roles: m.roles });
+    // A key may belong to any business: find the member's tenant first, then sign in within it (TEN-2).
+    const found = await moderators(c.env).store.byKeyHash(await hashKey(token));
+    const tenant = found?.tenant ?? currentTenant();
+    return tenantContext.run(tenant, async () => {
+      const svc = moderators(c.env, tenant);
+      const m = await svc.signIn(token);
+      if (!m) return jsonError(c, 401, "That key isn't right, or it has been revoked or has expired.");
+      setModeratorCookie(c, await moderatorCookie(c, m, await svc.store.keyHashOf(m.id)));
+      return c.json({ moderator: true, name: m.name, roles: m.roles });
+    });
   }
   const { MODERATOR_TOKEN } = settings(c.env);
   if (!MODERATOR_TOKEN || !safeEqual(token, MODERATOR_TOKEN)) return jsonError(c, 401, "That key isn't right, or it has been revoked or has expired.");
@@ -334,6 +366,128 @@ app.delete("/api/admin", async (c) => {
   if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
   await setAdminCookie(c, false);
   return c.json({ admin: false });
+});
+
+// ---- the directory, businesses and join links (TEN-1..8) --------------------------------------------------
+
+const tenantError = (c: Context<AppEnv>, e: unknown) => {
+  if (e instanceof TenantError) return jsonError(c, e.status, e.message);
+  throw e;
+};
+const audited = (c: Context<AppEnv>, action: Parameters<typeof auditEvent>[0]["action"], name: string | null, target: string | null, details?: Record<string, unknown>) =>
+  moderators(c.env).store.audit(auditEvent({ actor_type: "moderator", actor_id: null, actor_name: name, action, target_id: target, ...(details ? { details } : {}) }));
+
+/** The directory: the businesses on this deployment (public). */
+app.get("/api/directory", async (c) => c.json({ tenants: await tenants(c.env).directory() }));
+
+/** A new business (the deployment's administrator: the ADMIN_TOKEN holder). */
+app.post("/api/tenants", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  if (!(await isAdmin(c))) return jsonError(c, 401, "Only this deployment's administrator adds businesses.");
+  const body = (await readJson(c, MAX_FORM_BODY)).body as { name?: string; slug?: string; kind?: "business" | "family" };
+  try {
+    const t = await tenants(c.env).createTenant({ name: String(body?.name ?? ""), slug: String(body?.slug ?? ""), kind: body?.kind });
+    await audited(c, "tenant.created", "Administrator", t.id, { slug: t.slug });
+    // A new business has nobody yet: its first administrator joins with this one-use link.
+    const { token } = await tenants(c.env).issueToken(t.id, { role: "administrator", uses: 1, hours: 168, label: "First administrator", autoAccept: true }, { name: "Administrator" });
+    return c.json({ tenant: t, adminLink: `${new URL(c.req.url).origin}/join/${token}` }, 201);
+  } catch (e) {
+    return tenantError(c, e);
+  }
+});
+
+/** The business this request acts for, and whether the caller administers it. */
+app.get("/api/tenant", async (c) => {
+  const t = await tenants(c.env).tenant(currentTenant());
+  const who = await administrator(c);
+  return c.json({ tenant: t ? { id: t.id, slug: t.slug, name: t.name, kind: t.kind } : null, administrator: Boolean(who) });
+});
+
+/** Join links and requests: the business's administrator only. */
+app.use("/api/tenant/*", async (c, next) => {
+  if (c.req.method !== "GET" && !sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  if (!(await administrator(c))) return jsonError(c, 401, "Administrator sign-in required.");
+  await next();
+});
+app.get("/api/tenant/join-links", async (c) => c.json({ links: await tenants(c.env).tokens(currentTenant()) }));
+app.post("/api/tenant/join-links", async (c) => {
+  const who = await administrator(c);
+  const body = (await readJson(c, MAX_FORM_BODY)).body as { role?: string; hours?: number; uses?: number; label?: string };
+  try {
+    const { token, joinToken } = await tenants(c.env).issueToken(currentTenant(), { role: String(body?.role ?? ""), hours: Number(body?.hours) || undefined, uses: Number(body?.uses) || undefined, label: body?.label }, { name: who?.name ?? null });
+    await audited(c, "join.link_issued", who?.name ?? null, joinToken.id, { role: joinToken.role, uses: joinToken.uses_left });
+    // The token is shown once, in the link to share; only its hash is kept.
+    return c.json({ link: `${new URL(c.req.url).origin}/join/${token}`, token, joinLink: joinToken }, 201);
+  } catch (e) {
+    return tenantError(c, e);
+  }
+});
+app.delete("/api/tenant/join-links/:id", async (c) => {
+  const who = await administrator(c);
+  try {
+    await tenants(c.env).revokeToken(currentTenant(), c.req.param("id"));
+    await audited(c, "join.link_withdrawn", who?.name ?? null, c.req.param("id"));
+    return c.json({ ok: true });
+  } catch (e) {
+    return tenantError(c, e);
+  }
+});
+app.get("/api/tenant/join-requests", async (c) => c.json({ requests: await tenants(c.env).requests(currentTenant()) }));
+app.post("/api/tenant/join-requests/:id/decide", async (c) => {
+  const who = await administrator(c);
+  const body = (await readJson(c, MAX_FORM_BODY)).body as { decision?: string; role?: string };
+  const decision = body?.decision === "accept" ? "accept" : body?.decision === "decline" ? "decline" : null;
+  if (!decision) return jsonError(c, 422, "Accept or decline.");
+  try {
+    const r = await tenants(c.env).decide(currentTenant(), c.req.param("id"), decision, { role: body?.role }, { name: who?.name ?? null });
+    await audited(c, decision === "accept" ? "join.accepted" : "join.declined", who?.name ?? null, r.id, { role: r.role });
+    return c.json({ request: r });
+  } catch (e) {
+    return tenantError(c, e);
+  }
+});
+
+/**
+ * Joining (public, rate limited): what a link offers, asking to join, where a request stands, and
+ * collecting the member key once accepted. The claim code comes in a header, never the address.
+ */
+app.get("/api/join/:token", async (c) => {
+  // Not rate limited: reading what a link offers changes nothing, and links can't be guessed (192 bits).
+  try {
+    return c.json(await tenants(c.env).preview(c.req.param("token")));
+  } catch (e) {
+    return tenantError(c, e);
+  }
+});
+app.post("/api/join/:token", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  if (!(await withinLimit("form", c.env.FORM_LIMITER, `join:${ip(c)}`))) return jsonError(c, 429, "Too many attempts. Please wait a minute.");
+  const body = (await readJson(c, MAX_FORM_BODY)).body as { name?: string };
+  try {
+    const { request, claim } = await tenants(c.env).redeem(c.req.param("token"), { name: String(body?.name ?? "") });
+    return c.json({ request: { id: request.id, status: request.status, role: request.role }, claim }, 201);
+  } catch (e) {
+    return tenantError(c, e);
+  }
+});
+app.get("/api/join-requests/:id", async (c) => {
+  try {
+    return c.json(await tenants(c.env).status(c.req.param("id"), c.req.header("x-yaxb-claim") ?? ""));
+  } catch (e) {
+    return tenantError(c, e);
+  }
+});
+app.post("/api/join-requests/:id/collect", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  if (!(await withinLimit("form", c.env.FORM_LIMITER, `join:${ip(c)}`))) return jsonError(c, 429, "Too many attempts. Please wait a minute.");
+  try {
+    const { key, memberId } = await tenants(c.env).collect(c.req.param("id"), c.req.header("x-yaxb-claim") ?? "");
+    const t = await tenantOfMember(c.env, memberId);
+    if (t) await tenantContext.run(t, () => audited(c, "join.collected", null, memberId));
+    return c.json({ key });
+  } catch (e) {
+    return tenantError(c, e);
+  }
 });
 
 /** Every admin route below: same origin for changes, and the administrator's cookie. */

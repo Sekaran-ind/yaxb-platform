@@ -7,6 +7,10 @@ import CallLayer from "@/components/team/CallLayer.vue";
 import TextDialog from "@/components/site/TextDialog.vue";
 import { NATIVE } from "@/lib/platform";
 import { restricted } from "@/composables/restricted";
+import { startSync } from "@/composables/sync";
+
+// Sync v2 with the box, when Storage is "box" (SYN-5).
+startSync();
 
 const route = useRoute();
 </script>

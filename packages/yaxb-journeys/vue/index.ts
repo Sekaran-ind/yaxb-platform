@@ -10,6 +10,7 @@ export { default as FlowPreview } from "./FlowPreview.vue";
 export { default as FlowStudio } from "./FlowStudio.vue";
 export { default as JourneyDesigner } from "./JourneyDesigner.vue";
 export { default as JourneyRunner } from "./JourneyRunner.vue";
+export { default as JourneyTasks } from "./JourneyTasks.vue";
 export { default as PopMenu } from "./PopMenu.vue";
 export { default as QuestionField } from "./QuestionField.vue";
 export type { LanguageOption, SourceOption } from "./QuestionField.vue";

@@ -33,6 +33,24 @@ function sample(): ServiceEvent[] {
 const journeys = [{ id: "register", title: "Register", steps: [{ id: "about-you", label: "About you" }, { id: "approve", label: "Approve" }, { id: "shirt", label: "T-shirt" }] }];
 
 describe("service metrics (MET-3..5)", () => {
+  it("counts outcomes per journey and for the service, named by their result screens (OUT-2)", () => {
+    const events = [
+      ...sample(),
+      ev(4, { ...base, kind: "journey.outcome", run: "a", step: "entered", outcome: "entry-accepted", ok: true }),
+      ev(30, { ...base, kind: "journey.outcome", run: "e", step: "entered", outcome: "entry-accepted", ok: true }),
+      ev(31, { ...base, kind: "journey.outcome", run: "f", step: "refused", outcome: "entry.refused", ok: false }),
+    ];
+    const m = serviceMetrics(events, [{ ...journeys[0]!, outcomes: [{ id: "entry-accepted", label: "You're in" }] }]);
+    expect(m.outcomes).toEqual([
+      { outcome: "entry-accepted", label: "You're in", count: 2 },
+      { outcome: "entry.refused", label: "entry.refused", count: 1 },
+    ]);
+    expect(m.journeys.find((j) => j.journey === "register")?.outcomes.map((o) => o.count)).toEqual([2, 1]);
+    // Older events (no outcome) still parse.
+    expect(eventBatchSchema.parse([{ ...sample()[0]!, outcome: undefined }])[0]!.outcome).toBeNull();
+    expect(() => eventBatchSchema.parse([{ ...sample()[0]!, outcome: "Not An Id" }])).toThrow();
+  });
+
   it("counts starts, finishes, hand-overs and open requests, and a funnel per journey", () => {
     const m = serviceMetrics(sample(), journeys);
     expect([m.started, m.finished, m.handed, m.open, m.closed, m.declined]).toEqual([3, 1, 1, 0, 1, 0]);

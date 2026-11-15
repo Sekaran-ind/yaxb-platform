@@ -147,3 +147,21 @@ Guided services: a sequence of steps that ask the visitor something, run an on-d
 | JRN-42 | The Service Designer agent is told these rules and fixes these warnings before it submits a draft. | Built |
 | JRN-43 | A service's Flow view draws each journey: questions, services, decisions and endings, the role that answers each screen, each decision's conditions; what is never reached is faded below. | Built |
 | JRN-44 | The Flow view lists one way through to each ending (the shortest), with the conditions taken. | Built |
+
+## Outcomes
+
+| ID | Requirement | Status |
+|---|---|---|
+| OUT-1 | A result screen may name its outcome, a plain id for what the journey achieved there (registration-approved, entry.refused); the checks refuse anything else. The designer edits it beside the result's title and text. | Built |
+| OUT-2 | Finishing on such a screen records a `journey.outcome` event with the outcome (a service with storage); the dashboard counts outcomes for the service and per journey, named by their result screens. | Built |
+| OUT-3 | The AI designer gives result screens outcomes. | Built |
+
+## Running journeys on XState, and parallel journeys
+
+| ID | Requirement | Status |
+|---|---|---|
+| JRN-45 | Every journey runs on an XState actor (the same API as before: start, answer, snapshot, resume, continue as, stop), so the kiosk, the preview, hand-overs and the server's replay all run on the machine. | Built |
+| JRN-46 | A journey may be `flow: parallel` (after Cübo's plan machine): its screens that ask or run a service are tasks, available together unless they wait for others (`after:`); when every task is done the journey carries on from its first other screen (a decision or a result). The checks refuse a task with `next`, `after` naming a non-task, and circles. | Built |
+| JRN-47 | The kiosk and the preview list a parallel journey's tasks and where each stands (ready, now, waiting for a role, after others, done); a person picks a ready task to work on, and a service task runs by itself. | Built |
+| JRN-48 | A task for another role waits for that role; the run is handed over and carried on as that role. Replay answers a parallel journey's tasks in any order the stored answers allow. | Built |
+| JRN-49 | The Service Designer edits "How the screens happen" (one after another, or in any order) and each task's "Waits for"; the Flow view draws tasks by what they wait for, then "when every task is done". | Built |

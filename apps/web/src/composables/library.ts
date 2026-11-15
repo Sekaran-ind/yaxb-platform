@@ -4,6 +4,7 @@
 // journeys are offered to those who may start them: visitors get the ones open to anyone; a
 // signed-in member also gets the ones their roles start (the server says which, `allowed`).
 import { JOURNEY_SERVICES, kioskContent } from "@sekaran-ind/yaxb-core/content";
+import { trackWrite } from "@/lib/browser/sync-hook";
 import { compileBundle, DEFAULT_ROLES, journeyRolesNeeded, roleLabel, type Journey, type Role, type RunActor, type Service } from "@sekaran-ind/yaxb-journeys";
 import { computed, ref, shallowRef } from "vue";
 import { api } from "@/lib/api";
@@ -77,13 +78,24 @@ export function loadCatalogue(): Promise<void> {
 /** Kept for callers that only need the roles. */
 export const loadLibraryContent = loadCatalogue;
 
+/** Service data on the box (sync v2): which catalogue services this business's kiosks have loaded. */
+export const SERVICE_DATA_ID = "kiosk-services";
+export function applyServiceData(id: string, data: unknown | null) {
+  if (id !== SERVICE_DATA_ID) return;
+  const list = data && typeof data === "object" && Array.isArray((data as { loaded?: unknown }).loaded) ? ((data as { loaded: unknown[] }).loaded.filter((x) => typeof x === "string") as string[]) : [];
+  loadedIds.value = list;
+  saveLoaded(list);
+}
+const trackLoaded = () => trackWrite("service-data", SERVICE_DATA_ID, { loaded: loadedIds.value });
 export function loadIntoKiosk(entryId: string) {
   if (!loadedIds.value.includes(entryId)) loadedIds.value = [...loadedIds.value, entryId];
   saveLoaded(loadedIds.value);
+  trackLoaded();
 }
 export function removeFromKiosk(entryId: string) {
   loadedIds.value = loadedIds.value.filter((x) => x !== entryId);
   saveLoaded(loadedIds.value);
+  trackLoaded();
 }
 
 /** Published services, and whether this kiosk has each one loaded. */

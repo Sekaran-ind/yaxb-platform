@@ -35,3 +35,14 @@
 | ID | Requirement | Status |
 |---|---|---|
 | PLT-40 | An ESP32-S3 voice device is planned; see `apps/esp32-s3-audio` for the design notes. | Planned (design only) |
+
+## Surfaces: Anjal Family and Anjal for Business
+
+| ID | Requirement | Status |
+|---|---|---|
+| SUR-1 | The web app is built as two Workers, each with its own database: Anjal Family (anjal-family) and Anjal for Business (anjal-business), both on yaxb-core and yaxb-journeys; the combined site stays. | Built |
+| SUR-2 | Each surface has its own home page: Family's story, ideas for families and children; Business's story, from an idea to a running service, and ideas for services. | Built |
+| SUR-3 | Family offers Ask Me, notebooks, the Scheduler, Quick tools, profiles and the child safety lock; Business offers the kiosk and its front desk, the Service Catalogue and AI designer, requests, staff, join links and the directory, without the child lock or family profiles. | Built |
+| SUR-4 | What a surface offers is yaxb-core's context (after clinux-core's resolveContext: surface, tenant, jurisdiction); the Worker answers 404 on routes for features its surface lacks. | Built |
+| SUR-5 | "Realm" is kept for the regulatory context, as in ClinüxFlow (a jurisdiction's consent wording and what may be kept). | Planned |
+| SUR-6 | The packages work in a project outside the monorepo from their packed tarballs, through their public exports only. | Built |

@@ -46,8 +46,8 @@ export const isNestedService = (doc: unknown): doc is Record<string, unknown> =>
   Boolean(doc && typeof doc === "object" && !Array.isArray(doc) && (doc as Record<string, unknown>).kind === "service" && (doc as Record<string, unknown>).journeys !== undefined);
 
 const SERVICE_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "order", "layouts", "hidden", "roles", "journeys", "dates", "consent"]);
-const JOURNEY_KEYS = new Set(["id", "title", "summary", "icon", "category", "version", "roles", "start", "screens"]);
-const SCREEN_KEYS = new Set(["id", "title", "ask", "questions", "submitLabel", "service", "with", "onError", "decide", "next", "result", "stage", "icon", "role"]);
+const JOURNEY_KEYS = new Set(["id", "title", "summary", "icon", "category", "version", "roles", "flow", "start", "screens"]);
+const SCREEN_KEYS = new Set(["id", "title", "ask", "questions", "submitLabel", "service", "with", "onError", "decide", "next", "result", "stage", "icon", "role", "after"]);
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 
 export type Expanded = {
@@ -200,12 +200,19 @@ export function expandService(doc: Record<string, unknown>): Expanded {
           if (s.with !== undefined) step.with = s.with;
           if (s.onError !== undefined) step.onError = s.onError;
         }
+        if (s.after !== undefined) step.after = s.after;
+        const task = j.flow === "parallel" && s.decide === undefined && (step.ask !== undefined || step.service !== undefined);
         if (s.decide !== undefined) step.decide = s.decide;
-        else step.next = s.next ?? following ?? endId();
+        // A parallel journey's task has no way out of its own (the journey goes on when every task is done).
+        else if (task) {
+          if (s.next !== undefined) step.next = s.next;
+        } else step.next = s.next ?? following ?? endId();
         if (step.ask === undefined && step.service === undefined && step.decide === undefined) problems.push(`${sat}: give it questions, a service, a decision or a result`);
       }
       steps[sid] = step;
     }
+    // A parallel journey with only tasks ends with "Thank you" once they are all done.
+    if (j.flow === "parallel" && Object.values(steps).every((st) => !st.final && st.decide === undefined)) endId();
     if (ending) steps[ending] = { label: "Done", final: true, result: { title: "Thank you" } };
     journeys.push({
       kind: "journey",
@@ -216,6 +223,7 @@ export function expandService(doc: Record<string, unknown>): Expanded {
       ...(j.icon !== undefined ? { icon: j.icon } : {}),
       ...(j.category !== undefined ? { category: j.category } : {}),
       ...(j.roles !== undefined ? { roles: j.roles } : {}),
+      ...(j.flow !== undefined ? { flow: j.flow } : {}),
       start: j.start ?? ids.find((x) => typeof x === "string") ?? "",
       steps,
     });
