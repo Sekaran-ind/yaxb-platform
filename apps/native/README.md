@@ -1,4 +1,4 @@
-# YAXB Kiosk: native app
+# Anjal.ai: native app
 
 The kiosk as an Android and iOS app (Capacitor 8, following clinux-diary). The app is the kiosk alone: it opens straight into it, with Settings one tap away, and no website pages, moderator or administration screens.
 

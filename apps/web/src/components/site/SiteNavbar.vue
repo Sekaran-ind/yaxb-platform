@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import BrandLogo from "./BrandLogo.vue";
-import { offers } from "@/lib/surface";
+import { offers, SITE_BRAND, SURFACE } from "@/lib/surface";
 import { Menu, X } from "@lucide/vue";
 import { computed, ref } from "vue";
 import { useChildMode } from "@/composables/child";
@@ -9,8 +9,14 @@ import { cn } from "@/lib/cn";
 import BaseModal from "./BaseModal.vue";
 import ContactPanel from "./ContactPanel.vue";
 import { SITE_WIDTH } from "@/lib/site-width";
-import { BRAND } from "@/lib/legal";
 
+// The Yaxb.ai portal (the combined site) leads to its platforms; a platform's own site to its pages.
+const PORTAL_LINKS = [
+  { to: "/#platforms", label: "Platforms" },
+  { to: "/#core", label: "How it fits" },
+  { to: "/#privacy", label: "Privacy" },
+  { to: "/kiosk", label: "Try the kiosk" },
+];
 const LINKS = [
   { to: "/#about", label: "About" },
   { to: "/#ideas", label: "Ideas" },
@@ -20,7 +26,7 @@ const LINKS = [
 const route = useRoute();
 // The child safety lock hides the Service Catalogue (CHL-5).
 const child = useChildMode();
-const links = computed(() => (child.on.value || !offers("catalogue") ? LINKS.filter((l) => l.to !== "/catalogue") : LINKS));
+const links = computed(() => (SURFACE === "all" ? PORTAL_LINKS : child.on.value || !offers("catalogue") ? LINKS.filter((l) => l.to !== "/catalogue") : LINKS));
 const menuOpen = ref(false);
 const contactOpen = ref(false);
 </script>
@@ -30,7 +36,7 @@ const contactOpen = ref(false);
     <div :class="cn('mx-auto flex h-14 flex-wrap items-center justify-between', SITE_WIDTH)">
       <RouterLink to="/" class="flex items-center gap-2.5">
         <BrandLogo class="size-8" />
-        <span class="text-[15px] font-semibold tracking-tight text-ink">{{ BRAND.replace(".ai", "") }}<span class="text-gray-400">.ai</span></span>
+        <span class="text-[15px] font-semibold tracking-tight text-ink">{{ SITE_BRAND.replace(".ai", "") }}<span class="text-gray-400">.ai</span></span>
       </RouterLink>
       <button type="button" class="rounded-full p-2 md:hidden" :aria-expanded="menuOpen" aria-controls="main-menu" aria-label="Toggle menu" @click="menuOpen = !menuOpen">
         <X v-if="menuOpen" class="size-5" />

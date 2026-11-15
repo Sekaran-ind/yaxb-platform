@@ -46,3 +46,7 @@
 | SUR-4 | What a surface offers is yaxb-core's context (after clinux-core's resolveContext: surface, tenant, jurisdiction); the Worker answers 404 on routes for features its surface lacks. | Built |
 | SUR-5 | "Realm" is kept for the regulatory context, as in ClinüxFlow (a jurisdiction's consent wording and what may be kept). | Planned |
 | SUR-6 | The packages work in a project outside the monorepo from their packed tarballs, through their public exports only. | Built |
+| SUR-7 | The combined site is the Yaxb.ai portal (yaxb.ai): Yaxb.ai's name, title and description, and a home page that leads to each platform. | Built |
+| SUR-8 | The portal offers three platforms, each on its own site: Personal & Community (Anjal Family), Small Business (Anjal for Business) and Enterprise (ClinüxFlow, clinux.yaxb.ai). "Which fits you?" highlights one, and each card opens its platform. Their addresses are set when the portal is built (`VITE_FAMILY_URL`, `VITE_BUSINESS_URL`, `VITE_ENTERPRISE_URL`). | Built |
+| SUR-9 | The portal shows the one core every platform shares, what every platform does, and how data is kept; each build has its own page title and description. | Built |
+| SUR-10 | The Android and iOS app is named Anjal.ai (its app id stays `ai.yaxb.kiosk`, so installed apps update in place). | Built |

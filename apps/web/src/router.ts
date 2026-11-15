@@ -20,10 +20,10 @@ export const router = createRouter({
   // The app's pages are files on the device: hash URLs need no server.
   history: NATIVE ? createWebHashHistory() : createWebHistory(),
   routes: NATIVE ? NATIVE_ROUTES : [
-    // Each surface has its own home page (SUR-2); the combined site keeps the full one.
+    // Each surface has its own home page (SUR-2); the combined site is the Yaxb.ai portal (SUR-7).
     {
       path: "/",
-      component: SURFACE === "family" ? () => import("./pages/FamilyHomePage.vue") : SURFACE === "business" ? () => import("./pages/BusinessHomePage.vue") : () => import("./pages/HomePage.vue"),
+      component: SURFACE === "family" ? () => import("./pages/FamilyHomePage.vue") : SURFACE === "business" ? () => import("./pages/BusinessHomePage.vue") : () => import("./pages/PortalPage.vue"),
       meta: { title: SURFACE_NAME },
     },
     { path: "/kiosk", component: () => import("./pages/KioskPage.vue"), meta: { title: "AI Kiosk" } },
@@ -70,5 +70,5 @@ router.beforeEach((to) => {
 
 router.afterEach((to) => {
   const title = to.meta.title as string | undefined;
-  document.title = NATIVE ? "Anjal" : !title || title === SURFACE_NAME ? SURFACE_NAME : `${title} | ${SURFACE_NAME}`;
+  document.title = NATIVE ? "Anjal.ai" : !title || title === SURFACE_NAME ? SURFACE_NAME : `${title} | ${SURFACE_NAME}`;
 });

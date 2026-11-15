@@ -8,3 +8,15 @@ export const SURFACE = CONTEXT.surface;
 /** Whether this build offers a feature (the catalogue, requests, staff, the child lock…). */
 export const offers = (f: Feature) => contextOffers(CONTEXT, f);
 export const SURFACE_NAME = surfaceName(CONTEXT);
+/** The name in the site's header and footer: the combined site is the Yaxb.ai portal (SUR-7). */
+export const SITE_BRAND = SURFACE === "all" ? "Yaxb.ai" : "Anjal.ai";
+
+/**
+ * The platforms the Yaxb.ai portal leads to (SUR-7..9). Each address is set when the portal is built
+ * (VITE_FAMILY_URL, VITE_BUSINESS_URL, VITE_ENTERPRISE_URL), so subdomains can change without code.
+ */
+export const PLATFORM_URLS = {
+  family: import.meta.env.VITE_FAMILY_URL || "https://anjal-family.tsekaran1949.workers.dev/",
+  business: import.meta.env.VITE_BUSINESS_URL || "https://anjal-business.tsekaran1949.workers.dev/",
+  enterprise: import.meta.env.VITE_ENTERPRISE_URL || "https://clinux.yaxb.ai/",
+} as const;

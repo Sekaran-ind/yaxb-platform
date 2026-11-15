@@ -2,7 +2,7 @@
   "name": "@sekaran-ind/yaxb-native",
   "version": "0.1.0",
   "private": true,
-  "description": "The YAXB kiosk as a native Android and iOS app (Capacitor), built from apps/web in native mode. Opens straight into the kiosk.",
+  "description": "Anjal.ai, the kiosk, as a native Android and iOS app (Capacitor), built from apps/web in native mode. Opens straight into the kiosk.",
   "scripts": {
     "build": "npm run build:native -w @sekaran-ind/yaxb-web && cap sync",
     "sync": "cap sync",
