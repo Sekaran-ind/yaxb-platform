@@ -22,7 +22,7 @@
     {
       "binding": "DB",
       "database_name": "yaxb",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "96e1dade-764b-4fe9-9950-8d9988ccf19b",
       "migrations_dir": "../../packages/yaxb-core/migrations"
     }
   ],
