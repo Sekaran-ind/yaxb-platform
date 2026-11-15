@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The Yaxb.ai portal (SUR-7..9): the combined site's home page. It leads to the platforms Yaxb.ai
-// provides, each on its own site: Anjal Family (personal and community), Anjal for Business (small
+// provides, each on its own site: Anjal.ai Family (personal and community), Anjal.ai for Business (small
 // businesses) and ClinüxFlow (enterprises in regulated care). "Which fits you?" highlights one; each
 // card opens its platform. Below: the one core they share, what every platform does, and how data
 // is kept. Every claim here is something the platforms actually do.
@@ -48,14 +48,14 @@ const PLATFORMS: Platform[] = [
     icon: HeartHandshake,
     audience: "Personal & Community",
     pick: "Me, my family or community",
-    name: "Anjal Family",
+    name: "Anjal.ai Family",
     tagline: "Stay connected, in a space that's yours.",
     points: [
       "One shared notebook of manuals, circulars and recipes that everyone can ask in their own language",
       "Birthdays, bills and key dates come up by themselves",
       "Profiles sealed on the device, and a PIN-protected child safety lock",
     ],
-    cta: "Open Anjal Family",
+    cta: "Open Anjal.ai Family",
     accent: "#f97316",
   },
   {
@@ -63,14 +63,14 @@ const PLATFORMS: Platform[] = [
     icon: Store,
     audience: "Small Business",
     pick: "My small business",
-    name: "Anjal for Business",
+    name: "Anjal.ai for Business",
     tagline: "Connect with your customers. Get found on Anjal.ai.",
     points: [
       "Describe a service and the AI designer drafts its journeys, screens and consent forms",
       "Join links for your team, and every request routed to the right person with a reference",
       "A kiosk front desk, and a dashboard per service with completion, waits and outcomes",
     ],
-    cta: "Open Anjal for Business",
+    cta: "Open Anjal.ai for Business",
     accent: "#c026d3",
   },
   {
@@ -89,14 +89,6 @@ const PLATFORMS: Platform[] = [
     accent: "#6a1bd1",
   },
 ];
-
-const hostOf = (url: string) => {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
-};
 
 // "Which fits you?": one card at a time is highlighted; picking again clears it.
 const picked = ref<PlatformId | null>(null);
@@ -260,7 +252,6 @@ onBeforeUnmount(() => observer?.disconnect());
             {{ p.cta }}
             <ArrowUpRight class="size-5 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" aria-hidden="true" />
           </a>
-          <p class="mt-3 text-center text-xs text-gray-500">{{ hostOf(PLATFORM_URLS[p.id]) }}</p>
         </article>
       </div>
       <p class="mt-8 text-center text-xs text-gray-500">The kiosks give general information only, never a diagnosis. ClinüxFlow is not affiliated with or endorsed by the National Health Authority.</p>
@@ -273,7 +264,7 @@ onBeforeUnmount(() => observer?.disconnect());
           <p class="eyebrow">How it fits together</p>
           <h2 class="mt-3 text-3xl font-semibold tracking-[-0.03em] text-balance text-ink md:text-4xl">One core, every platform.</h2>
           <p class="mt-4 text-pretty text-gray-600">
-            Every Yaxb.ai platform runs on the same two open packages: the kiosk's agent, knowledge and languages, and the engine for services and journeys. What one platform learns, all of them get; each adds only what its people need.
+            Every Yaxb.ai platform runs on the same two building blocks: the kiosk's agent, knowledge and languages, and the engine for services and journeys. What one platform learns, all of them get; each adds only what its people need.
           </p>
           <ul class="mt-7 space-y-3 text-sm text-gray-700">
             <li class="flex gap-3"><BookOpen class="mt-0.5 size-4 shrink-0 text-brand" aria-hidden="true" /> The same answers with sources, and the same safety rules, everywhere.</li>
@@ -282,7 +273,7 @@ onBeforeUnmount(() => observer?.disconnect());
           </ul>
         </div>
 
-        <div data-reveal class="rounded-3xl bg-mist/60 p-5 ring-1 ring-gray-200/70 sm:p-7" role="img" aria-label="Anjal Family, Anjal for Business and ClinüxFlow all run on yaxb-journeys and yaxb-core">
+        <div data-reveal class="rounded-3xl bg-mist/60 p-5 ring-1 ring-gray-200/70 sm:p-7" role="img" aria-label="Anjal.ai Family, Anjal.ai for Business and ClinüxFlow all run on the same journey engine and core">
           <div class="grid grid-cols-3 gap-2 sm:gap-3">
             <div v-for="p in PLATFORMS" :key="p.id" class="rounded-2xl bg-surface p-3 text-center ring-1 ring-gray-200/80 sm:p-4">
               <span class="mx-auto grid size-9 place-items-center rounded-xl text-white" :style="{ background: p.accent }"><component :is="p.icon" class="size-4" aria-hidden="true" /></span>
@@ -294,11 +285,11 @@ onBeforeUnmount(() => observer?.disconnect());
             <div v-for="p in PLATFORMS" :key="p.id" class="mx-auto h-8 w-px" :style="{ background: `linear-gradient(${p.accent}, transparent)` }" />
           </div>
           <div class="rounded-2xl bg-surface p-4 ring-1 ring-gray-200/80">
-            <p class="font-mono text-xs text-gray-500">@sekaran-ind/yaxb-journeys</p>
+            <p class="text-xs font-medium tracking-wide text-gray-500 uppercase">Journey engine</p>
             <p class="mt-1 text-sm font-semibold text-ink">Services, journeys, forms and consent</p>
           </div>
           <div class="mt-3 rounded-2xl p-4 text-white" style="background: linear-gradient(100deg, #6a1bd1, #c026d3 55%, #f97316)">
-            <p class="font-mono text-xs text-white/75">@sekaran-ind/yaxb-core</p>
+            <p class="text-xs font-medium tracking-wide text-white/75 uppercase">Yaxb.ai core</p>
             <p class="mt-1 text-sm font-semibold">The kiosk's agent, knowledge, languages and privacy</p>
           </div>
         </div>

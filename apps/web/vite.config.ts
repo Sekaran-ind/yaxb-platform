@@ -32,7 +32,7 @@ function workerNodeShims(): Plugin {
 
 /** Each build's page title and description (index.html is shared): the portal, a surface, the app. */
 const HEADS: Record<string, { title: string; description: string }> = {
-  all: { title: "Yaxb.ai", description: "Yaxb.ai: AI kiosks that answer with facts and sources, in your own language, for families and communities (Anjal Family), small businesses (Anjal for Business) and enterprises in regulated care (ClinüxFlow)." },
+  all: { title: "Yaxb.ai", description: "Yaxb.ai: AI kiosks that answer with facts and sources, in your own language, for families and communities (Anjal.ai Family), small businesses (Anjal.ai for Business) and enterprises in regulated care (ClinüxFlow)." },
   family: { title: "Anjal Family", description: "Anjal Family: one shared notebook the whole family can ask in its own language, key dates that come up by themselves, and a protected space." },
   business: { title: "Anjal for Business", description: "Anjal for Business: connect with your customers, design your services with the AI designer, and get found on Anjal.ai." },
   native: { title: "Anjal.ai", description: "Anjal.ai, the kiosk." },
