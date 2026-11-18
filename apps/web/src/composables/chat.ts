@@ -20,7 +20,39 @@ type TurnContext = {
    * person's turn shows the notice when there is one.
    */
   spelling?: { corrected: string; notice: "acted" | "suggest" | null };
+  /** Exchanges answered on the device since the agent's last reply (deviceTurns). */
+  device?: { asked: string; answered: string }[];
 };
+
+/** A turn answered by the agent (not on the device: no local answer, card, journey or request). */
+const byAgent = (t: ChatTurn) => t.role === "assistant" && !t.local && !t.card && !t.journey && !t.request && !t.via;
+
+/** What a turn answered on the device said, in words the agent can read. */
+function deviceAnswer(t: ChatTurn): string {
+  if (t.card) return [t.card.title, t.card.text].filter(Boolean).join(": ");
+  if (t.journey) return t.journey.result ? `${t.journey.title} finished: ${t.journey.result.title}` : `Started the ${t.journey.title} service.`;
+  if (t.request) return `Showed request ${t.request.ref}.`;
+  return t.text;
+}
+
+/**
+ * The exchanges answered on the device since the agent last replied (on-device answers, command
+ * cards, journeys, requests), so the agent knows the whole conversation. At most the last 10.
+ */
+export function deviceTurns(turns: readonly ChatTurn[]): { asked: string; answered: string }[] {
+  let from = 0;
+  turns.forEach((t, i) => {
+    if (byAgent(t)) from = i + 1;
+  });
+  const out: { asked: string; answered: string }[] = [];
+  for (let i = from; i < turns.length - 1; i++) {
+    const [q, a] = [turns[i]!, turns[i + 1]!];
+    if (q.role !== "user" || a.role !== "assistant" || a.error || a.pending) continue;
+    const answered = deviceAnswer(a).trim();
+    if (q.text.trim() && answered) out.push({ asked: q.text.trim().slice(0, 2000), answered: answered.slice(0, 4000) });
+  }
+  return out.slice(-10);
+}
 
 /** The notice a person's turn carries for a spelling correction, if any. */
 const spellingOf = (ctx: Pick<TurnContext, "spelling">): Pick<ChatTurn, "spelling"> =>
@@ -37,7 +69,10 @@ async function* postTurn(threadId: string, message: string, selection: Selection
       message,
       ...selection,
       settings: ctx.settings,
-      client: { thread: browserHeld ? ctx.thread : null, notebook: ctx.notebook ? notebookForAgent(ctx.notebook) : null, retrieved: ctx.retrieved ?? [], ...(ctx.spelling ? { spelling: ctx.spelling.corrected } : {}) },
+      client: { thread: browserHeld ? ctx.thread : null, notebook: ctx.notebook ? notebookForAgent(ctx.notebook) : null, retrieved: ctx.retrieved ?? [],
+        ...(ctx.spelling ? { spelling: ctx.spelling.corrected } : {}),
+        ...(ctx.device?.length ? { device: ctx.device } : {}),
+      },
     }),
     signal,
   });
@@ -81,12 +116,13 @@ export function useChat(store: Ref<KioskStore>, onStored?: () => void) {
     controller?.abort();
     controller = new AbortController();
     busy.value = true;
+    const device = deviceTurns(turns.value);
     const userTurn: ChatTurn = { id: crypto.randomUUID(), role: "user", text: message, tools: [], todos: [], ...spellingOf(ctx) };
     turns.value.push(userTurn, { id: crypto.randomUUID(), role: "assistant", text: "", tools: [], todos: [], pending: true });
     let answer = "";
     let state: ThreadState | null = record?.state ?? null;
     try {
-      for await (const ev of postTurn(threadId.value, message, selection, { ...ctx, thread: state }, controller.signal)) {
+      for await (const ev of postTurn(threadId.value, message, selection, { ...ctx, device, thread: state }, controller.signal)) {
         const turn = last();
         switch (ev.type) {
           case "token":
@@ -127,15 +163,16 @@ export function useChat(store: Ref<KioskStore>, onStored?: () => void) {
 
   /** Keep the conversation: its turns for the Transcript, and the agent's state. */
   async function keep(message: string, ctx: Omit<TurnContext, "thread">, state: ThreadState | null) {
-    if (!ctx.notebook) return;
+    // Without a notebook nothing is stored, but the agent's state is kept for the next turn.
     record = {
       id: threadId.value,
-      notebookId: ctx.notebook.id,
+      notebookId: ctx.notebook?.id ?? "",
       title: record?.title ?? titleOf(message),
       updatedAt: nowIso(),
       turns: JSON.parse(JSON.stringify(turns.value)) as ChatTurn[],
       state,
     };
+    if (!ctx.notebook) return;
     await store.value.putThread(record).catch(() => undefined);
     onStored?.();
   }

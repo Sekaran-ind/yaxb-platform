@@ -45,12 +45,12 @@ import { ROUTE_LIMIT, routeTools } from "./routing.js";
 import type { TurnWeb } from "./tools.js";
 import { createMemoryFeedbackStore, feedbackSchema, summarizeFeedback, type FeedbackStore } from "../feedback/index.js";
 import { filterModeration, type ModerationStore, type ThreadState, type ThreadStore } from "../stores/index.js";
-import { createKioskAgent, createLeanKioskAgent, createServiceDesignerAgent, translate, type FinalState, type Harness, type HarnessOptions, type KioskAgent } from "./harness.js";
+import { compactedMessages, createKioskAgent, createLeanKioskAgent, createServiceDesignerAgent, translate, type FinalState, type Harness, type HarnessOptions, type KioskAgent } from "./harness.js";
 import { deepPromptAddendum, turnPromptAddendum } from "./prompts.js";
 import { AUTO_ESCALATION_REASON, looksLikeEmergency } from "./safety.js";
 import { buildTools } from "./tools.js";
 
-export { AGENT_NAME, DEFAULT_HARNESS, READ_ONLY_FS_TOOLS, SAFE_FS_TOOLS, SUBAGENTS, createKioskAgent, createLeanKioskAgent, translate } from "./harness.js";
+export { AGENT_NAME, COMPACTION, DEFAULT_HARNESS, READ_ONLY_FS_TOOLS, SAFE_FS_TOOLS, SUBAGENTS, createKioskAgent, createLeanKioskAgent, translate } from "./harness.js";
 export type { HarnessOptions } from "./harness.js";
 export { buildTools } from "./tools.js";
 export { looksLikeEmergency } from "./safety.js";
@@ -114,6 +114,18 @@ export const USER_MESSAGES = {
 } as const;
 
 /** Drop the oldest turns until the history fits. A kept history always starts at a human message. */
+/**
+ * What the visitor asked since the agent last answered, answered on the device instead (on-device
+ * answers, command cards, journeys), put before this turn's words so the agent knows the whole
+ * conversation. Labelled as the device's, in the visitor's own message: a client can't make them
+ * look like the agent's replies.
+ */
+export function deviceContext(device: readonly { asked: string; answered: string }[] | undefined): string {
+  if (!device?.length) return "";
+  const lines = device.map((d) => `Visitor: ${d.asked}\nKiosk (on this device, not you): ${d.answered}`).join("\n\n");
+  return `<answered_on_the_device>\nEarlier in this conversation, answered by the kiosk on the visitor's device without you:\n\n${lines}\n</answered_on_the_device>\n\n`;
+}
+
 export function trimHistory(messages: StoredMessage[], { maxStoredMessages, maxStoredBytes }: Pick<Limits, "maxStoredMessages" | "maxStoredBytes">) {
   let start = 0;
   const size = (from: number) => JSON.stringify(messages.slice(from)).length;
@@ -125,7 +137,8 @@ export function trimHistory(messages: StoredMessage[], { maxStoredMessages, maxS
 }
 
 function toThreadState(final: FinalState, limits: Limits): ThreadState {
-  const messages = trimHistory(mapChatMessagesToStoredMessages(final.messages), limits);
+  // The compacted conversation (a summary, then the newest messages); trimming is the last resort.
+  const messages = trimHistory(mapChatMessagesToStoredMessages(compactedMessages(final)), limits);
   let files = scratchFiles(final.files);
   if (JSON.stringify(files).length > limits.maxStoredBytes / 2) files = {};
   return { messages, todos: final.todos ?? [], files };
@@ -540,7 +553,7 @@ ${JSON.stringify({ forms: draft.forms }, null, 1)}
     let final: FinalState | undefined;
     try {
       const stream = await agent.stream(
-        { messages: [...history, new HumanMessage(message + spellingHint(client?.spelling, message))], ...(plan.harness === "deep" ? { todos: previous?.todos ?? [], files } : {}) } as never,
+        { messages: [...history, new HumanMessage(deviceContext(client?.device) + message + spellingHint(client?.spelling, message))], ...(plan.harness === "deep" ? { todos: previous?.todos ?? [], files } : {}) } as never,
         {
           streamMode: ["messages", "updates", "values"],
           subgraphs: true,

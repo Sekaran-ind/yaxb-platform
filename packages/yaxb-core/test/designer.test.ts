@@ -3,7 +3,7 @@
 // model is scripted.
 import type { BaseMessage } from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
-import { createKiosk } from "../src/agent/index.js";
+import { COMPACTION, createKiosk } from "../src/agent/index.js";
 import { JOURNEY_SERVICES, kioskContent } from "../src/content/index.js";
 import {
   createDesignerService,
@@ -237,6 +237,32 @@ describe("the design conversation (LIB-39..41)", () => {
     expect(change).toContain("<current_service>");
     expect(change).toContain("<reviewer_note>");
     expect(change).toContain("Keep everything");
+  });
+
+  it("gives the agent the earlier turns and the service in the editor, and compacts a long thread", async () => {
+    const short = setup([{ calls: [{ name: "submit_design", args: { yaml: GOOD, notes: "Added the phone." } }] }, { text: "Submitted." }]);
+    const history = [
+      { role: "user" as const, text: NARRATIVE },
+      { role: "assistant" as const, text: "Drafted the service." },
+    ];
+    await short.kiosk.design({ narrative: "Also ask for a phone number", current: GOOD, history, selection: SELECTION });
+    const first = short.model.calls[0]!.filter((m) => m.getType() !== "system");
+    expect(String(first[0]!.content)).toContain(NARRATIVE);
+    expect(first[1]!.getType()).toBe("ai");
+    expect(String(first.at(-1)!.content)).toContain("<current_service>");
+    expect(String(first.at(-1)!.content)).toContain("Also ask for a phone number");
+
+    // A thread past COMPACTION.designer: a summary call first, then the agent sees the summary and the newest turns.
+    const long = setup([{ text: "SUMMARY: a gym joining service; they added a plan choice." }, { calls: [{ name: "submit_design", args: { yaml: GOOD, notes: "Done." } }] }, { text: "Submitted." }]);
+    const turns = Array.from({ length: COMPACTION.designer.trigger[0].value / 2 + 2 }, (_, i) => [
+      { role: "user" as const, text: `Change number ${i} to the gym service` },
+      { role: "assistant" as const, text: `Changed as you asked (${i}).` },
+    ]).flat();
+    const out = await long.kiosk.design({ narrative: "Rename it to Gym joining", current: GOOD, history: turns, selection: SELECTION });
+    expect(out).toMatchObject({ ok: true });
+    const answering = long.model.calls[1]!.filter((m) => m.getType() !== "system");
+    expect(String(answering[0]!.content)).toContain("SUMMARY: a gym joining service");
+    expect(answering.length).toBeLessThanOrEqual(COMPACTION.designer.keep.value + 2);
   });
 
   for (const [name, make] of [
