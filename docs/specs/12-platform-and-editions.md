@@ -70,7 +70,7 @@ The Family home page promises children asking and parents approving, but the Fam
 |---|---|---|
 | BIL-1 | A family adds its consumer numbers once (electricity, water, property tax). Anjal checks the amount due and the due date, puts the date in the Scheduler and reminds the family a few days before. It only reads. Paying always happens on the biller's site or the family's UPI app. | Planned |
 | BIL-2 | A bill is fetched through BBPS bill fetch when the biller is covered, as a declarative connector (CNX, 14). | Planned |
-| BIL-3 | Otherwise, a read-only lookup on the biller's own public page, under all of WEB-30..35 (14). | Parked |
+| BIL-3 | Otherwise, a read-only lookup on the biller's own public page, under all of WEB-30..35 (14). It is designed and built as part of the Playwright work (WEB), with no separate track. | Parked |
 | BIL-4 | Consumer numbers are kept in the family's sealed vault (PRF), never in logs or audit records. `bill.checked` records only the biller and whether it worked. | Planned |
 | BIL-5 | The Bills card shows each account's amount due and due date, with "Pay on the biller's site" and "Pay with UPI" links. Bills are stored as schema.org `Invoice`, so household spending can be charted (VIS, 13). | Planned |
 | BIL-6 | An association can use the same catalogue for its common-area connections, seen by the treasurer's role. | Planned |

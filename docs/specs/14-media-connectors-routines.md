@@ -110,7 +110,7 @@ Today connectors are MCP servers the operator lists in `MCP_SERVERS`, the same f
 | WEB-2 | Capture goes only to the approved origins, through the guarded gateway, into an archive (HAR). Analysis replays the archive in a fresh sandbox with networking off, and only structured findings and screenshots leave it. | Parked |
 | WEB-3 | Each drafted action is delivered by a hand-over to staff (the default), a connector, or a link out. | Parked |
 | WEB-4 | The archive and screenshots are removed when the service is published, or after 30 days for an abandoned draft. A weekly re-check marks the service for review when the form changes. | Parked |
-| WEB-30 | Read-only run-time lookups (a bill or a status on a public page) are allowed only for platform-catalogue entries with a recorded recipe and a terms check. | Parked |
+| WEB-30 | Read-only run-time lookups (a bill or a status on a public page) are allowed only for platform-catalogue entries with a recorded recipe and a terms check. They are built with the Playwright capture and sandbox (WEB-1..4), not on their own. | Parked |
 | WEB-31 | The lookup types only the given number and reads only the result. It never signs in, pays, solves a CAPTCHA or keeps cookies, and a CAPTCHA or OTP hands the page to the person. | Parked |
 | WEB-32 | It runs in the same sandbox with network access to that one origin only, and its result must match a fixed schema. | Parked |
 | WEB-33 | It runs at most once a day per number, with the result cached. A broken recipe is paused and reported, not retried. | Parked |
