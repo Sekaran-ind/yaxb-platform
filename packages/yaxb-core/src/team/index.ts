@@ -12,6 +12,7 @@
 // it carries ids, availability and the invitation's kind only, never content.
 import { z } from "zod";
 import { statusOf, type Moderator, type ModeratorRole } from "../moderators/index.js";
+import { DEFAULT_TENANT } from "../tenants/index.js";
 
 export const AVAILABILITY = ["available", "busy", "away"] as const;
 export type Availability = (typeof AVAILABILITY)[number];
@@ -67,6 +68,14 @@ export interface HubSocket {
 /** One room per pair of members and channel, the same name from either side. */
 export function roomName(a: string, b: string, channel: Channel = "chat"): string {
   return `${channel}:${[a, b].sort().join(":")}`;
+}
+
+/**
+ * The name of a tenant's own hub (TEAM-52): presence, invitations and rooms never cross tenants.
+ * The default tenant keeps the original name, so its hub carries on unchanged.
+ */
+export function hubName(tenant: string): string {
+  return tenant === DEFAULT_TENANT ? "team" : `team:${tenant}`;
 }
 
 /**

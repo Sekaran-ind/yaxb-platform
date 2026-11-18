@@ -56,4 +56,4 @@ How it's built: members are moderators with their own key (MOD-20); the shared t
 |---|---|---|
 | TEAM-50 | Signaling must admit only signed-in, active members, and only pair two members (or a visitor and an answering member, TEAM-40); the relay forwards opaque offers, answers and ICE candidates and parses nothing else. | Built |
 | TEAM-51 | Media and messages must be encrypted end to end by WebRTC (DTLS-SRTP, SCTP over DTLS); the only server in the path for one-to-one calls is the STUN server used to find a route. | Built |
-| TEAM-52 | Each tenant must have its own team hub (one Durable Object per tenant), so presence, invitations and notifications such as email cards (16) never reach another tenant's members. Today there is one hub, named "team", for every tenant on an edition, so the presence list shows online members of other businesses. | Planned |
+| TEAM-52 | Each tenant must have its own team hub (one Durable Object per tenant), so presence, invitations and notifications such as email cards (16) never reach another tenant's members. | Built |

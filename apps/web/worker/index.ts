@@ -18,7 +18,7 @@ import { DesignerError, historyOf, LESSONS_IN_MEMORY, MAX_NARRATIVE } from "@sek
 import { ADMIN_ACTOR_ID, LibraryError, MAX_ENTRY_BYTES, permissionsOf, type LibraryActor } from "@sekaran-ind/yaxb-core/library";
 import { proposalEntry, ReviewError, type Reviewer } from "@sekaran-ind/yaxb-core/reviews";
 import { auditEvent, hashKey, looksLikeKey, MODERATOR_ROLES, statusOf, TeamRuleError } from "@sekaran-ind/yaxb-core/moderators";
-import { AVAILABILITY, memberStatus, roomName, teamMember } from "@sekaran-ind/yaxb-core/team";
+import { AVAILABILITY, hubName, memberStatus, roomName, teamMember } from "@sekaran-ind/yaxb-core/team";
 import { HUB_HEADERS } from "./team";
 
 export { TeamHub } from "./team";
@@ -1118,8 +1118,9 @@ app.get("/api/team/:socket{presence|signal}", async (c) => {
     headers.set(HUB_HEADERS.kind, "room");
     headers.set(HUB_HEADERS.room, roomName(me.id, peer.id, channel));
   }
-  // One relay for the team: a team is small, and both sides of a pair must meet in one place.
-  const hub = c.env.TEAM.get(c.env.TEAM.idFromName("team"));
+  // One relay per tenant (TEAM-52): a team is small, both sides of a pair must meet in one place, and
+  // presence never shows another business's members.
+  const hub = c.env.TEAM.get(c.env.TEAM.idFromName(hubName(currentTenant())));
   return hub.fetch(new Request(c.req.raw.url, { headers }));
 });
 

@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { createMemoryModeratorStore, createModeratorService, TeamRuleError, type ModeratorStore } from "../src/moderators/index.js";
 import { createD1ModeratorStore } from "../src/stores/d1.js";
-import { CLOSE_NOT_ALLOWED, CLOSE_ROOM_FULL, leavesNoAdministrator, memberStatus, PairingHub, Presence, roomName, teamMember, type HubSocket } from "../src/team/index.js";
+import { CLOSE_NOT_ALLOWED, CLOSE_ROOM_FULL, hubName, leavesNoAdministrator, memberStatus, PairingHub, Presence, roomName, teamMember, type HubSocket } from "../src/team/index.js";
 import { sqliteD1 } from "./sqlite-d1.js";
 
 class FakeSocket implements HubSocket {
@@ -25,6 +25,12 @@ describe("pairing two devices", () => {
   it("names a room the same from either side, per channel", () => {
     expect(roomName(B, A)).toBe(roomName(A, B));
     expect(roomName(A, B, "video")).not.toBe(roomName(A, B, "chat"));
+  });
+
+  it("gives each tenant its own hub, and keeps the default tenant's (TEAM-52)", () => {
+    expect(hubName("default")).toBe("team");
+    expect(hubName("acme")).toBe("team:acme");
+    expect(hubName("acme")).not.toBe(hubName("sri-traders"));
   });
 
   it("pairs two members, makes the newcomer the initiator, and relays without reading", () => {
