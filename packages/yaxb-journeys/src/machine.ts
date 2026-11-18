@@ -101,7 +101,12 @@ function parallelGraph(j: Journey): FlowGraph {
     const queue = [end];
     while (queue.length) {
       const at = queue.shift()!;
-      for (const e of edges.filter((x) => x.from === at && !tasks.includes(x.to))) if (!depth.has(e.to)) (depth.set(e.to, depth.get(at)! + 1), queue.push(e.to));
+      for (const e of edges.filter((x) => x.from === at && !tasks.includes(x.to))) {
+        if (!depth.has(e.to)) {
+          depth.set(e.to, depth.get(at)! + 1);
+          queue.push(e.to);
+        }
+      }
     }
   }
   const failing = edges.some((e) => e.to === FAILED_STATE);
@@ -142,7 +147,10 @@ export function journeyGraph(j: Journey): FlowGraph {
   while (queue.length) {
     const at = queue.shift()!;
     for (const e of edges.filter((x) => x.from === at)) {
-      if (!depth.has(e.to)) (depth.set(e.to, depth.get(at)! + 1), queue.push(e.to));
+      if (!depth.has(e.to)) {
+        depth.set(e.to, depth.get(at)! + 1);
+        queue.push(e.to);
+      }
     }
   }
   // What nothing reaches goes below, in its own rows: from each screen nothing (unreached) leads to.
@@ -154,7 +162,10 @@ export function journeyGraph(j: Journey): FlowGraph {
   while (lostQueue.length) {
     const at = lostQueue.shift()!;
     for (const e of edges.filter((x) => x.from === at && !reached.has(x.to))) {
-      if (!lost.has(e.to)) (lost.set(e.to, lost.get(at)! + 1), lostQueue.push(e.to));
+      if (!lost.has(e.to)) {
+        lost.set(e.to, lost.get(at)! + 1);
+        lostQueue.push(e.to);
+      }
     }
   }
   const nodes: FlowNode[] = ids.map((id) => {
@@ -196,7 +207,10 @@ export function waysThrough(j: Journey): { end: string; steps: string[]; via: (s
     .map((n) => {
       const steps = [n.id];
       const via: (string | null)[] = [];
-      for (let e = prev.get(n.id); e && !tasks.includes(e.from); e = prev.get(e.from)) (steps.unshift(e.from), via.unshift(e.label));
+      for (let e = prev.get(n.id); e && !tasks.includes(e.from); e = prev.get(e.from)) {
+        steps.unshift(e.from);
+        via.unshift(e.label);
+      }
       if (tasks.length) return { end: n.id, steps: [...tasks, ...steps], via: [...tasks.slice(1).map(() => null), "when every task is done", ...via] };
       return { end: n.id, steps, via };
     });
@@ -237,7 +251,12 @@ export function designChecks(j: Journey, { roles = [] as readonly string[], orde
   const canEnd = new Set(g.nodes.filter((n) => n.kind === "final" || n.kind === "failed").map((n) => n.id));
   for (let grew = true; grew; ) {
     grew = false;
-    for (const e of g.edges) if (canEnd.has(e.to) && !canEnd.has(e.from)) (canEnd.add(e.from), (grew = true));
+    for (const e of g.edges) {
+      if (canEnd.has(e.to) && !canEnd.has(e.from)) {
+        canEnd.add(e.from);
+        grew = true;
+      }
+    }
   }
   for (const n of g.nodes) if (n.reachable && !canEnd.has(n.id)) out.push({ level: "warning", step: n.id, message: `from screen '${n.id}' the journey can never end: it loops with no way out.` });
 

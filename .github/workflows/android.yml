@@ -26,6 +26,9 @@ jobs:
       contents: read
     env:
       VITE_API_BASE: ${{ vars.VITE_API_BASE }}
+      # onnxruntime-node (a dev dependency for the embedding scripts) would download its CUDA build,
+      # whose release asset is gone (404); the APK never uses it.
+      ONNXRUNTIME_NODE_INSTALL_CUDA: skip
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
