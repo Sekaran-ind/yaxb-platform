@@ -122,6 +122,11 @@ export const clientStateSchema = z.strictObject({
   retrieved: z.array(retrievedRefSchema).max(12).default([]),
   /** The device's spell check of the message (SPL-7): a hint to the agent, never in place of the words typed. */
   spelling: z.string().trim().max(MAX_MESSAGE_CHARS).optional(),
+  /** Turns answered on the device since the agent's last reply (on-device answers, commands, journeys). */
+  device: z
+    .array(z.strictObject({ asked: z.string().trim().max(2000), answered: z.string().trim().max(4000) }))
+    .max(10)
+    .optional(),
 });
 
 /** What a browser or device sends: a client-generated conversation id, never a full thread id. */

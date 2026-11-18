@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createKiosk, looksLikeEmergency, trimHistory, type KioskDeps } from "../src/agent/index.js";
+import { COMPACTION, createKiosk, looksLikeEmergency, trimHistory, type KioskDeps } from "../src/agent/index.js";
 import type { AgentEvent } from "../src/events/index.js";
 import { createMemoryModerationStore, createMemoryThreadStore } from "../src/stores/index.js";
 import { ScriptedModel, type Step } from "./scripted-model.js";
@@ -70,6 +70,55 @@ describe("kiosk agent", () => {
     expect(human).toContain('may have meant: "how do I report a concern"');
     await collect(kiosk.ask({ threadId: "test:1f8fad5b-d9cb-469f-a165-70867728950e", message: "hello there", selection: SELECTION, client: { spelling: "hello there" } }));
     expect(model.calls[1]!.find((m) => m.getType() === "human")!.content).toBe("hello there");
+  });
+
+  it("carries a conversation the browser holds into the next turn", async () => {
+    const { raw, model } = setup([{ text: "Hello." }, { text: "You said hi." }]);
+    let thread: unknown = null;
+    for (const e of await collect(raw.ask({ threadId: THREAD, message: "hi", selection: SELECTION, settings: { storage: "indexeddb" } }))) if (e.type === "state") thread = e.thread;
+    expect(thread).not.toBeNull();
+    await collect(raw.ask({ threadId: THREAD, message: "what did I say?", selection: SELECTION, settings: { storage: "indexeddb" }, client: { thread: thread as never } }));
+    expect(model.calls[1]!.filter((m) => m.getType() === "human").map((m) => m.content)).toEqual(["hi", "what did I say?"]);
+  });
+
+  it("tells the agent what was answered on the device since its last reply", async () => {
+    const { kiosk, model } = setup([{ text: "Yes, as the kiosk said." }]);
+    await collect(
+      kiosk.ask({
+        threadId: THREAD,
+        message: "and on Sundays?",
+        selection: SELECTION,
+        client: { device: [{ asked: "When is the office open?", answered: "Monday to Friday, 9 to 5 (sources: curated:qa-010)." }] },
+      }),
+    );
+    const human = String(model.calls[0]!.find((m) => m.getType() === "human")!.content);
+    expect(human).toContain("<answered_on_the_device>");
+    expect(human).toContain("Visitor: When is the office open?");
+    expect(human).toContain("Kiosk (on this device, not you): Monday to Friday");
+    expect(human.endsWith("and on Sundays?")).toBe(true);
+    expect(model.calls[0]!.filter((m) => m.getType() === "ai")).toHaveLength(0);
+  });
+
+  it.each(["deep", "lean"] as const)("compacts a long conversation into a summary and keeps the newest turns (COMPACTION, %s)", async (harness) => {
+    const { raw, model, threads } = setup([{ text: "SUMMARY: they asked about leave and the office hours." }, { text: "Here is the answer." }]);
+    const pairs = COMPACTION.kiosk.trigger[0].value / 2 + 2;
+    const messages = Array.from({ length: pairs }, (_, i) => [
+      { type: "human", data: { content: `question ${i}`, additional_kwargs: {}, response_metadata: {} } },
+      { type: "ai", data: { content: `answer ${i}`, additional_kwargs: {}, response_metadata: {}, tool_calls: [], invalid_tool_calls: [] } },
+    ]).flat();
+    await threads.put(THREAD, { messages: messages as never, todos: [], files: {} });
+    const events = await collect(raw.ask({ threadId: THREAD, message: "one more question", selection: SELECTION, settings: { storage: "server", harness } }));
+    expect(answerOf(events)).toBe("Here is the answer.");
+    // The summary call came first; the answering call saw the summary, then only the newest messages.
+    const answering = model.calls[1]!.filter((m) => m.getType() !== "system");
+    expect(String(answering[0]!.content)).toContain("SUMMARY: they asked about leave");
+    expect(answering.length).toBeLessThanOrEqual(COMPACTION.kiosk.keep.value + 2);
+    expect(String(answering.at(-1)!.content)).toBe("one more question");
+    // What is stored is the compacted conversation, so the next turn starts from the summary.
+    const saved = (await threads.get(THREAD))!;
+    expect(String(saved.messages[0]!.data.content)).toContain("SUMMARY: they asked about leave");
+    expect(saved.messages.length).toBeLessThan(messages.length);
+    expect(saved.messages.at(-1)!.data.content).toBe("Here is the answer.");
   });
 
   it("escalates a possible emergency even when the model doesn't", async () => {

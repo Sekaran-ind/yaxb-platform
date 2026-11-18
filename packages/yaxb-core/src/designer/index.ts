@@ -89,8 +89,11 @@ export interface DesignerStore {
   removeLesson(id: string): Promise<boolean>;
 }
 
-/** Turns of the thread sent back to the agent (the newest). */
-export const THREAD_TURNS = 12;
+/**
+ * Turns of the thread sent back to the agent (the newest). Long threads are compacted by the
+ * designer agent's summarization middleware (COMPACTION.designer), so this is only a ceiling.
+ */
+export const THREAD_TURNS = 40;
 /** Messages a thread keeps. */
 export const MAX_THREAD = 200;
 const MAX_CURRENT = 64 * 1024;
