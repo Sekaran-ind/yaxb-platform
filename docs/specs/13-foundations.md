@@ -117,12 +117,12 @@ Nothing on the device is ever removed today, and Anjal never asks the browser to
 
 | ID | Requirement | Status |
 |---|---|---|
-| PLY-1 | Speaking is done from the message box only: the player's large microphone goes. Pause/Resume and Stop sit beside the message box's microphone, shown only while an answer is read aloud. | Planned |
-| PLY-2 | Profile, Preferences, Conversations and Contacts become round console buttons in the player. New conversation stays in the tab row or moves to the + menu. At the front desk, End session and the staff lock are player buttons too. | Planned |
-| PLY-3 | Full shows the buttons with labels, Pod shows the icons in a row, and Mini shows Profile and a "more" button. | Planned |
-| PLY-4 | Contacts are family members in Family, staff in Business, and the committee and neighbours in Community, with who is online, chat and call. They respect the child lock: no strangers, and no calls without a parent. | Planned |
-| PLY-5 | Stopping speech must stay reachable when the message box is hidden: a stop chip floats over the answer being read, and a spoken "stop" stops it. | Planned |
-| PLY-6 | `docs/ux/patterns.md`'s Players table is updated, and the Service Catalogue's player follows the same anatomy. | Planned |
+| PLY-1 | Speaking is done from the message box only: the player's large microphone goes. Pause/Resume and Stop sit beside the message box's microphone, shown only while an answer is read aloud. | Built |
+| PLY-2 | Profile, Preferences, Conversations and Contacts become round console buttons in the player. New conversation stays in the tab row or moves to the + menu. At the front desk, End session and the staff lock are player buttons too. | Built |
+| PLY-3 | Full shows the buttons with labels, Pod shows the icons in a row, and Mini shows Profile and a "more" button. | Built |
+| PLY-4 | Contacts are family members in Family, staff in Business, and the committee and neighbours in Community, with who is online, chat and call. They respect the child lock: no strangers, and no calls without a parent. | Partly built: Contacts opens the team for members (Business staff), hidden with the child lock. Family members and Community contacts wait for EDN. |
+| PLY-5 | Stopping speech must stay reachable when the message box is hidden: a stop chip floats over the answer being read, and a spoken "stop" stops it. | Partly built: the floating stop chip. A spoken \"stop\" while reading needs listening during speech (echo), still open. |
+| PLY-6 | `docs/ux/patterns.md`'s Players table is updated, and the Service Catalogue's player follows the same anatomy. | Built |
 
 ## Answers about each service, without a model
 

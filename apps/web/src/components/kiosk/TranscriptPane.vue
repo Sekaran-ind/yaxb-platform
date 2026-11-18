@@ -6,7 +6,7 @@
 // references stay in the conversation, so opening it later shows where they are.
 import { MAX_MESSAGE_CHARS } from "@sekaran-ind/yaxb-core/schemas";
 import { offers } from "@/lib/surface";
-import { ArrowUp, Bot, CalendarDays, CheckCircle2, Circle, CircleDot, HardDrive, Inbox, LayoutGrid, ListChecks, Loader2, Mic, MicOff, Paperclip, Plus, ShieldCheck, UserRoundCog, Wrench } from "@lucide/vue";
+import { ArrowUp, Bot, CalendarDays, CheckCircle2, Circle, CircleDot, HardDrive, Inbox, LayoutGrid, ListChecks, Loader2, Mic, MicOff, Paperclip, Pause, Play, Plus, Square, ShieldCheck, UserRoundCog, Wrench } from "@lucide/vue";
 import type { ServiceHandler } from "@sekaran-ind/yaxb-core/journeys";
 import { CASE_REF } from "@sekaran-ind/yaxb-core/cases";
 import { ACCEPTED_FILES } from "@/lib/browser/documents";
@@ -33,6 +33,9 @@ const props = defineProps<{
   /** Voice input from the composer's microphone (the same as the console's). */
   listening?: boolean;
   voiceSupported?: boolean;
+  /** An answer is being read aloud (PLY-1): Pause/Resume and Stop show beside the microphone. */
+  speaking?: boolean;
+  paused?: boolean;
   selection: { provider: string; model: string } | null;
   /** Whether a question can be sent now (a provider, or on-device answers). */
   canAsk: boolean;
@@ -60,6 +63,9 @@ const props = defineProps<{
 /** card: a command card's button (yes, no, start, sign-in, ask-assistant) for the shell to carry out. */
 const emit = defineEmits<{
   mic: [];
+  /** Reading aloud (PLY-1): pause or resume it, or stop it (and an answer still coming). */
+  pauseResume: [];
+  stop: [];
   ask: [question: string];
   reset: [];
   card: [turnId: string, action: "yes" | "no" | "start" | "sign-in" | "ask-assistant"];
@@ -499,6 +505,27 @@ function submit() {
           autocomplete="off"
           @keydown="onInputKey"
         />
+        <button
+          v-if="speaking"
+          type="button"
+          class="grid size-10 shrink-0 place-items-center rounded-full text-gray-500 transition hover:bg-mist hover:text-ink"
+          :aria-label="paused ? 'Resume reading aloud' : 'Pause reading aloud'"
+          :title="paused ? 'Resume' : 'Pause'"
+          @click="emit('pauseResume')"
+        >
+          <Play v-if="paused" class="size-4" aria-hidden="true" />
+          <Pause v-else class="size-4" aria-hidden="true" />
+        </button>
+        <button
+          v-if="speaking || busy"
+          type="button"
+          class="grid size-10 shrink-0 place-items-center rounded-full text-gray-500 transition hover:bg-mist hover:text-ink"
+          :aria-label="speaking ? 'Stop reading aloud' : 'Stop the answer'"
+          title="Stop"
+          @click="emit('stop')"
+        >
+          <Square class="size-4" aria-hidden="true" />
+        </button>
         <button
           v-if="voiceSupported"
           type="button"
