@@ -10,7 +10,11 @@
 | Visitor profile and activity log | Browser (IndexedDB), encrypted | Never, except an export the visitor makes |
 | Escalated questions | Server (D1) moderation queue | Yes: that is their purpose |
 | Session feedback | Server (D1) | Yes, without identifying the visitor |
-| Moderator profiles and reviews (planned) | Server | Yes |
+| Moderator profiles and reviews | Server | Yes |
+| Accounts and sign-in methods (planned, 15) | The shared platform database | Yes: a subject id, a verified email or phone, passkey public keys; never the profile's contents |
+| Approved-sites catalogue (planned, 14) | The shared platform database | Yes; no person's details |
+| Email for review (planned, 16) | In transit only: a sealed relay envelope, deleted on pickup or after 48 hours; kept on the tenant's box or devices | Only to the tenant's box or devices, and the model the tenant chose |
+| Media (planned, 14) | Device, box or R2, by content hash, as the service's consent form says | Only as the service allows |
 
 ## Requirements
 
@@ -33,6 +37,8 @@
 | SEC-4 | Server-side fetching of websites (KNW-21) must refuse private and local addresses, re-check redirects, and cap size and time. | Built |
 | SEC-5 | Moderator keys (MOD-20) must be random, at least 128 bits, shown once, stored hashed, revocable and optionally expiring; administrator access uses a separate secret. | Built |
 | SEC-6 | A local box must use TLS and a bearer token, and accept browser requests only from the kiosk's configured origins. | Built |
+| SEC-7 | Data in the shared platform database must always be read and written with its tenant and edition (PLA-4), so one edition's request can never reach another tenant's records. | Planned |
+| SEC-8 | Outside secrets a tenant adds (connector keys, OAuth refresh tokens) must be stored per tenant, encrypted, on the server or the box, referenced by name only, and never sent to a browser. | Planned |
 
 ## Sync with the box (v2)
 
