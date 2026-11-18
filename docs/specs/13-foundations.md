@@ -20,6 +20,10 @@ Embeddings forgive small typos, but the word-based passes missed them: commands 
 | SPL-8 | Romanised Tamil and Hindi ("enaku leave venum") should be transliterated to the native script before matching when the kiosk language is Tamil or Hindi. This may need the box rather than the browser. | Planned |
 | SPL-9 | Elders' text gets a gentler setting: always suggest, never act on a correction without a tap. | Planned |
 | SPL-10 | A `spell.corrected` event records the language and whether the person accepted the correction, never the words. A test set of mistyped questions in English, Tamil and Hindi must show matches going up, with wrong corrections under 2%. | Built: the activity log's `spell.corrected` (language, `via`, `accepted`). `test/fixtures/spell-typos.json`: English 20 of 24 recovered, Tamil 6 of 6, Hindi 6 of 6; word-matched commands 0 → 8 of 9; no changes to 258 words of correct text. |
+| SPL-11 | Vocabularies are maintained, not hard-coded. A **Vocabulary** tool, which a kiosk can include like any other tool, lets staff add, edit and remove words and phrases at two levels: the kiosk's (its place names, people's titles, local words) and each service's (words unique to that service, kept with the service in the catalogue). Entries may be in any language and script, and each records its language. | Planned |
+| SPL-12 | A service's vocabulary travels with the service: it is part of the service's definition in the catalogue, so a kiosk that loads the service gets its words, and removing the service removes them. | Planned |
+| SPL-13 | An entry may be a word, a phrase that should stay together ("check in"), or a known misspelling with its correction ("cheq" → "check"). The spell check uses the kiosk vocabulary, then the loaded services' vocabularies, then the general list. | Planned |
+| SPL-14 | The hand-made general list (`spell/general.ts`) is a stop-gap. It is replaced by a general list per language from a maintained, openly licensed source, chosen with the user, loaded on demand per language rather than bundled. | Planned |
 
 ## Maps, charts and timelines
 
