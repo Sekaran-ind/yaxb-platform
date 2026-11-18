@@ -120,6 +120,8 @@ export const clientStateSchema = z.strictObject({
   thread: clientThreadSchema.nullable().default(null),
   notebook: notebookSchema.nullable().default(null),
   retrieved: z.array(retrievedRefSchema).max(12).default([]),
+  /** The device's spell check of the message (SPL-7): a hint to the agent, never in place of the words typed. */
+  spelling: z.string().trim().max(MAX_MESSAGE_CHARS).optional(),
 });
 
 /** What a browser or device sends: a client-generated conversation id, never a full thread id. */

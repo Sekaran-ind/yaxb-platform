@@ -35,6 +35,11 @@ export type ChatTurn = {
    * has no "ask a moderator"; the person's turn shows its icon.
    */
   via?: "journey" | "request" | "file";
+  /**
+   * The device's spell check of a person's turn (SPL-6): acted, the corrected words were used and
+   * the person can search for what they typed instead; otherwise "Did you mean …" is offered.
+   */
+  spelling?: { corrected: string; acted: boolean };
 };
 
 /** A journey in the conversation: where it got to, and the request it became when it was handed over. */

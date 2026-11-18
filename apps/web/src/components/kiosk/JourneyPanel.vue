@@ -175,13 +175,13 @@ function applyFills(fills: { field: string; value: unknown; via: SlotVia }[]) {
   return n;
 }
 
-async function fillFromWords() {
+async function fillFromWords(spoken = false) {
   const text = said.value.trim();
   if (!text || !stepFields.value.length) return;
   slotBusy.value = true;
   slotNote.value = null;
   try {
-    const m = await matchOnDevice(stepFields.value, text, settings.agent);
+    const m = await matchOnDevice(stepFields.value, text, settings.agent, undefined, { spoken });
     const n = applyFills(m.fills);
     if (n) record("form.words", { step: promptStep.value });
     confirms.value = m.confirm;
@@ -225,7 +225,7 @@ function onFieldChange(id: string, v: unknown) {
 const voice = useSpeechInput(
   (text) => {
     said.value = said.value ? `${said.value} ${text}` : text;
-    void fillFromWords();
+    void fillFromWords(true);
   },
   () => speechLangFor(settings.agent.language),
 );
@@ -320,9 +320,9 @@ watch(
         id: uid,
         order: props.formOrder ?? 0,
         label: props.journey.steps[step]?.label ?? props.journey.title,
-        fill: async (text) => {
+        fill: async (text, opts) => {
           said.value = text;
-          await fillFromWords();
+          await fillFromWords(opts?.spoken);
         },
       });
     } else withdrawFormInput(uid);
@@ -389,12 +389,12 @@ onBeforeUnmount(() => {
       <div v-if="state.prompt.fields.some((f) => f.type !== 'source') && (!embedded || slotNote || confirms.length || (missing.length && said.trim()))" class="space-y-2 rounded-lg bg-mist p-3">
         <label v-if="!embedded" :for="`${uid}-said`" class="block text-sm font-medium text-ink">Say or type it in your own words</label>
         <div v-if="!embedded" class="flex gap-2">
-          <textarea :id="`${uid}-said`" v-model="said" class="input min-h-16" placeholder="e.g. I'm Ravi from Chennai, I've had a bad cough for 3 days" @keydown.enter.exact.prevent="fillFromWords" />
+          <textarea :id="`${uid}-said`" v-model="said" class="input min-h-16" placeholder="e.g. I'm Ravi from Chennai, I've had a bad cough for 3 days" @keydown.enter.exact.prevent="fillFromWords()" />
           <div class="flex flex-col gap-2">
             <button v-if="voice.supported.value" type="button" class="btn-light px-3" :aria-label="voice.listening.value ? 'Stop listening' : 'Speak'" @click="voice.listening.value ? voice.stop() : voice.start()">
               <MicOff v-if="voice.listening.value" class="size-4" aria-hidden="true" /><Mic v-else class="size-4" aria-hidden="true" />
             </button>
-            <button type="button" class="btn-light px-3" :disabled="slotBusy || !said.trim()" aria-label="Fill the form from this" title="Fill the form from this" @click="fillFromWords">
+            <button type="button" class="btn-light px-3" :disabled="slotBusy || !said.trim()" aria-label="Fill the form from this" title="Fill the form from this" @click="fillFromWords()">
               <Loader2 v-if="slotBusy" class="size-4 animate-spin" aria-hidden="true" /><Wand2 v-else class="size-4" aria-hidden="true" />
             </button>
           </div>

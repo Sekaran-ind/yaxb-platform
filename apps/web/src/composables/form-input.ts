@@ -5,7 +5,7 @@
 import { computed, ref, shallowRef } from "vue";
 
 /** order: the form's place in the conversation; the newest (highest) open form takes the words. */
-type FormInput = { id: string; label: string; order: number; fill: (text: string) => Promise<void> };
+type FormInput = { id: string; label: string; order: number; fill: (text: string, opts?: { spoken?: boolean }) => Promise<void> };
 
 const offers = new Map<string, FormInput>();
 const current = shallowRef<FormInput | null>(null);

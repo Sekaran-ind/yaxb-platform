@@ -129,6 +129,12 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
   - `password` fields are never filled (`fillable` skips them), never sent to the model, and are masked in `summarizeRun`.
   - Catalogue journeys: `KioskDeps.journeyFields` (the Worker's `catalogueFields`) looks their fields up in the published catalogue.
 
+## Spell check (SPL-1..7, SPL-10)
+
+- Core `spell/` (export `./spell`): `normalizeText` (NFC, spaces, Indian-script digits), `graphemes` and `editDistance` over `Intl.Segmenter` graphemes, `correctText(text, dict, { protect })` (SymSpell-style deletes; splits only into word pairs the kiosk's texts use, joins only into own words; never numbers, money, phones, emails, web addresses, ids, acronyms, capitalised names mid-sentence or `protect`), `chooseSpelling(originalScore, correctedScore, { strong })` (act, suggest or neither), `spellingHint`. `kioskSpellDictionary()` is built once from content, curated Q&A and command examples; `extendDictionary(dict, ownWords(texts))` adds a tenant's words; `serviceTexts(yaml)`. Corrections land only on own words; `GENERAL_WORDS` (`spell/general.ts`) only marks words as real. `test/fixtures/spell-typos.json` is the SPL-10 set.
+- The agent gets the words typed plus `client.spelling` as a hint appended to the human message (SPL-7).
+- Web: `lib/browser/spell.ts` `checkSpelling(text, { notebook, services })`. `KioskShell.ask(text, { spoken, unchecked })`: spoken words are never checked; commands try the original, then the correction; the on-device search runs both when its model is ready and keeps the better; the person's turn carries `spelling` (`ChatTurn.spelling`), shown by `TranscriptPane` as "Showing results for … / Search for … instead" or "Did you mean …" (emit `spelling` → `onSpelling`, logged as `spell.corrected`). Slot filling (`matchOnDevice`, `{ spoken }`) keeps the reading that fills more.
+
 ## Profiles and the activity log
 
 - **Core** (`accounts/`, after clinux-diary's first run and Account panel):

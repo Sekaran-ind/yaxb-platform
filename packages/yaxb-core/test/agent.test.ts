@@ -62,6 +62,16 @@ describe("kiosk agent", () => {
     expect(human).toEqual(["hi", "what did I say?"]);
   });
 
+  it("gives the model the words typed, with the device's spelling correction as a hint (SPL-7)", async () => {
+    const { kiosk, model } = setup([{ text: "Here is how." }, { text: "Fine." }]);
+    await collect(kiosk.ask({ threadId: THREAD, message: "how do I report a concren", selection: SELECTION, client: { spelling: "how do I report a concern" } }));
+    const human = String(model.calls[0]!.find((m) => m.getType() === "human")!.content);
+    expect(human.startsWith("how do I report a concren")).toBe(true);
+    expect(human).toContain('may have meant: "how do I report a concern"');
+    await collect(kiosk.ask({ threadId: "test:1f8fad5b-d9cb-469f-a165-70867728950e", message: "hello there", selection: SELECTION, client: { spelling: "hello there" } }));
+    expect(model.calls[1]!.find((m) => m.getType() === "human")!.content).toBe("hello there");
+  });
+
   it("escalates a possible emergency even when the model doesn't", async () => {
     const { kiosk, moderation } = setup([{ text: "Please call your local emergency number now." }]);
     const events = await collect(kiosk.ask({ threadId: THREAD, message: "I have crushing chest pain right now", selection: SELECTION }));
