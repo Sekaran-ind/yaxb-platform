@@ -51,6 +51,8 @@ import RestrictedUnlock from "./RestrictedUnlock.vue";
 import ComingUp from "./ComingUp.vue";
 import { pendingScheduleText } from "@/composables/schedule";
 import AskMePills from "./AskMePills.vue";
+import PlayerButtons, { type PlayerButton } from "./PlayerButtons.vue";
+import { Lock, LogOut, MessagesSquare, ShieldCheck, SlidersHorizontal, Square, UserRound, Users } from "@lucide/vue";
 import { useChildMode } from "@/composables/child";
 import type { NotebookSource } from "@sekaran-ind/yaxb-core/notebook";
 import type { StorageId } from "@sekaran-ind/yaxb-core/settings";
@@ -673,6 +675,52 @@ function onStop() {
   chat.stop();
 }
 
+const initialsOf = (n: string) =>
+  n
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+/**
+ * The person's controls in the player (PLY-2): the profile, conversations, contacts (members: the
+ * team; never with the child lock, PLY-4), the child lock when on, and the preferences. At the front
+ * desk: End session and the staff lock.
+ */
+const playerButtons = computed<PlayerButton[]>(() => {
+  if (restricted.value)
+    return [
+      { id: "end", label: "End session", icon: LogOut },
+      { id: "staff", label: "Staff", icon: Lock },
+    ];
+  const nickname = account.profile.value?.nickname ?? null;
+  const out: PlayerButton[] = [];
+  if (offers("profiles")) out.push(nickname ? { id: "profile", label: nickname, initials: initialsOf(nickname), accent: true } : { id: "profile", label: "Sign in", icon: UserRound });
+  out.push({ id: "conversations", label: "Conversations", icon: MessagesSquare, badge: nb.threads.value.length || undefined, pressed: threadsOpen.value });
+  if (kioskViewer.value.member && !childMode.on.value) out.push({ id: "contacts", label: "Contacts", icon: Users });
+  if (childMode.on.value) out.push({ id: "child", label: "Child lock", icon: ShieldCheck, accent: true });
+  out.push({ id: "prefs", label: "Preferences", icon: SlidersHorizontal, pressed: prefsOpen.value });
+  return out;
+});
+
+function onPlayerButton(id: string) {
+  if (id === "end") return void endSession();
+  if (id === "staff") return void (unlocking.value = true);
+  if (id === "profile") return openPrefs("profile");
+  if (id === "child") return openPrefs("child");
+  if (id === "prefs") return prefsOpen.value ? closePrefs() : openPrefs("language");
+  if (id === "contacts") return void router.push({ path: "/kiosk", query: { screen: "services", staff: "team" } });
+  if (id === "conversations") {
+    if (prefsOpen.value) closePrefs();
+    screen.value = "transcript";
+    threadsOpen.value = !threadsOpen.value;
+  }
+}
+
+/** PLY-5: while an answer is read aloud and the message box isn't on screen, a chip stops it. */
+const stopChip = computed(() => voiceOut.speaking.value && (screen.value !== "transcript" || prefsOpen.value || showPicker.value));
+
 const playerVariant = computed(() => (layout.value === "full" ? "full" : layout.value === "pod" ? "strip" : "mini"));
 /** Full and Mini have a fixed height: the screen's navigation stays put and the screen scrolls inside. */
 const fixedHeight = computed(() => true);
@@ -686,18 +734,12 @@ const fixedHeight = computed(() => true);
          Preferences), so there is one row of controls. -->
     <Teleport defer to="#catalogue-ask-pills"><AskMePills
       conversation-only
-      :restricted="restricted"
       :on-ask-me="screen === 'transcript' || props.embedded"
       :can-new="chat.turns.value.length > 0"
       :threads="nb.threads.value.length"
       :drawer-open="threadsOpen"
-      :nickname="account.profile.value?.nickname ?? null"
       @new="chat.reset"
       @conversations="(screen = 'transcript'), (threadsOpen = !threadsOpen)"
-      @profile="openPrefs('profile')"
-      @prefs="openPrefs('language')"
-      @end-session="endSession"
-      @unlock="unlocking = true"
     /></Teleport>
     <TranscriptPane
       :turns="chat.turns.value"
@@ -706,6 +748,10 @@ const fixedHeight = computed(() => true);
       :voice-supported="voiceIn.supported.value && (!restricted || settings.restricted.mic)"
       height-class="h-full"
       @mic="onMic"
+      :speaking="voiceOut.speaking.value"
+      :paused="voiceOut.paused.value"
+      @pause-resume="onPauseResume"
+      @stop="onStop"
       :selection="selection"
       :can-ask="canAsk"
       :answers="answers"
@@ -765,15 +811,11 @@ const fixedHeight = computed(() => true);
           :status="status"
           :title="KIOSK_NAME"
           :is-playing="voiceOut.speaking.value && !voiceOut.paused.value"
-          :speaking="voiceOut.speaking.value"
           :listening="voiceIn.listening.value"
           :interim="voiceIn.interim.value"
           :voice-supported="voiceIn.supported.value && (!restricted || settings.restricted.mic)"
-          :can-ask="canAsk"
-          @mic="onMic"
-          @pause-resume="onPauseResume"
-          @stop="onStop"
         >
+          <template #actions><PlayerButtons :buttons="playerButtons" :variant="playerVariant" @pick="onPlayerButton" /></template>
           <template #meta>
             <template v-if="restricted">Front desk · {{ frontDocs.length }} document{{ frontDocs.length === 1 ? "" : "s" }}</template>
             <template v-else-if="nb.notebook.value">{{ nb.notebook.value.title }} · {{ sourceCount }} source{{ sourceCount === 1 ? "" : "s" }}</template>
@@ -782,6 +824,9 @@ const fixedHeight = computed(() => true);
         </PlayerPanel>
       </template>
       <template #default="{ width: screensWidth }">
+      <button v-if="stopChip" type="button" class="fixed bottom-6 left-1/2 z-40 inline-flex -translate-x-1/2 items-center gap-2 rounded-full bg-console px-4 py-2.5 text-sm font-medium text-white shadow-lg ring-1 ring-white/15" @click="onStop">
+        <Square class="size-4 text-brand" aria-hidden="true" /> Stop reading aloud
+      </button>
       <KioskPreferences v-if="prefsOpen" :nickname="account.profile.value?.nickname ?? null" :fill="fixedHeight" @close="closePrefs" />
       <ProfilePicker v-else-if="showPicker" @visitor="chooseVisitor" @add="openPrefs('profile')" />
       <AdaptiveNav
@@ -799,20 +844,11 @@ const fixedHeight = computed(() => true);
             <!-- The kiosk's own controls, as pills at the end of the tab row. -->
             <template #trail>
               <AskMePills
-                :restricted="restricted"
-                :on-ask-me="screen === 'transcript' || props.embedded"
+                :on-ask-me="(screen === 'transcript' || props.embedded) && !restricted"
                 :can-new="chat.turns.value.length > 0"
                 :threads="nb.threads.value.length"
                 :drawer-open="threadsOpen"
-                :nickname="account.profile.value?.nickname ?? null"
                 @new="chat.reset"
-                @conversations="(screen = 'transcript'), (threadsOpen = !threadsOpen)"
-                @profile="openPrefs('profile')"
-                @prefs="openPrefs('language')"
-                :child="childMode.on.value"
-                @child="openPrefs('child')"
-                @end-session="endSession"
-                @unlock="unlocking = true"
               />
             </template>
             <template v-for="s in navScreens" :key="s.id" #[s.id]>
@@ -824,6 +860,10 @@ const fixedHeight = computed(() => true);
                 :voice-supported="voiceIn.supported.value && (!restricted || settings.restricted.mic)"
                 :height-class="fixedHeight ? 'h-full' : undefined"
                 @mic="onMic"
+                :speaking="voiceOut.speaking.value"
+                :paused="voiceOut.paused.value"
+                @pause-resume="onPauseResume"
+                @stop="onStop"
                 :selection="selection"
                 :can-ask="canAsk"
                 :answers="answers"
