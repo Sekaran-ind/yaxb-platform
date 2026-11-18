@@ -25,8 +25,8 @@
 // doesn't know them; the surface passes handlers to createRunner, and compileJourney can be told
 // which names exist so a journey with a typo fails at build time, not mid-run.
 import { load } from "js-yaml";
-import { conditionProblem, holds, placeholders, render, type Scope } from "./expressions.js";
-import { fieldListProblems, formProblems, keptAnswers, type Field } from "./fields.js";
+import { conditionProblem, placeholders, type Scope } from "./expressions.js";
+import { fieldListProblems, type Field } from "./fields.js";
 import { questionnaireFields, type Questionnaire } from "./questionnaires.js";
 import { journeyRoleProblems, ROLE_ID, VISITOR_ROLE, type JourneyRoles } from "./roles.js";
 
