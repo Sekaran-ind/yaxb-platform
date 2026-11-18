@@ -37,6 +37,8 @@ The same core (yaxb-core) runs behind every surface, so behaviour is the same wh
 | Local box (Raspberry Pi storage) | Built |
 | Voice device (ESP32-S3) | Planned, design only |
 
+The web kiosk comes in three editions, each its own Worker and database on the same packages: Anjal Family (`family.anjalai.cc`), Anjal for Business (`business.anjalai.cc`) and Anjal Community (`community.anjalai.cc`, Planned). Records that cross editions (accounts, approved sites, email routing, the directory) are kept in one shared platform database bound to every edition. See 12.
+
 ## Out of scope
 
 - Diagnosis, triage decisions, prescriptions or any clinical decision.

@@ -50,3 +50,6 @@
 | SUR-8 | The portal offers three platforms, each on its own site: Personal & Community (Anjal Family), Small Business (Anjal for Business) and Enterprise (ClinüxFlow, clinux.yaxb.ai). "Which fits you?" highlights one, and each card opens its platform. Their addresses are set when the portal is built (`VITE_FAMILY_URL`, `VITE_BUSINESS_URL`, `VITE_ENTERPRISE_URL`). | Built |
 | SUR-9 | The portal shows the one core every platform shares, what every platform does, and how data is kept; each build has its own page title and description. | Built |
 | SUR-10 | The Android and iOS app is named Anjal.ai (its app id stays `ai.yaxb.kiosk`, so installed apps update in place). | Built |
+| SUR-11 | A third surface, Anjal Community (`anjal-community`), with its own Worker and database (EDN-2, EDN-3). | Planned |
+| SUR-12 | The editions are served at `family.anjalai.cc`, `business.anjalai.cc` and `community.anjalai.cc`, declared in their wrangler files (DOM-1). | Planned |
+| SUR-13 | Every edition's Worker also binds the shared platform database (PLA-1). | Planned |

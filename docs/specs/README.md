@@ -15,6 +15,11 @@ These documents describe what the YAXB kiosk must do, for the people who decide 
 | 09 | [Privacy, storage and security](09-privacy-storage-security.md) | What is kept where, what never leaves the device, protections |
 | 10 | [Platforms](10-platforms.md) | Web, native app, CLI, local box, voice device |
 | 11 | [Team and collaboration](11-team-and-collaboration.md) | Team members and roles, chat and video between them, offline relay, a visitor talking to a person |
+| 12 | [Platform and editions](12-platform-and-editions.md) | The shared platform database, the anjalai.cc domains, the Community edition, household requests, children and elders, utility bills |
+| 13 | [Foundations](13-foundations.md) | Spell check, maps, charts and timelines, the organisation design, schema.org, storage housekeeping and retention, audit, the Ethics Counsellor, the player, service FAQs and compiled notebooks |
+| 14 | [Media, connectors, routines and websites](14-media-connectors-routines.md) | Photo, audio and video fields, attendance, face verification (parked), connectors, hooks and routines, dependencies, approved sites |
+| 15 | [Identity and sign-in](15-identity.md) | Accounts behind profiles, passkeys, OTP, OIDC, assurance levels, CLI and box sign-in |
+| 16 | [The email assistant](16-email-assistant.md) | review@anjalai.cc: summaries and drafts reviewed on the kiosk, sent from the person's Gmail |
 
 ## Conventions
 
@@ -39,6 +44,8 @@ These documents describe what the YAXB kiosk must do, for the people who decide 
 | Moderator | A person who reviews escalated questions and rates answers | A moderator key (07) |
 | Curator | A person who edits the curated knowledge base | A moderator key with the curator role (11) |
 | Administrator | The organisation running the kiosk (YAXB) | Deployment secrets; issues moderator keys (07) |
+| Platform moderator | The operator's people who keep the approved-sites catalogue for every edition (14) | An account with the platform role (15) |
+| Guardian, committee member | A parent in a household; an office holder in a community (12) | An account, or a member key until accounts exist (15) |
 
 ## Glossary
 
