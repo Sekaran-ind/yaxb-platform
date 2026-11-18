@@ -6,6 +6,7 @@
 // notebook. The notebook, memory and enabled skills are laid out in the deep agent's virtual
 // filesystem; after the turn the conversation is saved on the server (storage "server") or handed
 // back in a `state` event for the browser to keep.
+import { spellingHint } from "../spell/index.js";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import {
   HumanMessage,
@@ -539,7 +540,7 @@ ${JSON.stringify({ forms: draft.forms }, null, 1)}
     let final: FinalState | undefined;
     try {
       const stream = await agent.stream(
-        { messages: [...history, new HumanMessage(message)], ...(plan.harness === "deep" ? { todos: previous?.todos ?? [], files } : {}) } as never,
+        { messages: [...history, new HumanMessage(message + spellingHint(client?.spelling, message))], ...(plan.harness === "deep" ? { todos: previous?.todos ?? [], files } : {}) } as never,
         {
           streamMode: ["messages", "updates", "values"],
           subgraphs: true,

@@ -107,6 +107,8 @@ describe("the activity log", () => {
     expect(e.details).toEqual({ mode: "local", language: "tam_Taml", count: 2 });
     expect(JSON.stringify(e)).not.toContain("chest");
     expect(() => activityEvent("nonsense" as never)).toThrow();
+    // SPL-10: a spelling correction records the language and whether it was accepted, never the words.
+    expect(activityEvent("spell.corrected", { language: "eng_Latn", via: "acted", accepted: false, from: "chek", to: "check" }).details).toEqual({ language: "eng_Latn", via: "acted", accepted: false });
   });
 
   it("is newest first and bounded", () => {

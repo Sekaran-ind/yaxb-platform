@@ -77,6 +77,11 @@ const emit = defineEmits<{
   schedule: [text: string];
   /** A Quick tools item picked from /qt. */
   tool: [pick: Extract<ContextPick, { kind: "tool" }>];
+  /**
+   * A spelling notice tapped (SPL-6): ask again with these words, unchecked. `accepted`: the
+   * correction was taken ("Did you mean"), or not (the words typed, after the kiosk acted on it).
+   */
+  spelling: [text: string, accepted: boolean];
 }>();
 /** The conversations drawer: opened from the Conversations pill in the tab row (the shell). */
 const drawer = defineModel<boolean>("drawer", { default: false });
@@ -316,6 +321,20 @@ function submit() {
           </p>
           <p v-else class="max-w-[85%] rounded-3xl rounded-br-lg bg-brand-dark px-4 py-2.5 whitespace-pre-wrap text-on-brand">{{ t.text }}</p>
         </div>
+        <p v-if="t.role === 'user' && t.spelling" class="-mt-1 text-right text-sm text-gray-600">
+          <template v-if="t.spelling.acted">
+            Showing results for <em class="font-medium text-ink">{{ t.spelling.corrected }}</em>.
+            <button type="button" class="font-medium text-brand-dark underline underline-offset-2 hover:text-ink disabled:opacity-50" :disabled="busy" @click="emit('spelling', t.text, false)">
+              Search for <em>{{ t.text }}</em> instead
+            </button>
+          </template>
+          <template v-else>
+            Did you mean
+            <button type="button" class="font-medium text-brand-dark underline underline-offset-2 hover:text-ink disabled:opacity-50" :disabled="busy" @click="emit('spelling', t.spelling.corrected, true)">
+              <em>{{ t.spelling.corrected }}</em></button
+            >?
+          </template>
+        </p>
         <div v-else class="flex gap-3">
           <span class="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-mist text-ink ring-1 ring-gray-200">
             <Paperclip v-if="t.via === 'file'" class="size-3.5" aria-hidden="true" />

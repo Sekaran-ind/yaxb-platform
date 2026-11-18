@@ -6,20 +6,20 @@ Source: *Anjal: Media, FaceOps, Connectors and Routines* and *Anjal Family and C
 
 ## Spell check for typed questions
 
-Today nothing in the matching path tolerates a misspelt word. Embeddings forgive small typos, but the word-based passes miss them: commands without a model, slot labels and patterns, option matching, Kiosk-only answers.
+Embeddings forgive small typos, but the word-based passes missed them: commands without a model, slot labels and patterns, option matching, Kiosk-only answers. The spell check is yaxb-core `spell` (export `./spell`), run in the browser by `lib/browser/spell.ts`.
 
 | ID | Requirement | Status |
 |---|---|---|
-| SPL-1 | Typed text must be normalised before matching: Unicode NFC, spacing, and Indian-script digits turned into ASCII digits. | Planned |
-| SPL-2 | Words are corrected by SymSpell-style lookup (edit distance up to 2) over grapheme clusters (`Intl.Segmenter`), so a Tamil or Hindi letter with its vowel sign counts as one letter. Split and joined words ("check in", "checkin") are also tried. | Planned |
-| SPL-3 | Commands, search and slot filling must run on both the original and the corrected text and keep the better score. The original is never overwritten. | Planned |
-| SPL-4 | Words are corrected against a dictionary per tenant and language. It is built from that tenant's own words (curated Q&A, notebook text, command examples, service, journey, screen and field titles, field options, unit and role names), with a general word list per language weighted lower. The core's part is built at content-build time; the tenant's part when its services or notebooks change. | Planned |
-| SPL-5 | Numbers, money, phone numbers, email and web addresses, ids, names found by the NER model and password fields are never corrected. Spoken input is not spell-checked. | Planned |
-| SPL-6 | When the corrected text finds a strong match that the original did not, Anjal acts on it and says so ("Showing results for *check in*. Search for *chek in* instead?"). When both matches are weak, it shows a "Did you mean…" chip and does nothing. | Planned |
-| SPL-7 | The AI agent gets the original text, with the correction as a hint. | Planned |
+| SPL-1 | Typed text must be normalised before matching: Unicode NFC, spacing, and Indian-script digits turned into ASCII digits. | Built |
+| SPL-2 | Words are corrected by SymSpell-style lookup (edit distance up to 2) over grapheme clusters (`Intl.Segmenter`), so a Tamil or Hindi letter with its vowel sign counts as one letter. Split and joined words ("check in", "checkin") are also tried. | Built |
+| SPL-3 | Commands, search and slot filling must run on both the original and the corrected text and keep the better score. The original is never overwritten. | Built |
+| SPL-4 | Words are corrected against a dictionary per tenant and language. It is built from that tenant's own words (curated Q&A, notebook text, command examples, service, journey, screen and field titles, field options, unit and role names), with a general word list per language weighted lower. The core's part is built at content-build time; the tenant's part when its services or notebooks change. | Built: corrections land only on the kiosk's and tenant's own words, and the general list (a short hand-made one for English, Tamil and Hindi in `spell/general.ts`) only marks words as real. The core's part is gathered from the bundled content on first use (about 160 ms). A fuller general list per language is open. |
+| SPL-5 | Numbers, money, phone numbers, email and web addresses, ids, names found by the NER model and password fields are never corrected. Spoken input is not spell-checked. | Built |
+| SPL-6 | When the corrected text finds a strong match that the original did not, Anjal acts on it and says so ("Showing results for *check in*. Search for *chek in* instead?"). When both matches are weak, it shows a "Did you mean…" chip and does nothing. | Built |
+| SPL-7 | The AI agent gets the original text, with the correction as a hint. | Built |
 | SPL-8 | Romanised Tamil and Hindi ("enaku leave venum") should be transliterated to the native script before matching when the kiosk language is Tamil or Hindi. This may need the box rather than the browser. | Planned |
 | SPL-9 | Elders' text gets a gentler setting: always suggest, never act on a correction without a tap. | Planned |
-| SPL-10 | A `spell.corrected` event records the language and whether the person accepted the correction, never the words. A test set of mistyped questions in English, Tamil and Hindi must show matches going up, with wrong corrections under 2%. | Planned |
+| SPL-10 | A `spell.corrected` event records the language and whether the person accepted the correction, never the words. A test set of mistyped questions in English, Tamil and Hindi must show matches going up, with wrong corrections under 2%. | Built: the activity log's `spell.corrected` (language, `via`, `accepted`). `test/fixtures/spell-typos.json`: English 20 of 24 recovered, Tamil 6 of 6, Hindi 6 of 6; word-matched commands 0 → 8 of 9; no changes to 258 words of correct text. |
 
 ## Maps, charts and timelines
 

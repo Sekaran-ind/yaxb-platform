@@ -15,7 +15,16 @@ type TurnContext = {
   thread: ThreadState | null;
   /** What the on-device sentence-transformer found for this question (references only). */
   retrieved?: RetrievedRef[];
+  /**
+   * The device's spell check (SPL-6, SPL-7): the corrected words go to the agent as a hint, and the
+   * person's turn shows the notice when there is one.
+   */
+  spelling?: { corrected: string; notice: "acted" | "suggest" | null };
 };
+
+/** The notice a person's turn carries for a spelling correction, if any. */
+const spellingOf = (ctx: Pick<TurnContext, "spelling">): Pick<ChatTurn, "spelling"> =>
+  ctx.spelling?.notice ? { spelling: { corrected: ctx.spelling.corrected, acted: ctx.spelling.notice === "acted" } } : {};
 
 /** POST one turn and yield its events. Throws with the server's message on an HTTP error. */
 async function* postTurn(threadId: string, message: string, selection: Selection, ctx: TurnContext, signal: AbortSignal): AsyncGenerator<AgentEvent> {
@@ -28,7 +37,7 @@ async function* postTurn(threadId: string, message: string, selection: Selection
       message,
       ...selection,
       settings: ctx.settings,
-      client: { thread: browserHeld ? ctx.thread : null, notebook: ctx.notebook ? notebookForAgent(ctx.notebook) : null, retrieved: ctx.retrieved ?? [] },
+      client: { thread: browserHeld ? ctx.thread : null, notebook: ctx.notebook ? notebookForAgent(ctx.notebook) : null, retrieved: ctx.retrieved ?? [], ...(ctx.spelling ? { spelling: ctx.spelling.corrected } : {}) },
     }),
     signal,
   });
@@ -72,7 +81,7 @@ export function useChat(store: Ref<KioskStore>, onStored?: () => void) {
     controller?.abort();
     controller = new AbortController();
     busy.value = true;
-    const userTurn: ChatTurn = { id: crypto.randomUUID(), role: "user", text: message, tools: [], todos: [] };
+    const userTurn: ChatTurn = { id: crypto.randomUUID(), role: "user", text: message, tools: [], todos: [], ...spellingOf(ctx) };
     turns.value.push(userTurn, { id: crypto.randomUUID(), role: "assistant", text: "", tools: [], todos: [], pending: true });
     let answer = "";
     let state: ThreadState | null = record?.state ?? null;
@@ -140,7 +149,7 @@ export function useChat(store: Ref<KioskStore>, onStored?: () => void) {
     controller = new AbortController();
     busy.value = true;
     turns.value.push(
-      { id: crypto.randomUUID(), role: "user", text: message, tools: [], todos: [] },
+      { id: crypto.randomUUID(), role: "user", text: message, tools: [], todos: [], ...spellingOf(ctx) },
       { id: crypto.randomUUID(), role: "assistant", text: "", tools: [{ id: "local-search", name: "local_search", subagent: null, nested: false, done: false }], todos: [], pending: true, local: true },
     );
     try {
@@ -164,7 +173,7 @@ export function useChat(store: Ref<KioskStore>, onStored?: () => void) {
   /** A kiosk command, answered with a card on this device (CMD-1): no AI, nothing sent. Returns the card's turn id. */
   async function addCard(message: string, card: CommandCard, ctx: Omit<TurnContext, "thread">): Promise<string> {
     const id = crypto.randomUUID();
-    turns.value.push({ id: crypto.randomUUID(), role: "user", text: message, tools: [], todos: [] }, { id, role: "assistant", text: "", tools: [], todos: [], card, local: true });
+    turns.value.push({ id: crypto.randomUUID(), role: "user", text: message, tools: [], todos: [], ...spellingOf(ctx) }, { id, role: "assistant", text: "", tools: [], todos: [], card, local: true });
     await keep(message, ctx, record?.state ?? null);
     return id;
   }

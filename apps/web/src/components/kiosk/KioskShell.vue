@@ -11,6 +11,8 @@ import type { ServiceHandler } from "@sekaran-ind/yaxb-core/journeys";
 import { composeLocalAnswer, composeWebAnswer, EMBEDDING_MODELS, looksLikeEmergency, type LocalAnswer } from "@sekaran-ind/yaxb-core/knowledge/semantic";
 import { resolveLayout, screensFor } from "@sekaran-ind/yaxb-core/screens";
 import { DEFAULT_LANGUAGE, type LanguageCode } from "@sekaran-ind/yaxb-core/settings";
+import { chooseSpelling } from "@sekaran-ind/yaxb-core/spell";
+import { checkSpelling } from "@/lib/browser/spell";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, toRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { logActivity, useAccount } from "@/composables/account";
@@ -331,10 +333,10 @@ async function cardFor(question: string, m: CommandMatch): Promise<CommandCard> 
   }
 }
 
-async function runCommand(question: string, m: CommandMatch) {
+async function runCommand(question: string, m: CommandMatch, spelling?: Spelling) {
   const ctx = turnCtx();
   const card = await cardFor(question, m);
-  await chat.addCard(question, card, ctx);
+  await chat.addCard(question, card, { ...ctx, spelling });
   if (card.state === "done" || card.state === "info") void logActivity("command.used", { command: m.command.id });
   if (settings.speakResponses) {
     const spoken = [card.title, card.state === "confirm" && card.changes?.length ? "Say yes or no." : "", card.text ?? ""].filter(Boolean).join(" ");
@@ -464,23 +466,48 @@ async function attachFiles(files: File[]) {
   await chat.addTurns(names, { text, via: "file" }, turnCtx());
 }
 
-async function ask(question: string) {
+type Spelling = { corrected: string; notice: "acted" | "suggest" | null };
+
+/** SPL-10: a spelling notice acted on or answered, with the language; never the words. */
+function logSpelling(via: "acted" | "suggested", accepted: boolean) {
+  void logActivity("spell.corrected", { language: language.value, via, accepted });
+}
+
+/** A spelling notice tapped (SPL-6): ask again with those words, without checking them again. */
+function onSpelling(text: string, accepted: boolean) {
+  logSpelling(accepted ? "suggested" : "acted", accepted);
+  void ask(text, { unchecked: true });
+}
+
+/**
+ * Ask with what the person typed or said. Typed words are spell-checked on this device (SPL-1..7):
+ * commands and the on-device search run on both spellings and keep the better (SPL-3), the agent
+ * gets the words typed with the correction as a hint (SPL-7). Spoken words are never checked.
+ */
+async function ask(question: string, { spoken = false, unchecked = false }: { spoken?: boolean; unchecked?: boolean } = {}) {
   // A form open in the conversation takes the words (LIB-56), unless the visitor chose to ask instead.
   const form = formInput.value;
   if (form) {
     screen.value = "transcript";
-    return form.fill(question);
+    return form.fill(question, { spoken });
   }
   const pendingCard = [...chat.turns.value].reverse().find((t) => t.card?.state === "confirm");
   const reply = pendingCard ? yesOrNo(question) : null;
   if (pendingCard && reply) return onCard(pendingCard.id, reply);
+  const corrected = spoken || unchecked ? null : checkSpelling(question, { notebook: turnNotebook.value, services: loadedServices.value.map((s) => s.meta) }).changed;
   // A kiosk command is handled here, on this device, whatever the answer mode (CMD-1).
-  const command = await recognizeCommand(question, settings.agent).catch(() => null);
+  let command = await recognizeCommand(question, settings.agent).catch(() => null);
+  let commandSpelling: Spelling | undefined;
+  if (!command && corrected) {
+    command = await recognizeCommand(corrected, settings.agent).catch(() => null);
+    if (command) commandSpelling = { corrected, notice: "acted" };
+  }
   if (command) {
     screen.value = "transcript";
     journey.value = null;
     voiceOut.cancel();
-    return runCommand(question, command);
+    if (commandSpelling) logSpelling("acted", true);
+    return runCommand(question, command, commandSpelling);
   }
   const mode = answers.value;
   if (mode !== "local" && !selection.value) return;
@@ -491,20 +518,36 @@ async function ask(question: string) {
   const ctx = turnCtx();
   const semantic = settings.agent.knowledge?.semantic !== false;
   const model = modelFor(settings.agent, question);
+  // Both spellings searched on the device, the better kept (SPL-3); only when its model is ready.
+  let spelling: Spelling | undefined = corrected ? { corrected, notice: null } : undefined;
+  let asked = question;
+  let picked: LocalSearch | null = null;
+  const bothSpellings = async () => {
+    const [mine, fixed] = await Promise.all([searchLocal(model, question, ctx.notebook), searchLocal(model, corrected!, ctx.notebook)]);
+    const choice = chooseSpelling(mine.refs[0]?.score ?? null, fixed.refs[0]?.score ?? null, { strong: EMBEDDING_MODELS[model].thresholds.answer });
+    spelling = { corrected: corrected!, notice: choice.notice };
+    if (choice.use === "corrected") asked = corrected!;
+    if (choice.notice === "acted") logSpelling("acted", true);
+    return choice.use === "corrected" ? fixed : mine;
+  };
   try {
     let reply: string;
     if (mode === "local") {
-      reply = await chat.sendLocal(question, ctx, async (signal) => present(await withWeb(question, localAnswer(question, await searchLocal(model, question, ctx.notebook, { signal })), signal), signal));
+      if (corrected && semanticReady(model)) picked = await bothSpellings().catch(() => null);
+      reply = await chat.sendLocal(question, { ...ctx, spelling }, async (signal) =>
+        present(await withWeb(asked, localAnswer(asked, picked ?? (await searchLocal(model, question, ctx.notebook, { signal }))), signal), signal),
+      );
     } else {
       // Search on the device first when its model is ready; never hold a question for the download.
       let found: LocalSearch | null = null;
       if (mode === "auto" || semantic) {
-        if (semanticReady(model)) found = await searchLocal(model, question, ctx.notebook).catch(() => null);
-        else warmUp(model).catch(() => undefined);
+        if (!semanticReady(model)) warmUp(model).catch(() => undefined);
+        else if (corrected) found = await bothSpellings().catch(() => null);
+        else found = await searchLocal(model, question, ctx.notebook).catch(() => null);
       }
-      const local = mode === "auto" && found ? localAnswer(question, found) : null;
-      if (local && local.kind !== "none") reply = await chat.sendLocal(question, ctx, (signal) => present(local, signal));
-      else reply = await chat.send(question, selection.value!, { ...ctx, retrieved: semantic && found ? found.refs : [] });
+      const local = mode === "auto" && found ? localAnswer(asked, found) : null;
+      if (local && local.kind !== "none") reply = await chat.sendLocal(question, { ...ctx, spelling }, (signal) => present(local, signal));
+      else reply = await chat.send(question, selection.value!, { ...ctx, retrieved: semantic && found ? found.refs : [], spelling });
     }
     // The activity log: that a question was asked and how it was answered, never the question.
     const tools = chat.turns.value[chat.turns.value.length - 1]?.tools ?? [];
@@ -526,7 +569,7 @@ async function ask(question: string) {
     failed.value = true;
   }
 }
-const voiceIn = useSpeechInput(ask, () => speechLangFor(language.value));
+const voiceIn = useSpeechInput((said: string) => ask(said, { spoken: true }), () => speechLangFor(language.value));
 
 // Journey handlers: they read the current notebook, model and settings when they run.
 const text = (v: unknown) => String((v as { text?: unknown })?.text ?? "");
@@ -674,6 +717,7 @@ const fixedHeight = computed(() => true);
       :notebook-title="nb.notebook.value?.title ?? null"
       :source-count="sourceCount"
       @ask="ask"
+      @spelling="onSpelling"
       @reset="chat.reset"
       :services="services"
       :notebook="nb.notebook.value"
@@ -791,6 +835,7 @@ const fixedHeight = computed(() => true);
                 :notebook-title="nb.notebook.value?.title ?? null"
                 :source-count="sourceCount"
                 @ask="ask"
+                @spelling="onSpelling"
                 @reset="chat.reset"
                 :services="services"
                 :notebook="nb.notebook.value"

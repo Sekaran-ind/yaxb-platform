@@ -107,6 +107,10 @@
       "types": "./dist/commands/index.d.ts",
       "default": "./dist/commands/index.js"
     },
+    "./spell": {
+      "types": "./dist/spell/index.d.ts",
+      "default": "./dist/spell/index.js"
+    },
     "./web/pages": {
       "types": "./dist/web/pages.d.ts",
       "default": "./dist/web/pages.js"

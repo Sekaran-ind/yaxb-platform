@@ -272,6 +272,7 @@ export const ACTIVITY_ACTIONS = {
   "feedback.given": "Feedback given",
   "answer.sent_for_review": "Answer sent to the moderators to check",
   "command.used": "Kiosk command used",
+  "spell.corrected": "A spelling correction was offered",
   "journey.completed": "Service used",
   "notebook.source_added": "Document added to the notebook",
   "notebook.source_removed": "Document removed from the notebook",
@@ -280,7 +281,7 @@ export const ACTIVITY_ACTIONS = {
 export type ActivityAction = keyof typeof ACTIVITY_ACTIONS;
 
 /** Facts an event may carry: short labels and counts, never what the visitor said or wrote. */
-const DETAIL_KEYS = new Set(["command", "rating", "mode", "language", "journey", "via", "count", "fields", "provider", "model", "harness", "sources"]);
+const DETAIL_KEYS = new Set(["command", "rating", "mode", "language", "journey", "via", "count", "fields", "provider", "model", "harness", "sources", "accepted"]);
 
 export type ActivityEvent = { id: string; at: string; action: ActivityAction; details?: Record<string, string | number | boolean> };
 

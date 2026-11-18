@@ -8,9 +8,29 @@ import { LANGUAGES, type AgentSettings } from "@sekaran-ind/yaxb-core/settings";
 import { embedTexts, recognizeEntities } from "./offline";
 import { modelFor } from "./semantic";
 import { recognizeValues } from "./recognizers";
+import { checkSpelling } from "./spell";
 
-/** Read `text` against a step's fields, on this device. */
-export async function matchOnDevice(fields: readonly Field[], text: string, settings: Pick<AgentSettings, "knowledge" | "language">, signal?: AbortSignal): Promise<SlotMatch> {
+/**
+ * Read `text` against a step's fields, on this device. Typed words are also read spell-checked
+ * (SPL-3), and the reading that fills more is kept; the words as typed win a tie. Spoken words
+ * (`spoken`) are never checked; password fields are never filled either way.
+ */
+export async function matchOnDevice(
+  fields: readonly Field[],
+  text: string,
+  settings: Pick<AgentSettings, "knowledge" | "language">,
+  signal?: AbortSignal,
+  { spoken = false }: { spoken?: boolean } = {},
+): Promise<SlotMatch> {
+  const mine = await readFields(fields, text, settings, signal);
+  const corrected = spoken ? null : checkSpelling(text).changed;
+  if (!corrected) return mine;
+  const fixed = await readFields(fields, corrected, settings, signal);
+  const filled = (m: SlotMatch) => m.fills.length + m.confirm.length;
+  return filled(fixed) > filled(mine) ? fixed : mine;
+}
+
+function readFields(fields: readonly Field[], text: string, settings: Pick<AgentSettings, "knowledge" | "language">, signal?: AbortSignal): Promise<SlotMatch> {
   const model = modelFor(settings, text);
   const wantsNer = fields.some((f) => f.entity === "person" || f.entity === "location" || f.entity === "organization");
   return matchFields(fields, text, {
