@@ -28,6 +28,31 @@ export const KEY_PREFIX = "yaxb_mod_";
 
 export type ModeratorStatus = "active" | "revoked" | "expired";
 
+/**
+ * What a machine key may call (IDN-16): routines and integrations, never a person's sign-in. Each
+ * scope is a method and a path under /api; a machine calling anything else is refused.
+ */
+export const MACHINE_SCOPES = {
+  "catalogue:read": { label: "Read the published services", routes: [["GET", "/api/library/published"]] },
+  "events:read": { label: "Read services' events", routes: [["GET", "/api/events"]] },
+  "events:write": { label: "Record services' events", routes: [["POST", "/api/events"]] },
+  "cases:read": { label: "Read requests", routes: [["GET", "/api/cases"]] },
+  "cases:write": { label: "Start and act on requests", routes: [["POST", "/api/cases"]] },
+  "relay:use": { label: "Use the relay for hand-overs", routes: [["GET", "/api/relay"], ["POST", "/api/relay"], ["DELETE", "/api/relay"]] },
+  "audit:read": { label: "Read the audit chain's head", routes: [["GET", "/api/admin/audit/chain"]] },
+} as const satisfies Record<string, { label: string; routes: readonly (readonly [string, string])[] }>;
+export type MachineScope = keyof typeof MACHINE_SCOPES;
+export const MACHINE_SCOPE_IDS = Object.keys(MACHINE_SCOPES) as MachineScope[];
+/** A machine key lasts at most a year: it is renewed by rotating it. */
+export const MACHINE_MAX_DAYS = 365;
+
+/** Whether a machine with these scopes may make this call (the path's prefix, method exact). */
+export function machineMayCall(scopes: readonly string[], method: string, path: string): boolean {
+  return scopes.some((s) =>
+    (MACHINE_SCOPES[s as MachineScope]?.routes ?? []).some(([m, prefix]) => m === method.toUpperCase() && (path === prefix || path.startsWith(`${prefix}/`))),
+  );
+}
+
 export type Moderator = {
   id: string;
   name: string;
@@ -43,6 +68,12 @@ export type Moderator = {
   reviews: number;
   /** The business (tenant, TEN-1) the member belongs to; absent: the default one. */
   tenant?: string;
+  /** A person (the default) or a machine (IDN-16): a routine or an integration, with scopes and no roles. */
+  kind?: "person" | "machine";
+  /** A machine's scopes (MACHINE_SCOPES). */
+  scopes?: string[] | null;
+  /** When a person linked this member to their account (IDN-44): their key no longer signs in. */
+  linked_at?: string | null;
 };
 
 export type ModeratorProfile = {
@@ -68,6 +99,9 @@ export const AUDIT_ACTIONS = {
   "moderator.profile_updated": "Moderator profile changed",
   "moderator.removed": "Member removed",
   "moderator.reinstated": "Member reinstated with a new key",
+  "moderator.linked": "Member now signs in with an account",
+  "machine.key_issued": "Machine key issued",
+  "machine.refused": "Machine call refused",
   "tenant.created": "Business added to the directory",
   "join.link_issued": "Join link issued",
   "join.link_withdrawn": "Join link withdrawn",
@@ -158,13 +192,23 @@ export async function verifyAuditChain(oldestFirst: readonly AuditEvent[]): Prom
 
 // Built-in roles or the organisation's own (the Worker checks those exist in the catalogue).
 const ROLE = z.string().regex(ROLE_ID, "A role id is lower-case words joined by '-'.");
-export const newModeratorSchema = z.strictObject({
-  name: z.string().trim().min(1, "Enter the moderator's name.").max(80),
-  label: z.string().trim().max(80).optional(),
-  roles: z.array(ROLE).min(1).max(20).default(["moderator"]),
-  /** Days until the key expires; none = no expiry. */
-  expiresInDays: z.number().int().min(1).max(730).optional(),
-});
+export const newModeratorSchema = z
+  .strictObject({
+    name: z.string().trim().min(1, "Enter the moderator's name.").max(80),
+    label: z.string().trim().max(80).optional(),
+    roles: z.array(ROLE).max(20).default(["moderator"]),
+    /** Days until the key expires; none = no expiry (a machine's key always expires). */
+    expiresInDays: z.number().int().min(1).max(730).optional(),
+    /** A machine (IDN-16): its scopes instead of roles. */
+    kind: z.enum(["person", "machine"]).default("person"),
+    scopes: z.array(z.enum(MACHINE_SCOPE_IDS as [MachineScope, ...MachineScope[]])).max(MACHINE_SCOPE_IDS.length).optional(),
+  })
+  .superRefine((m, ctx) => {
+    if (m.kind === "person" && !m.roles.length) ctx.addIssue({ code: "custom", path: ["roles"], message: "Choose at least one role." });
+    if (m.kind === "person" && m.scopes?.length) ctx.addIssue({ code: "custom", path: ["scopes"], message: "Scopes are for machines." });
+    if (m.kind === "machine" && !m.scopes?.length) ctx.addIssue({ code: "custom", path: ["scopes"], message: "Choose what the machine may do." });
+    if (m.kind === "machine" && (!m.expiresInDays || m.expiresInDays > MACHINE_MAX_DAYS)) ctx.addIssue({ code: "custom", path: ["expiresInDays"], message: `A machine's key expires within ${MACHINE_MAX_DAYS} days.` });
+  });
 export type NewModerator = z.input<typeof newModeratorSchema>;
 
 export const updateModeratorSchema = z.strictObject({
@@ -227,7 +271,7 @@ export interface ModeratorStore {
   /** The stored hash for a moderator (to bind their session to the current key). */
   keyHashOf(id: string): Promise<string | null>;
   create(m: Omit<Moderator, "last_seen_at" | "reviews">, keyHash: string): Promise<Moderator>;
-  update(id: string, patch: Partial<Pick<Moderator, "name" | "label" | "roles" | "status" | "key_prefix" | "expires_at" | "last_seen_at" | "reviews">>, keyHash?: string): Promise<Moderator | null>;
+  update(id: string, patch: Partial<Pick<Moderator, "name" | "label" | "roles" | "status" | "key_prefix" | "expires_at" | "last_seen_at" | "reviews" | "linked_at">>, keyHash?: string): Promise<Moderator | null>;
   getProfile(id: string): Promise<ModeratorProfile | null>;
   putProfile(p: ModeratorProfile): Promise<void>;
   /** Remove a member and their profile (TEAM-2); the audit log keeps the history. */
@@ -262,20 +306,28 @@ export function createModeratorService(store: ModeratorStore) {
     async issue(input: NewModerator, actor: { name: string | null } = { name: null }) {
       const m = newModeratorSchema.parse(input);
       const key = newModeratorKey();
+      const machine = m.kind === "machine";
       const created = await store.create(
         {
           id: crypto.randomUUID(),
           name: m.name,
           label: m.label || null,
-          roles: m.roles,
+          roles: machine ? [] : m.roles,
           status: "active",
           key_prefix: keyPrefixOf(key),
           created_at: nowIso(),
           expires_at: m.expiresInDays ? new Date(Date.now() + m.expiresInDays * 864e5).toISOString() : null,
+          kind: m.kind,
+          scopes: machine ? [...new Set(m.scopes)] : null,
+          linked_at: null,
         },
         await hashKey(key),
       );
-      await store.audit(auditEvent({ actor_type: "admin", actor_id: null, actor_name: actor.name, action: "moderator.key_issued", target_id: created.id, details: { name: created.name, roles: created.roles, expires: created.expires_at ?? "never" } }));
+      await store.audit(
+        machine
+          ? auditEvent({ actor_type: "admin", actor_id: null, actor_name: actor.name, action: "machine.key_issued", target_id: created.id, details: { name: created.name, scopes: (created.scopes ?? []).join(","), expires: created.expires_at ?? "never" } })
+          : auditEvent({ actor_type: "admin", actor_id: null, actor_name: actor.name, action: "moderator.key_issued", target_id: created.id, details: { name: created.name, roles: created.roles, expires: created.expires_at ?? "never" } }),
+      );
       return { moderator: created, key };
     },
 
@@ -291,7 +343,12 @@ export function createModeratorService(store: ModeratorStore) {
       const old = await store.get(id);
       if (!old) return null;
       const key = newModeratorKey();
-      const m = await store.update(id, { status: "active", key_prefix: keyPrefixOf(key) }, await hashKey(key));
+      // A machine's key is renewed by rotating it: it lasts as long again as it did, at most a year.
+      const renewed =
+        old.kind === "machine" && old.expires_at
+          ? { expires_at: new Date(Date.now() + Math.min(new Date(old.expires_at).getTime() - new Date(old.created_at).getTime(), MACHINE_MAX_DAYS * 864e5)).toISOString() }
+          : {};
+      const m = await store.update(id, { status: "active", key_prefix: keyPrefixOf(key), ...renewed }, await hashKey(key));
       await store.audit(auditEvent({ actor_type: "admin", actor_id: null, actor_name: null, action: old.status === "revoked" ? "moderator.reinstated" : "moderator.key_rotated", target_id: id, details: { name: old.name } }));
       return m ? { moderator: m, key } : null;
     },
@@ -314,17 +371,48 @@ export function createModeratorService(store: ModeratorStore) {
       return true;
     },
 
-    /** Sign in with a key: the moderator when the key is theirs, active and not expired. */
+    /**
+     * Sign in with a key: the person when the key is theirs, active and not expired. A machine's key
+     * never signs in (IDN-16), and a person who signs in with an account no longer uses theirs (IDN-44).
+     */
     async signIn(key: string): Promise<Moderator | null> {
       if (!looksLikeKey(key)) return null;
       const m = await store.byKeyHash(await hashKey(key));
-      if (!m || statusOf(m) !== "active") {
-        if (m) await store.audit(auditEvent({ actor_type: "system", actor_id: m.id, actor_name: m.name, action: "moderator.sign_in_refused", target_id: m.id, details: { status: statusOf(m) } }));
+      const refused = !m ? null : statusOf(m) !== "active" ? statusOf(m) : m.kind === "machine" ? "machine" : m.linked_at ? "linked" : null;
+      if (!m || refused) {
+        if (m) await store.audit(auditEvent({ actor_type: "system", actor_id: m.id, actor_name: m.name, action: "moderator.sign_in_refused", target_id: m.id, details: { status: refused! } }));
         return null;
       }
       await store.update(m.id, { last_seen_at: nowIso() });
       await store.audit(auditEvent({ actor_type: "moderator", actor_id: m.id, actor_name: m.name, action: "moderator.signed_in", target_id: m.id }));
       return m;
+    },
+
+    /** Why a key doesn't sign in, for the message: a machine's, or a person's who uses an account now. */
+    async keyKind(key: string): Promise<"machine" | "linked" | null> {
+      if (!looksLikeKey(key)) return null;
+      const m = await store.byKeyHash(await hashKey(key));
+      return m?.kind === "machine" ? "machine" : m?.linked_at ? "linked" : null;
+    },
+
+    /** A machine calling the API with its key (IDN-16): the machine when the key is its, active and not expired. */
+    async machine(key: string): Promise<Moderator | null> {
+      if (!looksLikeKey(key)) return null;
+      const m = await store.byKeyHash(await hashKey(key));
+      if (!m || m.kind !== "machine" || statusOf(m) !== "active") return null;
+      // Seen at most once an hour: a routine may call often.
+      if (!m.last_seen_at || Date.now() - new Date(m.last_seen_at).getTime() > 3600_000) await store.update(m.id, { last_seen_at: nowIso() });
+      return m;
+    },
+
+    /** A person's member record now signs in through their account (IDN-44): their key stops signing in. */
+    async linkToAccount(id: string): Promise<Moderator | null> {
+      const m = await store.get(id);
+      if (!m || m.kind === "machine") return null;
+      if (m.linked_at) return m;
+      const done = await store.update(id, { linked_at: nowIso() });
+      await store.audit(auditEvent({ actor_type: "moderator", actor_id: id, actor_name: m.name, action: "moderator.linked", target_id: id }));
+      return done;
     },
 
     /** A moderator's profile, with defaults until they save one. */
@@ -370,7 +458,7 @@ export function createMemoryModeratorStore(): ModeratorStore {
       return rows.get(id)?.key_hash ?? null;
     },
     async create(m, keyHash) {
-      const r = { ...m, last_seen_at: null, reviews: 0, key_hash: keyHash };
+      const r = { ...m, kind: m.kind ?? "person", scopes: m.scopes ?? null, linked_at: m.linked_at ?? null, last_seen_at: null, reviews: 0, key_hash: keyHash };
       rows.set(m.id, r);
       return strip(r);
     },
