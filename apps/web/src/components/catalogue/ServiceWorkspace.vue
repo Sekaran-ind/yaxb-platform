@@ -7,7 +7,8 @@
 // (DesignerChat, LIB-39..41): a new service can start from a description, and any service can be
 // changed by asking, during review too. The entry created from a draft remembers it, so the agent
 // learns from its review. A new service not created yet is kept in this browser until it is.
-import { JOURNEY_SERVICES } from "@sekaran-ind/yaxb-core/content";
+import { parseConnector, connectorSecrets as connectorSecretNames } from "@sekaran-ind/yaxb-core/connectors";
+import ConnectorSecrets from "./ConnectorSecrets.vue";
 import type { EntryRevision, Library, LibraryEntry, LibraryPermissions } from "@sekaran-ind/yaxb-core/library";
 import {
   checkDocument,
@@ -34,7 +35,7 @@ import ServiceAudit from "./ServiceAudit.vue";
 import OrganisationView from "./OrganisationView.vue";
 import SegmentedControl from "@/components/site/SegmentedControl.vue";
 import { useWidth } from "@/composables/width";
-import { catalogue, type CatalogueService } from "@/composables/library";
+import { catalogue, journeyServiceNames, type CatalogueService } from "@/composables/library";
 import type { BundleProblem } from "@sekaran-ind/yaxb-journeys";
 import { api, ApiError } from "@/lib/api";
 
@@ -115,9 +116,12 @@ function startOver() {
   openView("design");
 }
 
-type View = "design" | "org" | "yaml" | "preview" | "flow" | "consent" | "summary" | "audit" | "history";
+type View = "design" | "org" | "yaml" | "preview" | "flow" | "consent" | "summary" | "audit" | "history" | "secrets";
 /** The organisation (ORG-1) is an entry too: it has its own view, YAML, audit and history. */
 const isOrg = computed(() => entry.value?.kind === "organisation" || /^kind:\s*organisation\b/m.test(yaml.value));
+/** A connector (CNX-2) is an entry too: YAML, its secrets, audit and history. */
+const isConnector = computed(() => (entry.value?.kind as string) === "connector" || /^kind:\s*connector\b/m.test(yaml.value));
+const connectorCheck = computed(() => (isConnector.value ? parseConnector(yaml.value) : null));
 /** The server's problems as of the last save: the organisation's checks need the catalogue and who is staffed (ORG-5). */
 const serverProblems = ref<BundleProblem[]>([]);
 const orgWarnings = computed(() => (dirty.value ? check.value.problems : serverProblems.value).filter((p) => p.level === "warning" && p.kind === "organisation"));
@@ -176,8 +180,10 @@ async function load() {
 }
 
 // ---- checking -------------------------------------------------------------------------------
-const check = computed(() => checkDocument(yaml.value, [], { services: JOURNEY_SERVICES, roles: props.roles.map((r) => r.id) }));
-const errors = computed(() => check.value.problems.filter((p) => p.level === "error"));
+const check = computed(() => checkDocument(yaml.value, [], { services: journeyServiceNames.value, roles: props.roles.map((r) => r.id) }));
+const errors = computed(() =>
+  connectorCheck.value ? (connectorCheck.value.ok ? [] : connectorCheck.value.problems.map((message) => ({ level: "error" as const, line: 1, message, kind: "connector", id: "" }))) : check.value.problems.filter((p) => p.level === "error"),
+);
 /** The Ethics checklist (ETH-1, ETH-4): high findings need the reviewer's reason to accept. */
 const ethics = computed(() => check.value.problems.filter((p) => p.ethics).sort((a, b) => (a.ethics!.severity === b.ethics!.severity ? a.line - b.line : a.ethics!.severity === "high" ? -1 : 1)));
 const ethicsHigh = computed(() => ethics.value.filter((p) => p.ethics!.severity === "high").length);
@@ -208,7 +214,8 @@ function designFromYaml(): boolean {
   return !why;
 }
 function openView(v: View) {
-  if (isOrg.value && v !== "yaml" && v !== "audit" && v !== "history") v = check.value.bundle.organisations[0] ? "org" : "yaml";
+  if (isConnector.value && v !== "yaml" && v !== "audit" && v !== "history" && v !== "secrets") v = "yaml";
+  else if (isOrg.value && v !== "yaml" && v !== "audit" && v !== "history") v = check.value.bundle.organisations[0] ? "org" : "yaml";
   else if (v === "org") v = "design";
   if (v === "design" && !designFromYaml()) v = "yaml";
   if ((v === "audit" || v === "history") && !entry.value) v = "summary";
@@ -315,7 +322,10 @@ const entryStorage = computed(() => {
   const st = (entry.value as { storage?: string } | null)?.storage ?? props.published?.storage;
   return st === "box" || st === "server" ? st : "none";
 });
-const VIEWS = computed<{ value: View; label: string }[]>(() => isOrg.value ? [
+const VIEWS = computed<{ value: View; label: string }[]>(() => isConnector.value ? [
+  { value: "yaml", label: "YAML" },
+  ...(entry.value ? [{ value: "secrets" as const, label: "Secrets" }, { value: "audit" as const, label: "Audit" }, { value: "history" as const, label: `History (${revisions.value.length})` }] : []),
+] : isOrg.value ? [
   { value: "org", label: "Organisation" },
   { value: "yaml", label: "YAML" },
   ...(entry.value ? [{ value: "audit" as const, label: "Audit" }, { value: "history" as const, label: `History (${revisions.value.length})` }] : []),
@@ -331,7 +341,7 @@ const VIEWS = computed<{ value: View; label: string }[]>(() => isOrg.value ? [
 
 watch([yaml, threadId], keepUnsaved);
 /** Reviewers of a service in review can talk to the designer too (suggestions); so can whoever may change it. */
-const showChat = computed(() => !isOrg.value && !readOnlyCopy.value && (editable.value || canReview.value));
+const showChat = computed(() => !isOrg.value && !isConnector.value && !readOnlyCopy.value && (editable.value || canReview.value));
 
 // Last: load() fills refs declared above (an immediate watcher runs during setup).
 watch(
@@ -397,9 +407,10 @@ watch(
 
     <p v-if="designNote" class="rounded-lg bg-mist px-3 py-2 text-sm text-ink">{{ designNote }}</p>
 
-    <OrganisationView v-if="view === 'org' && check.bundle.organisations[0]" :organisation="check.bundle.organisations[0]" :services="catalogue" :warnings="orgWarnings" @line="goToLine" />
+    <ConnectorSecrets v-if="view === 'secrets' && connectorCheck?.ok" :connector="connectorCheck.connector.id" :needed="connectorSecretNames(connectorCheck.connector)" />
+    <OrganisationView v-else-if="view === 'org' && check.bundle.organisations[0]" :organisation="check.bundle.organisations[0]" :services="catalogue" :warnings="orgWarnings" @line="goToLine" />
     <template v-else-if="view === 'design'">
-      <ServiceDesigner :model-value="design" :service-names="JOURNEY_SERVICES" :readonly="!editable" @update:model-value="onDesign" @last="(v) => (designerAtEnd = v)" @step="(st) => emit('step', st)">
+      <ServiceDesigner :model-value="design" :service-names="journeyServiceNames" :readonly="!editable" @update:model-value="onDesign" @last="(v) => (designerAtEnd = v)" @step="(st) => emit('step', st)">
         <!-- The last step offers the real next action: create or save, then submit for review. -->
         <template #finish="{ ok }">
           <template v-if="editable">

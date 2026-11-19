@@ -19,6 +19,7 @@
 //   manage     administrator: the organisation's roles, archiving and restoring whole libraries
 // The ADMIN_TOKEN holder may do everything.
 import { SERVICE_STORAGE, type ServiceStorage } from "../metrics/index.js";
+import { connectorHandlers, connectorSecrets, parseConnector, type Connector } from "../connectors/index.js";
 import {
   canInitiate,
   checkDocument,
@@ -45,7 +46,8 @@ import { auditEvent, type AuditAction, type AuditEvent } from "../moderators/ind
  * Entries are services (with their journeys and screens inside), and at most one organisation
  * (ORG-1: units, roles, reporting lines and sites), reviewed and published the same way.
  */
-export const ENTRY_KINDS = ["service", "organisation"] as const;
+/** connector (CNX-2): a REST API in YAML whose operations are journey handlers; administrators only. */
+export const ENTRY_KINDS = ["service", "organisation", "connector"] as const;
 export type EntryKind = (typeof ENTRY_KINDS)[number];
 export const ENTRY_STATUSES = ["draft", "in_review", "accepted", "rejected", "archived"] as const;
 export type EntryStatus = (typeof ENTRY_STATUSES)[number];
@@ -258,7 +260,22 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
     const custom = await store.roles();
     return [...DEFAULT_ROLES, ...custom.map(({ created_at: _, ...r }) => ({ ...r, builtin: false }))];
   }
-  const compileOptions = async () => ({ services: options.services, roles: (await catalogue()).map((r) => r.id) });
+  /** The published connectors (CNX-2), compiled, with their entries. */
+  async function publishedConnectors(entries?: LibraryEntry[]): Promise<{ entry: LibraryEntry; connector: Connector }[]> {
+    const libs = await store.libraries();
+    const active = new Set(libs.filter((l) => l.status === "active").map((l) => l.id));
+    return (entries ?? (await store.entries()))
+      .filter((e) => e.kind === "connector" && active.has(e.library_id) && e.status !== "archived" && e.published_yaml)
+      .flatMap((e) => {
+        const r = parseConnector(e.published_yaml!);
+        return r.ok ? [{ entry: e, connector: r.connector }] : [];
+      });
+  }
+  // A journey may use a published connector's operations like built-in handlers (CNX-6).
+  const compileOptions = async () => ({
+    services: options.services ? [...options.services, ...(await publishedConnectors()).flatMap((c) => connectorHandlers(c.connector))] : undefined,
+    roles: (await catalogue()).map((r) => r.id),
+  });
 
   async function getLibrary(id: string) {
     const l = await store.library(id);
@@ -297,6 +314,11 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
   }
 
   async function problemsOf(yaml: string): Promise<BundleProblem[]> {
+    const d = readDocument(yaml);
+    if (!("error" in d) && d.kind === "connector") {
+      const r = parseConnector(yaml);
+      return r.ok ? [] : r.problems.map((message): BundleProblem => ({ level: "error", line: 1, kind: "connector" as never, id: d.id, message }));
+    }
     const own = checkDocument(yaml, [], await compileOptions());
     const org = own.bundle.organisations[0];
     if (!org) return own.problems;
@@ -317,9 +339,10 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
     if (!yaml.trim()) throw new LibraryError("The service is empty.");
     const d = readDocument(yaml);
     if ("error" in d) throw new LibraryError(d.error);
-    if (d.kind !== "service" && d.kind !== "organisation") throw new LibraryError("The document needs kind: service (or kind: organisation).");
+    if (d.kind !== "service" && d.kind !== "organisation" && d.kind !== "connector") throw new LibraryError("The document needs kind: service (or kind: organisation, or kind: connector).");
     const kind = d.kind as EntryKind;
     const entries = await store.entries();
+    if (kind === "connector" && a && !permissionsOf(a).manage) throw new LibraryError("Only an administrator adds a connector.", 403);
     if (kind === "organisation") {
       if (a && !permissionsOf(a).manage) throw new LibraryError("Only an administrator designs the organisation.", 403);
       const other = entries.find((x) => x.id !== self && x.kind === "organisation" && x.status !== "archived");
@@ -511,7 +534,7 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
       const p = parse(entrySaveSchema, input);
       if (p.yaml === e.yaml) return { entry: e, problems: await problemsOf(e.yaml) };
       const d = await validDocument(p.yaml, e.id, a);
-      if (d.kind !== e.kind) throw new LibraryError(e.kind === "organisation" ? "This entry is the organisation: keep kind: organisation." : "This entry is a service: keep kind: service.");
+      if (d.kind !== e.kind) throw new LibraryError(`This entry is ${e.kind === "organisation" ? "the organisation" : `a ${e.kind}`}: keep kind: ${e.kind}.`);
       const at = now();
       const next: LibraryEntry = { ...e, yaml: p.yaml, doc_id: d.id, title: d.title, status: "draft", revision: e.revision + 1, updated_at: at, updated_by_name: a.name };
       await store.putEntry(next);
@@ -657,7 +680,7 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
       const organisation = (await publishedOrganisation(entries.filter((e) => active.has(e.library_id))))?.organisation ?? null;
       if (organisation) for (const r of organisationRoles(organisation)) if (!roles.some((x) => x.id === r.id)) roles.push(r);
       const services = entries
-        .filter((e) => e.kind !== "organisation" && active.has(e.library_id) && e.status !== "archived" && e.published_yaml)
+        .filter((e) => e.kind === "service" && active.has(e.library_id) && e.status !== "archived" && e.published_yaml)
         .flatMap((e) => {
           const b = compileBundle(e.published_yaml!, opts);
           const s = b.services[0];
@@ -692,7 +715,17 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
             },
           ];
         });
-      return { roles, services, organisation };
+      // Connectors: what they do and the secrets they need, never the secrets' values (CNX-3).
+      const connectors = (await publishedConnectors(entries)).map(({ entry, connector: c }) => ({
+        entry_id: entry.id,
+        id: c.id,
+        title: c.title,
+        summary: c.summary ?? null,
+        host: new URL(c.base).host,
+        operations: c.operations.map((o) => ({ id: o.id, label: o.label ?? o.id, method: o.method, handler: `connector.${c.id}.${o.id}` })),
+        secrets: connectorSecrets(c),
+      }));
+      return { roles, services, organisation, connectors };
     },
   };
   return api;

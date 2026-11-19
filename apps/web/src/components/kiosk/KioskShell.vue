@@ -756,7 +756,7 @@ async function busy<T>(work: () => Promise<T>): Promise<T> {
     journeyBusy.value = false;
   }
 }
-const services: Record<string, ServiceHandler> = {
+const builtInServices: Record<string, ServiceHandler> = {
   "agent.ask": (input, { signal }) =>
     busy(async () => {
       if (!selection.value) throw new Error("No AI provider is configured. Choose one in Settings.");
@@ -889,6 +889,31 @@ const services: Record<string, ServiceHandler> = {
     return {};
   },
 };
+/**
+ * A published connector's operation (CNX-2): `connector.<id>.<operation>` goes to the server, which
+ * adds the secret and calls the API; the browser never sees the secret. The answer is data from
+ * outside, kept as the step's result for later screens (never instructions).
+ */
+const connectorCall: ServiceHandler = async (input, { step, signal }) => {
+  const [, id, op] = String(step.service).split(".");
+  const res = await fetch(`/api/connectors/${encodeURIComponent(id ?? "")}/${encodeURIComponent(op ?? "")}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ input: input ?? {} }),
+    signal,
+  });
+  const out = (await res.json().catch(() => null)) as { ok?: boolean; status?: number; data?: unknown; error?: string } | null;
+  if (!res.ok || !out) throw new Error(out?.error ?? "The connected service couldn't be reached.");
+  if (!out.ok) throw new Error(`The connected service said no (${out.status}).`);
+  return { data: out.data, text: typeof out.data === "string" ? out.data : JSON.stringify(out.data).slice(0, 2000) };
+};
+/** The handlers journeys use: the built-in ones, and any connector operation (checked when published). */
+const services: Record<string, ServiceHandler> = new Proxy(builtInServices, {
+  get: (t, p) => (typeof p === "string" && p.startsWith("connector.") ? connectorCall : t[p as string]),
+  has: (t, p) => (typeof p === "string" && p.startsWith("connector.")) || p in t,
+  getOwnPropertyDescriptor: (t, p) =>
+    typeof p === "string" && p.startsWith("connector.") ? { value: connectorCall, writable: false, enumerable: true, configurable: true } : Object.getOwnPropertyDescriptor(t, p),
+});
 
 const status = computed<KioskStatus>(() => {
   const last = chat.turns.value[chat.turns.value.length - 1];
