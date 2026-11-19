@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// Anjalai, the fearless companion: a small round friend with a cape in the brand's gradient, a heart
-// shield, a confident wave and a sprout on top (it grows with you). Drawn here as SVG, so it is
+// Anjalai, the fearless companion (the mascot): a small round friend with a cape in the brand's
+// gradient, a heart shield, a confident wave, and a ring above its head with a star and dots. Drawn here as SVG, so it is
 // sharp at any size and needs no image file. It floats gently, and holds still for people who prefer
 // reduced motion.
 withDefaults(defineProps<{ size?: number }>(), { size: 220 });
@@ -8,7 +8,7 @@ const uid = `anj-${Math.random().toString(36).slice(2, 8)}`;
 </script>
 
 <template>
-  <svg :width="size" :height="Math.round(size * 1.1)" viewBox="0 0 240 264" role="img" aria-label="Anjalai: a small round companion in a cape, waving, with a heart shield" class="anjalai">
+  <svg :width="size" :height="Math.round(size * 1.1)" viewBox="0 0 240 264" role="img" aria-label="Anjalai: a small round companion in a cape, waving, with a heart shield and a ring with a star above its head" class="anjalai">
     <defs>
       <linearGradient :id="`${uid}-cape`" x1="0" y1="0" x2="1" y2="1">
         <stop offset="0" stop-color="#6a1bd1" />
@@ -33,10 +33,13 @@ const uid = `anj-${Math.random().toString(36).slice(2, 8)}`;
       <path d="M78 118 C 52 150, 40 200, 54 236 C 92 222, 128 236, 166 226 C 196 216, 214 196, 222 168 C 196 172, 176 160, 162 120 Z" :fill="`url(#${uid}-cape)`" />
       <path d="M54 236 C 64 228, 74 226, 84 230" stroke="#fff" stroke-opacity="0.35" stroke-width="3" fill="none" stroke-linecap="round" />
 
-      <!-- Sprout -->
-      <path d="M120 54 C 120 42, 120 36, 121 28" stroke="#16a34a" stroke-width="4" fill="none" stroke-linecap="round" />
-      <path d="M121 34 C 108 22, 94 26, 92 36 C 104 42, 114 40, 121 34 Z" fill="#22c55e" />
-      <path d="M121 30 C 132 16, 148 18, 150 28 C 140 36, 128 36, 121 30 Z" fill="#4ade80" />
+      <!-- A ring above the head, with a star and dots on it -->
+      <ellipse cx="120" cy="34" rx="34" ry="9" fill="none" :stroke="`url(#${uid}-cape)`" stroke-width="4" />
+      <path d="M120 16 l3.5 7 7.7 1.1 -5.6 5.4 1.3 7.7 -6.9 -3.6 -6.9 3.6 1.3 -7.7 -5.6 -5.4 7.7 -1.1 z" fill="#ffd166" stroke="#3b1f14" stroke-width="2" stroke-linejoin="round" class="anjalai-star" />
+      <circle cx="88" cy="36" r="3.5" fill="#c026d3" />
+      <circle cx="152" cy="36" r="3.5" fill="#f97316" />
+      <circle cx="104" cy="42" r="2.5" fill="#6a1bd1" />
+      <circle cx="137" cy="42" r="2.5" fill="#c026d3" />
 
       <!-- Body -->
       <path d="M120 52 C 168 52, 188 92, 188 142 C 188 194, 160 226, 120 226 C 80 226, 52 194, 52 142 C 52 92, 72 52, 120 52 Z" :fill="`url(#${uid}-body)`" stroke="#3b1f14" stroke-width="3.5" />
@@ -84,6 +87,20 @@ const uid = `anj-${Math.random().toString(36).slice(2, 8)}`;
   animation: anjalai-shadow 4.5s ease-in-out infinite;
   transform-origin: 120px 250px;
 }
+.anjalai .anjalai-star {
+  animation: anjalai-twinkle 3s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@keyframes anjalai-twinkle {
+  0%,
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.15) rotate(12deg);
+  }
+}
 .anjalai .anjalai-wave {
   animation: anjalai-wave 2.4s ease-in-out infinite;
   transform-origin: 60px 128px;
@@ -124,6 +141,7 @@ const uid = `anj-${Math.random().toString(36).slice(2, 8)}`;
 @media (prefers-reduced-motion: reduce) {
   .anjalai .anjalai-body,
   .anjalai .anjalai-shadow,
+  .anjalai .anjalai-star,
   .anjalai .anjalai-wave {
     animation: none;
   }
