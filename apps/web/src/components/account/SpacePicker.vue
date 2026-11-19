@@ -65,5 +65,6 @@ async function pick(s: Membership) {
       <button type="button" class="btn-ghost" @click="emit('later')">Not now</button>
     </div>
     <p v-if="error" role="alert" class="text-sm text-red-800">{{ error }}</p>
+    <p v-else-if="me?.refused" role="alert" class="caution rounded-lg px-3 py-2 text-sm">{{ me.refused.space_name }} didn't open: {{ me.refused.message }}</p>
   </section>
 </template>

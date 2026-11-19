@@ -31,7 +31,7 @@ import { IdentityError, type DeviceLockView, type Membership, type TokenClaims }
 export type AppEnv = {
   Bindings: Bindings;
   /** `account` and `space`: the signed-in account and its open space, checked on this request (identity.ts). */
-  Variables: { reviewer: Reviewer; account?: TokenClaims; space?: Membership; lock?: DeviceLockView; machine?: Moderator };
+  Variables: { reviewer: Reviewer; account?: TokenClaims; space?: Membership; lock?: DeviceLockView; machine?: Moderator; spaceRefused?: { space_name: string; why: string; message: string } };
 };
 
 const MAX_CHAT_BODY = 4_500_000;

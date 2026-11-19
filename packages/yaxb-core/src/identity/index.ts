@@ -80,6 +80,7 @@ export const IDENTITY_ACTIONS = [
   "membership.removed",
   "device.locked",
   "device.unlocked",
+  "space.policy_changed",
 ] as const;
 export type IdentityAction = (typeof IDENTITY_ACTIONS)[number];
 export type IdentityAuditEvent = { id: string; at: string; account_id: string | null; action: IdentityAction; details: Record<string, string | number | boolean> | null };
@@ -111,6 +112,8 @@ export interface IdentityStore {
   pendingJoins(accountId: string): Promise<PendingJoin[]>;
   putPendingJoin(p: PendingJoin): Promise<void>;
   removePendingJoin(id: string): Promise<void>;
+  spacePolicy(edition: Edition, tenantId: string): Promise<SpacePolicy | null>;
+  putSpacePolicy(p: SpacePolicy): Promise<void>;
   deviceLock(id: string): Promise<DeviceLock | null>;
   /** A space's locks, released ones too, newest first. */
   deviceLocks(edition: Edition, tenantId: string): Promise<DeviceLock[]>;
@@ -193,7 +196,33 @@ export type IdentityOptions = {
   now?: () => Date;
 };
 
-export type TokenClaims = { iss: string; sub: string; sid: string; lvl: number; amr: string[]; iat: number; exp: number };
+/** `auth_time`: when the person signed in (the session began), for a space's session length (IDN-34). */
+export type TokenClaims = { iss: string; sub: string; sid: string; lvl: number; amr: string[]; iat: number; exp: number; auth_time?: number };
+
+// ---- a space's sign-in rules (IDN-34) ---------------------------------------------------------------
+
+/** Methods a space may accept. */
+export const POLICY_METHODS = ["passkey", "oidc", "recovery"] as const;
+export type PolicyMethod = (typeof POLICY_METHODS)[number];
+/** How long a sign-in lasts in a space before signing in again: a shift, a day, a week, a month. */
+export const SESSION_HOURS = [8, 24, 168, 720] as const;
+export type SpacePolicy = { edition: Edition; tenant_id: string; methods: PolicyMethod[]; staff_passkeys: boolean; session_hours: number; updated_at: string };
+export const DEFAULT_POLICY = { methods: [...POLICY_METHODS], staff_passkeys: false, session_hours: 720 } as const;
+
+/**
+ * Whether this sign-in may open the space (IDN-34): its method is one the space accepts, staff
+ * (a membership with roles) signed in with a passkey when the space asks for it, and it began
+ * within the space's session length. A refusal says what to do.
+ */
+export function policyAllows(policy: Pick<SpacePolicy, "methods" | "staff_passkeys" | "session_hours">, claims: Pick<TokenClaims, "amr" | "lvl" | "auth_time" | "iat">, membership: Pick<Membership, "roles">, nowSeconds = Math.floor(Date.now() / 1000)): { ok: true } | { ok: false; why: "method" | "passkey" | "expired"; message: string } {
+  const method = claims.amr[0] ?? "";
+  if (!(policy.methods as readonly string[]).includes(method)) return { ok: false, why: "method", message: `This space asks you to sign in with ${policy.methods.map(methodWords).join(" or ")}.` };
+  if (policy.staff_passkeys && membership.roles.length && claims.lvl < 3) return { ok: false, why: "passkey", message: "This space asks staff to sign in with a passkey." };
+  const began = claims.auth_time ?? claims.iat;
+  if (nowSeconds - began > policy.session_hours * 3600) return { ok: false, why: "expired", message: "Your sign-in for this space has ended. Sign in again." };
+  return { ok: true };
+}
+const methodWords = (m: string) => (m === "passkey" ? "a passkey" : m === "oidc" ? "Google" : m === "recovery" ? "a recovery code" : m);
 export type SignedIn = { account: Account; session: { id: string; access: string; refresh: string; access_expires_at: string; expires_at: string }; memberships: Membership[] };
 
 const iso = (d: Date) => d.toISOString();
@@ -232,7 +261,7 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
   async function issue(account: Account, session: Session, refresh: string): Promise<SignedIn> {
     const t = Math.floor(now().getTime() / 1000);
     const k = await signingKey();
-    const claims: TokenClaims = { iss: options.issuer, sub: account.id, sid: session.id, lvl: session.level, amr: [session.method], iat: t, exp: t + ACCESS_SECONDS };
+    const claims: TokenClaims = { iss: options.issuer, sub: account.id, sid: session.id, lvl: session.level, amr: [session.method], iat: t, exp: t + ACCESS_SECONDS, auth_time: Math.floor(new Date(session.created_at).getTime() / 1000) };
     return {
       account,
       session: { id: session.id, access: await signJwt(claims, k.kid, k.privateJwk), refresh: `${session.id}.${refresh}`, access_expires_at: iso(new Date((t + ACCESS_SECONDS) * 1000)), expires_at: session.expires_at },
@@ -481,6 +510,24 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
       return store.auditLog(accountId, Math.min(limit, 200));
     },
 
+    // ---- a space's sign-in rules (IDN-34) -------------------------------------------------------------
+
+    /** The space's rules, or the defaults (every method, no passkey rule, 30 days). */
+    async spacePolicy(edition: Edition, tenantId: string): Promise<Omit<SpacePolicy, "updated_at"> & { updated_at: string | null }> {
+      return (await store.spacePolicy(edition, tenantId)) ?? { edition, tenant_id: tenantId, ...DEFAULT_POLICY, methods: [...DEFAULT_POLICY.methods], updated_at: null };
+    },
+    /** Set them (the caller has checked the space's administrator). At least one method stays. */
+    async setSpacePolicy(edition: Edition, tenantId: string, input: { methods: string[]; staff_passkeys: boolean; session_hours: number }, by: string | null) {
+      const methods = [...new Set(input.methods)].filter((m): m is PolicyMethod => (POLICY_METHODS as readonly string[]).includes(m));
+      if (!methods.length) throw new IdentityError("Keep at least one way to sign in.");
+      if (input.staff_passkeys && !methods.includes("passkey")) throw new IdentityError("Staff can't use a passkey unless passkeys are allowed.");
+      if (!(SESSION_HOURS as readonly number[]).includes(input.session_hours)) throw new IdentityError("Choose how long a sign-in lasts.");
+      const p: SpacePolicy = { edition, tenant_id: tenantId, methods, staff_passkeys: Boolean(input.staff_passkeys), session_hours: input.session_hours, updated_at: iso(now()) };
+      await store.putSpacePolicy(p);
+      await audit(by, "space.policy_changed", { edition, methods: methods.join(","), staff_passkeys: p.staff_passkeys, hours: p.session_hours });
+      return p;
+    },
+
     // ---- devices kept for one space (SPC-5) ---------------------------------------------------------
 
     /**
@@ -563,6 +610,7 @@ export function createMemoryIdentityStore(): IdentityStore {
   const events: IdentityAuditEvent[] = [];
   const pending = new Map<string, PendingJoin>();
   const locks = new Map<string, DeviceLock>();
+  const policies = new Map<string, SpacePolicy>();
   const copy = <T>(x: T): T => structuredClone(x);
   const mkey = (a: string, e: string, t: string) => `${a}|${e}|${t}`;
   return {
@@ -602,6 +650,8 @@ export function createMemoryIdentityStore(): IdentityStore {
     deviceLock: async (id) => copy(locks.get(id) ?? null),
     deviceLocks: async (e, t) => [...locks.values()].filter((l) => l.edition === e && l.tenant_id === t).sort((a, b) => b.created_at.localeCompare(a.created_at)).map(copy),
     putDeviceLock: async (l) => void locks.set(l.id, copy(l)),
+    spacePolicy: async (e, t) => copy(policies.get(`${e}|${t}`) ?? null),
+    putSpacePolicy: async (p) => void policies.set(`${p.edition}|${p.tenant_id}`, copy(p)),
     eraseAccount: async (id) => {
       for (const [k, p] of pending) if (p.account_id === id) pending.delete(k);
       for (const [k, m] of methods) if (m.account_id === id) methods.delete(k);

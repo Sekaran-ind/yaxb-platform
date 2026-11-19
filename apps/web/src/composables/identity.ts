@@ -27,6 +27,8 @@ export type Me =
       waiting?: { space_name: string; kind: string }[];
       edition: string;
       locked?: DeviceLocked | null;
+      /** The open space didn't open: this sign-in doesn't meet its rules (IDN-34). */
+      refused?: { space_name: string; why: string; message: string } | null;
     };
 /** This device is kept for one space (SPC-5): no other space opens here. */
 export type DeviceLocked = { space_name: string; label: string; edition: string; created_at: string };

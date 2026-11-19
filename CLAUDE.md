@@ -346,6 +346,7 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
 
 - yaxb-journeys: `ASSURANCE_LEVELS`, `level` on journeys and question steps (nested journeys and screens too; `JourneyDesign.level`, `StepForm.level`), `levelNeeded`, `sureEnough`; `RunActor.level`; the runner's `stepup` state (status `step_up`, `RunState.stepUp`), resumed by `continueAs`. Without an actor nothing steps up (previews, `replay`).
 - Core cases: `CaseActor.level` (the Worker's `caseCall` from `c.get("account")?.lvl`, devices' `deviceActor` from `accountLevel`); `start` and `act` refuse answers below a screen's level; `runActor` passes it to the client's runner.
+- A space's sign-in rules (IDN-34): core `spacePolicy`/`setSpacePolicy`/`policyAllows` (platform migration 0005 `space_policies`; `TokenClaims.auth_time`); the Worker's `accountContext` applies them to the open space (cached a minute; a refusal is `c.get("spaceRefused")`, shown as `me.refused`), `GET|PUT /api/identity/space-policy` (the space's administrator; never one that would sign them out); `moderation/SignInRules.vue` in Administration.
 - Web: `accountLevel` (composables/identity.ts) in `kioskActor`; `JourneyPanel` runs a levelled journey with an actor and shows the step-up card; `identity.whoami`; `?journey=` waits for a catalogue journey to load. JourneyDesigner's level selects. Seed: `content/catalogue/hall.service.yaml`.
 
 ## Running journeys on XState; parallel journeys (JRN-45..49)

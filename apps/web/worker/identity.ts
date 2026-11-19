@@ -22,7 +22,10 @@ import {
   IdentityError,
   oidcFinish,
   oidcStart,
+  policyAllows,
+  POLICY_METHODS,
   seal,
+  SESSION_HOURS,
   unseal,
   type DeviceLockView,
   type Edition,
@@ -116,6 +119,18 @@ async function lockOf(c: Context<AppEnv>, svc: IdentityService): Promise<DeviceL
   return lock;
 }
 
+/** A space's sign-in rules (IDN-34), read at most once a minute per isolate. */
+const policies = new Map<string, { policy: Awaited<ReturnType<IdentityService["spacePolicy"]>>; until: number }>();
+async function policyOf(svc: IdentityService, edition: Edition, tenant: string) {
+  const key = `${edition}|${tenant}`;
+  const hit = policies.get(key);
+  if (hit && hit.until > Date.now()) return hit.policy;
+  const policy = await svc.spacePolicy(edition, tenant);
+  if (policies.size > 1000) policies.clear();
+  policies.set(key, { policy, until: Date.now() + 60_000 });
+  return policy;
+}
+
 // ---- every request: who is signed in, and in which space (SPC-7) ----------------------------------------
 
 /**
@@ -136,7 +151,10 @@ export async function accountContext(c: Context<AppEnv>, next: Next) {
       const open = lock ? { edition: lock.edition, tenant: lock.tenant_id } : spaceCookie(c);
       if (open) {
         const m = await svc.spaceOf(claims.sub, open.edition, open.tenant).catch(() => null);
-        if (m) c.set("space", m);
+        // The space's own rules (IDN-34): a sign-in it doesn't accept doesn't open it.
+        const verdict = m ? policyAllows(await policyOf(svc, m.edition, m.tenant_id), claims, m) : null;
+        if (m && verdict?.ok) c.set("space", m);
+        else if (m && verdict && !verdict.ok) c.set("spaceRefused", { space_name: m.space_name, why: verdict.why, message: verdict.message });
       }
     }
   }
@@ -354,7 +372,7 @@ export function identityRoutes(deps: Deps) {
       const waiting = (await svc(c).pendingJoins(account.sub, "all")).map((p) => ({ space_name: p.space_name, kind: p.kind }));
       const spaces = me.memberships;
       const open = spaceCookie(c);
-      return c.json({ signedIn: true, level: account.lvl, account: me.account, methods: me.methods, spaces, space: c.get("space") ?? spaces.find((m) => sameSpace(m, open)) ?? null, waiting, edition: currentEdition(), locked: lockedView(c) });
+      return c.json({ signedIn: true, level: account.lvl, account: me.account, methods: me.methods, spaces, space: c.get("space") ?? (c.get("spaceRefused") ? null : (spaces.find((m) => sameSpace(m, open)) ?? null)), refused: c.get("spaceRefused") ?? null, waiting, edition: currentEdition(), locked: lockedView(c) });
     } catch {
       setSession(c, null);
       return c.json({ signedIn: false });
@@ -516,6 +534,31 @@ export function identityRoutes(deps: Deps) {
       lockChecks.clear();
       if (c.get("lock")?.id === done.id) setLock(c, null);
       return { released: done.id };
+    }),
+  );
+
+  // ---- a space's sign-in rules (IDN-34): its administrator only ----
+  r.get("/space-policy", (c) =>
+    call(c, async () => {
+      await mustAdminister(c);
+      return { policy: await svc(c).spacePolicy(currentEdition(), deps.tenant()), methods: POLICY_METHODS, hours: SESSION_HOURS };
+    }),
+  );
+  r.put("/space-policy", (c) =>
+    call(c, async () => {
+      await mustAdminister(c);
+      const b = await body(c, z.object({ methods: z.array(z.string().max(20)).max(5), staff_passkeys: z.boolean(), session_hours: z.number().int() }));
+      if (!b) throw new IdentityError("Check the rules.");
+      // Never shut out the administrator making the change: their own sign-in must still open it.
+      const claims = c.get("account");
+      const mine = c.get("space");
+      if (claims && mine) {
+        const verdict = policyAllows({ ...b, methods: b.methods as never }, claims, mine);
+        if (!verdict.ok) throw new IdentityError(`That would sign you out of this space: ${verdict.message}`, 409);
+      }
+      const p = await svc(c).setSpacePolicy(currentEdition(), deps.tenant(), b, claims?.sub ?? null);
+      policies.delete(`${p.edition}|${p.tenant_id}`);
+      return { policy: p };
     }),
   );
 
