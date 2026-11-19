@@ -2,7 +2,7 @@
 // Ideas for the Service Catalogue as a slideshow: one card per idea, each laid out like the motorbike
 // showroom (what the notebook holds, the roles, and four steps from the notebook to the person who
 // finishes the request). "Design this service" opens a new service with the AI designer's first
-// message written for that idea (`/catalogue?service=new&idea=…`; nothing is sent until the person sends it).
+// message offered for that idea, in the catalogue's Ask Me (`/catalogue?view=ask&design=new&idea=…`; nothing is sent until the person sends it).
 // Previous/Next, the dots, the two group buttons, the arrow keys and a swipe move between ideas;
 // #ideas-family and #ideas-business (the carousel's links) open that group's first idea.
 // Every card sits in the same grid cell, so the section keeps the tallest card's height.
@@ -182,7 +182,7 @@ const current = ref(0);
 const idea = computed(() => IDEAS[current.value]!);
 const go = (i: number) => (current.value = (i + IDEAS.length) % IDEAS.length);
 const firstOf = (g: Group) => IDEAS.findIndex((x) => x.group === g);
-const designLink = (text: string) => ({ path: "/catalogue", query: { service: "new", idea: text } });
+const designLink = (text: string) => ({ path: "/catalogue", query: { view: "ask", design: "new", idea: text } });
 
 // The carousel's links: #ideas-family / #ideas-business open that group.
 function fromHash() {

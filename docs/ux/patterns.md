@@ -48,14 +48,14 @@ The panel of every kiosk frame is a player: one component, `components/site/Cons
 
 | Part | What it is | Kiosk | Service Catalogue |
 |---|---|---|---|
-| `controls` | The one personal button, top right (in a strip or card: before the actions) | Not used: the kiosk's personal controls are its actions | Staff sign in (a guest), or your initials to sign out (a member) |
+| `controls` | The one personal button, top right (in a strip or card: before the actions) | Not used: the kiosk's personal controls are its actions | Not used: the catalogue's controls are its actions too |
 | `orb` | The surface's mark, glowing | Sparkles (pulses while thinking) | Library while browsing; a pencil and ruler while designing |
 | eyebrow | The surface's name | Yaxb AI Kiosk | YAXB Service Catalogue |
 | status | "Now playing", live (`role="status"`), with a spinner while busy; short, so it fits the strip and the card | Ready when you are, Listening, Thinking… | Ready to design; the open service's name while designing; "Loading the catalogue" |
 | `under-status` | Full only: a detail of the status | What the visitor is saying | The service's state and the designer's step ("Step 3 of 4: Journeys") |
 | `body` | Full only: what fills the column | The voice bars | "Design once. Run on any kiosk." and how a service gets there (Design, Review, Load), or a hint while designing |
 | `meta` | One quiet line that scrolls sideways only when it doesn't fit | The notebook and its sources | The counts ("2 published · 0 yours · 1 in review"); while designing, the state and step |
-| `actions` | Round controls at the foot; the primary is the large brand circle, at most one. Full labels them, a strip shows icons in a row, Mini shows the personal one and a More menu | `PlayerButtons`: Profile, Conversations, Contacts (members), Child lock (when on), Preferences; at the front desk End session and Staff. No microphone: speaking, Pause/Resume and Stop are in the message box (PLY-1) | Open the kiosk, New service (primary) |
+| `actions` | Round controls at the foot; the primary is the large brand circle, at most one. Full labels them, a strip shows icons in a row, Mini shows the personal one and a More menu | `PlayerButtons`: Profile, Conversations, Contacts (members), Child lock (when on), Preferences; at the front desk End session and Staff. No microphone: speaking, Pause/Resume and Stop are in the message box (PLY-1) | `PlayerButtons`, as the kiosk's: Staff sign in (or your initials, to sign out; Mini keeps it), New service (opens Ask Me with a design in the conversation, LIB-64), Open the kiosk (with the open service loaded), Preferences. The tab row keeps only Ask Me's own pills (New, Conversations) |
 | `foot` | Full only: a note in words | Voice needs Chrome or Edge | Who you are (guest, or name and roles) |
 
 - Variants follow the frame's layouts: `full` (a column), `strip` (Pod: a bar), `mini` (a small card). The strip and the card keep the orb, eyebrow, status, meta, controls and actions; the body and foot are full only.

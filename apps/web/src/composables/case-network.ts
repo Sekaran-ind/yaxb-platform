@@ -31,7 +31,7 @@ import {
   type Mailbox,
 } from "@sekaran-ind/yaxb-core/cases";
 import { computed, ref } from "vue";
-import { kioskViewer, publishedJourney, roleName } from "@/composables/library";
+import { kioskViewer, publishedJourney, publishedOrganisation, roleName } from "@/composables/library";
 import { settings, useCapabilities } from "@/composables/settings";
 import { onTeamData, useTeam } from "@/composables/team";
 import { boxMailbox, deliver, recipients, relayMailbox } from "@/lib/browser/case-transport";
@@ -58,6 +58,8 @@ const service = createCaseService(localCaseStore, {
   journeyFor: async (entry, journey) => (entry === HOUSEHOLD_ENTRY ? householdCaseJourney(journey) : publishedJourney(entry, journey)),
   // A child's request goes only to that child's guardians (EDN-21).
   allows: (c, a) => householdAllows(household.value)(c, a),
+  // Approvals for "the requester's manager" follow the published organisation (ORG-3).
+  organisation: async () => publishedOrganisation.value,
 });
 const team = useTeam();
 const account = useAccount();

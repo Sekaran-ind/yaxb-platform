@@ -28,7 +28,8 @@ import { recognizeCommand, yesOrNo } from "@/lib/browser/commands";
 import { modelFor, searchLocal, semanticReady, warmUp, type LocalSearch } from "@/lib/browser/semantic";
 import { extractWithModel, matchOnDevice } from "@/lib/browser/slots";
 import { languageLabel, speechLangFor } from "@/lib/languages";
-import type { CommandCard, JourneyTurn, KioskStatus } from "@/lib/types";
+import type { CommandCard, DesignTurn, JourneyTurn, KioskStatus } from "@/lib/types";
+import { api } from "@/lib/api";
 import { catalogue, entryOfJourney, kioskJourneys, kioskViewer, loadCatalogue, loadIntoKiosk } from "@/composables/library";
 import { startCaseNetwork } from "@/composables/cases";
 import { readDocument } from "@/lib/browser/documents";
@@ -48,12 +49,15 @@ import { endSession, restricted, sessionEnds } from "@/composables/restricted";
 import { serviceDocuments } from "@/composables/notebook";
 import { loadedServices } from "@/composables/library";
 import ProfilePicker from "@/components/account/ProfilePicker.vue";
+import SpacePicker from "@/components/account/SpacePicker.vue";
+import { JOURNEY_RESTART_MS, justOpened, useIdentity } from "@/composables/identity";
+import type { Membership } from "@sekaran-ind/yaxb-core/identity";
 import RestrictedUnlock from "./RestrictedUnlock.vue";
 import ComingUp from "./ComingUp.vue";
 import { pendingScheduleText } from "@/composables/schedule";
 import AskMePills from "./AskMePills.vue";
 import PlayerButtons, { type PlayerButton } from "./PlayerButtons.vue";
-import { Lock, LogOut, MessagesSquare, ShieldCheck, SlidersHorizontal, Square, UserRound, Users } from "@lucide/vue";
+import { Building2, Lock, LogOut, MessagesSquare, ShieldCheck, SlidersHorizontal, Square, UserRound, Users } from "@lucide/vue";
 import { useChildMode } from "@/composables/child";
 import type { NotebookSource } from "@sekaran-ind/yaxb-core/notebook";
 import type { StorageId } from "@sekaran-ind/yaxb-core/settings";
@@ -156,6 +160,78 @@ watch(
   },
 );
 const showPicker = computed(() => offers("profiles") && !props.embedded && !restricted.value && account.list.value.length > 0 && !account.profile.value && !visitorChosen.value);
+
+// ---- the account's spaces (SPC-2, SPC-4) ----------------------------------------------------------
+const identity = useIdentity();
+const SPACE_LATER = "yaxb.space.later";
+const readLater = () => {
+  try {
+    return sessionStorage.getItem(SPACE_LATER) === "1";
+  } catch {
+    return false;
+  }
+};
+const spaceLater = ref(readLater());
+// Opening a space starts the app again: the conversation the journey runs in is reopened after it,
+// so the journey finishes where the person was (the step then sees the space open, justOpened).
+const RESUME = "yaxb.resume.thread";
+function keepConversation() {
+  try {
+    sessionStorage.setItem(RESUME, JSON.stringify({ id: chat.threadId.value, at: Date.now() }));
+  } catch {
+    /* private mode: a fresh conversation after the restart */
+  }
+}
+onMounted(() => {
+  try {
+    const kept = JSON.parse(sessionStorage.getItem(RESUME) ?? "null") as { id?: string; at?: number } | null;
+    sessionStorage.removeItem(RESUME);
+    if (kept?.id && Date.now() - (kept.at ?? 0) < 5 * 60_000) {
+      screen.value = "transcript";
+      void chat.open(kept.id);
+    }
+  } catch {
+    /* nothing kept */
+  }
+});
+/** Asked for: the player's space button, or the your-account journey's "Open one of my spaces". */
+const spacePickerAsked = ref(false);
+/** A journey step waiting for the picker's choice (identity.space.open). */
+let spacePicked: ((s: Membership | null) => void) | null = null;
+const deferPick = ref(false);
+async function onSpacePick(s: Membership) {
+  const done = spacePicked;
+  spacePicked = null;
+  deferPick.value = false;
+  spacePickerAsked.value = false;
+  if (!done) return;
+  const open = identity.me.value.signedIn && identity.me.value.space?.tenant_id === s.tenant_id;
+  if (!open) {
+    keepConversation();
+    await identity.openSpace(s.tenant_id, s.edition, { after: JOURNEY_RESTART_MS });
+  }
+  done(s);
+}
+const mySpaces = computed(() => (identity.me.value.signedIn ? identity.me.value.spaces : []));
+/**
+ * "Where are you today?": after the person, when their account has several spaces here and none is
+ * open (once per visit, unless asked for again). Never at the front desk or in another surface.
+ */
+const showSpacePicker = computed(
+  () => !props.embedded && !restricted.value && !showPicker.value && (spacePickerAsked.value || (mySpaces.value.length > 1 && identity.me.value.signedIn && !identity.me.value.space && !spaceLater.value)),
+);
+function spaceNotNow() {
+  spacePicked?.(null);
+  spacePicked = null;
+  deferPick.value = false;
+  spacePickerAsked.value = false;
+  spaceLater.value = true;
+  try {
+    sessionStorage.setItem(SPACE_LATER, "1");
+  } catch {
+    /* private mode */
+  }
+}
 const { data: catalog, error: catalogError } = useProviders();
 const { data: caps } = useCapabilities();
 const feedback = useFeedback();
@@ -419,6 +495,73 @@ async function startJourney(id: string) {
   const turn: JourneyTurn = { id: j.id, entry: entryOfJourney(j.id), title: j.title, run: null, status: "running" };
   await chat.addTurns(j.title, { journey: turn, via: "journey" }, turnCtx());
 }
+// A link to a journey (`?journey=<id>`), such as Preferences → Account's "Sign in step by step".
+watch(
+  () => route.query.journey,
+  (j) => {
+    if (typeof j !== "string" || !j) return;
+    const { journey: _, ...rest } = route.query;
+    void router.replace({ query: rest });
+    void startJourney(j);
+  },
+  { immediate: true },
+);
+
+// ---- designing a service in the conversation (LIB-64) ------------------------------------------------
+
+type DesignSession = Extract<DesignTurn, { kind: "session" }>;
+/** Start designing a new service here: the design takes the message box's words until it is stopped. */
+async function startDesign(idea?: string) {
+  screen.value = "transcript";
+  journey.value = null;
+  const design: DesignSession = { kind: "session", status: "designing", thread: null, yaml: null, run: null, title: null, entry: null, ...(idea ? { idea: idea.slice(0, 4000) } : {}) };
+  await chat.addTurns("Design a new service", { design, via: "design" }, turnCtx());
+}
+async function onDesignUpdate(turnId: string, patch: Partial<DesignTurn>) {
+  const turn = chat.turns.value.find((t) => t.id === turnId);
+  if (!turn?.design) return;
+  await chat.patchTurn(turnId, { design: { ...turn.design, ...patch } as DesignTurn }, turnCtx());
+}
+/** The first description needs a sentence or two (the designer's input is 20 to 4000 characters). */
+const MIN_DESCRIPTION = 20;
+/** Words for the Service Designer: its reply, with its draft, becomes a turn; the design keeps the draft. */
+async function designSay(sessionId: string, text: string) {
+  const session = chat.turns.value.find((t) => t.id === sessionId)?.design;
+  if (session?.kind !== "session") return;
+  const reply: DesignTurn = { kind: "reply", session: sessionId, pending: true, text: "", yaml: null, title: null, errors: 0, run: null };
+  const replyId = await chat.addTurns(text, { design: reply, via: "design" }, turnCtx());
+  const fail = (failed: string) => onDesignUpdate(replyId, { pending: false, failed });
+  const first = !session.thread && !session.yaml;
+  if (first && text.trim().length < MIN_DESCRIPTION) return fail("Describe the service in a sentence or two: who uses it, what they do, and who answers.");
+  const sel = selection.value;
+  if (!sel) return fail("The Service Designer needs an AI model: choose one in Preferences → Model.");
+  try {
+    const r = await api<{ yaml: string; title: string; problems: { level: string }[]; run: string; thread: string; messages: { role: string; text: string }[] }>("/api/library/design", {
+      narrative: text,
+      provider: sel.provider,
+      model: sel.model,
+      ...(session.thread ? { thread: session.thread } : {}),
+      ...(session.yaml ? { current: session.yaml } : {}),
+    });
+    const said = r.messages.filter((m) => m.role === "assistant").at(-1)?.text ?? "Drafted the service.";
+    await onDesignUpdate(replyId, { pending: false, text: said, yaml: r.yaml, title: r.title, errors: r.problems.filter((p) => p.level === "error").length, run: r.run });
+    await onDesignUpdate(sessionId, { thread: r.thread, yaml: r.yaml, run: r.run, title: r.title });
+  } catch (e) {
+    await fail((e as Error).message);
+  }
+}
+// The catalogue's New service opens Ask Me with a design (`?design=new`).
+watch(
+  () => route.query.design,
+  (d) => {
+    if (d !== "new") return;
+    const { design: _, idea, ...rest } = route.query;
+    void router.replace({ query: rest });
+    void startDesign(typeof idea === "string" ? idea : undefined);
+  },
+  { immediate: true },
+);
+
 /** A request's reference, kept in the conversation: its status shows whenever the conversation is open. */
 async function showRequest(ref: string, open = false) {
   screen.value = "transcript";
@@ -615,6 +758,81 @@ const services: Record<string, ServiceHandler> = {
     await nb.remember(text(input));
     return { saved: true };
   },
+  // Signing in and spaces: the your-account journey (15-identity.md, SPC-2..8). Each step is safe to
+  // run again: opening a space starts the app again, and the journey carries on from the conversation.
+  "identity.status": async () => {
+    await identity.reload();
+    const m = identity.me.value;
+    return m.signedIn ? { signedIn: true, name: m.account.display_name ?? "", spaces: m.spaces.length, open: m.space?.space_name ?? null } : { signedIn: false };
+  },
+  "identity.passkey.signin": async () => {
+    if (identity.signedIn.value) return { signedIn: true };
+    if (!identity.passkeys.value) throw new Error("This device or address can't use passkeys. Choose Google or a recovery code.");
+    try {
+      await identity.passkeySignIn();
+    } catch (e) {
+      throw new Error(/NotAllowed|cancel|abort/i.test(String((e as Error).name) + (e as Error).message) ? "The passkey wasn't used. Choose how to sign in again." : (e as Error).message);
+    }
+    return { signedIn: true };
+  },
+  "identity.passkey.create": async (input) => {
+    if (identity.signedIn.value) return { signedIn: true };
+    const i = input as { name?: unknown; consent?: unknown };
+    if (i.consent !== true && i.consent !== "true") throw new Error("Tick \u201cI've read this\u201d to make your account.");
+    if (!identity.passkeys.value) throw new Error("This device or address can't make passkeys. Choose Google instead.");
+    try {
+      await identity.passkeyCreate({ name: String(i.name ?? "").trim() || undefined, consent: true });
+    } catch (e) {
+      throw new Error(/NotAllowed|cancel|abort/i.test(String((e as Error).name) + (e as Error).message) ? "The passkey wasn't made. Choose how to sign in again." : (e as Error).message);
+    }
+    return { signedIn: true };
+  },
+  "identity.google": async () => {
+    if (identity.signedIn.value) return { signedIn: true };
+    if (!identity.config.value?.google) throw new Error("Sign in with Google isn't set up on this site yet. Choose a passkey.");
+    keepConversation();
+    identity.google(`${location.pathname}${location.search}`);
+    // Google takes over the page; the journey carries on when it brings the person back.
+    return new Promise(() => undefined);
+  },
+  "identity.recovery": async (input) => {
+    if (identity.signedIn.value) return { signedIn: true };
+    await identity.recovery(String((input as { code?: unknown }).code ?? ""));
+    return { signedIn: true };
+  },
+  "identity.space.open": async () => {
+    const m = identity.me.value;
+    if (!m.signedIn) throw new Error("Sign in first.");
+    if (justOpened() && m.space) return { space: m.space.space_name };
+    if (!m.spaces.length) throw new Error("You don't have a space here yet. Start one, or join one with a code.");
+    if (m.spaces.length === 1) {
+      const only = m.spaces[0]!;
+      if (m.space?.tenant_id === only.tenant_id) return { space: only.space_name };
+      keepConversation();
+      await identity.openSpace(only.tenant_id, only.edition, { after: JOURNEY_RESTART_MS });
+      return { space: only.space_name };
+    }
+    // Several: the picker, then the journey reaches its ending before the app restarts in the space.
+    spacePickerAsked.value = true;
+    deferPick.value = true;
+    const s = await new Promise<Membership | null>((resolve) => (spacePicked = resolve));
+    if (!s) throw new Error("No space chosen. Choose again, or Not now.");
+    return { space: s.space_name };
+  },
+  "identity.space.start": async (input) => {
+    const i = input as { kind?: unknown; name?: unknown };
+    if (justOpened() && identity.me.value.signedIn && identity.me.value.space) return { space: identity.me.value.space.space_name };
+    keepConversation();
+    const started = await identity.startSpace(String(i.kind ?? ""), String(i.name ?? ""), { after: JOURNEY_RESTART_MS });
+    return { space: started.space_name };
+  },
+  "identity.space.join": async (input) => {
+    if (justOpened() && identity.me.value.signedIn && identity.me.value.space) return { space: identity.me.value.space.space_name, pending: false };
+    keepConversation();
+    const r = await identity.joinSpace(String((input as { code?: unknown }).code ?? ""), { after: JOURNEY_RESTART_MS });
+    if (r.pending) return { pending: true, space: r.space_name ?? "The space" };
+    return { space: r.space?.space_name ?? "", pending: false };
+  },
   "speech.speak": async (input) => {
     const i = input as { text?: unknown; language?: unknown };
     await voiceOut.speak(String(i.text ?? ""), { lang: speechLangFor(String(i.language ?? "eng_Latn")) });
@@ -703,7 +921,13 @@ const playerButtons = computed<PlayerButton[]>(() => {
     ];
   const nickname = account.profile.value?.nickname ?? null;
   const out: PlayerButton[] = [];
+  const me = identity.me.value;
   if (offers("profiles")) out.push(nickname ? { id: "profile", label: nickname, initials: initialsOf(nickname), accent: true } : { id: "profile", label: "Sign in", icon: UserRound });
+  // Without profiles (Business), the account is the person's button: sign in, or their space (SPC-4).
+  else if (identity.config.value?.enabled)
+    out.push(me.signedIn ? { id: "account", label: me.space?.space_name ?? me.account.display_name ?? "Account", initials: initialsOf(me.account.display_name ?? "A"), accent: true } : { id: "account", label: "Sign in", icon: UserRound });
+  // With profiles, the space is a button of its own once the account has more than one (SPC-4).
+  if (offers("profiles") && me.signedIn && me.spaces.length > 1) out.push({ id: "spaces", label: me.space?.space_name ?? "Spaces", icon: Building2 });
   out.push({ id: "conversations", label: "Conversations", icon: MessagesSquare, badge: nb.threads.value.length || undefined, pressed: threadsOpen.value });
   if (kioskViewer.value.member && !childMode.on.value) out.push({ id: "contacts", label: "Contacts", icon: Users });
   if (childMode.on.value) out.push({ id: "child", label: "Child lock", icon: ShieldCheck, accent: true });
@@ -715,6 +939,13 @@ function onPlayerButton(id: string) {
   if (id === "end") return void endSession();
   if (id === "staff") return void (unlocking.value = true);
   if (id === "profile") return openPrefs("profile");
+  if (id === "account") {
+    const me = identity.me.value;
+    // Signed in with several spaces: choose one; otherwise the guided journey.
+    if (me.signedIn && me.spaces.length > 1) return void (spacePickerAsked.value = true);
+    return void startJourney("your-account");
+  }
+  if (id === "spaces") return void (spacePickerAsked.value = true);
   if (id === "child") return openPrefs("child");
   if (id === "prefs") return prefsOpen.value ? closePrefs() : openPrefs("language");
   if (id === "contacts") return void router.push({ path: "/kiosk", query: { screen: "services", staff: "team" } });
@@ -779,6 +1010,8 @@ const fixedHeight = computed(() => true);
       @request="(ref, open) => showRequest(ref, open)"
       @attach="attachFiles"
       @journey-update="onJourneyUpdate"
+      @design-say="designSay"
+      @design-update="onDesignUpdate"
       @journey-done="(id) => void logActivity('journey.completed', { journey: id })"
       @speak="(t) => voiceOut.speak(t)"
       :threads="nb.threads.value"
@@ -836,6 +1069,7 @@ const fixedHeight = computed(() => true);
       </button>
       <KioskPreferences v-if="prefsOpen" :nickname="account.profile.value?.nickname ?? null" :fill="fixedHeight" @close="closePrefs" />
       <ProfilePicker v-else-if="showPicker" @visitor="chooseVisitor" @add="openPrefs('profile')" />
+      <SpacePicker v-else-if="showSpacePicker" :defer="deferPick" @pick="onSpacePick" @later="spaceNotNow" @more="(spaceNotNow(), startJourney('your-account'))" />
       <AdaptiveNav
         v-else
         :screens="navScreens"
@@ -891,6 +1125,8 @@ const fixedHeight = computed(() => true);
                 @request="(ref, open) => showRequest(ref, open)"
                 @attach="attachFiles"
                 @journey-update="onJourneyUpdate"
+      @design-say="designSay"
+      @design-update="onDesignUpdate"
                 @journey-done="(id) => void logActivity('journey.completed', { journey: id })"
                 @speak="(t) => voiceOut.speak(t)"
                 :threads="nb.threads.value"

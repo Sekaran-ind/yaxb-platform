@@ -5,5 +5,6 @@ summary: Things the kiosk can do on this device, without the internet.
 icon: wrench
 order: 30
 items:
+  - { key: account, label: Sign in and spaces, summary: "Sign in, then open, start or join your family, business or community.", icon: user-round, journey: your-account }
   - { key: translate, label: Translate text, icon: languages, journey: translate-text }
   - { key: scheduler, label: Scheduler, summary: "Your to-dos, birthdays and anniversaries, and your services' dates.", icon: calendar, screen: scheduler }

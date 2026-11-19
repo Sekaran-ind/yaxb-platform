@@ -18,7 +18,7 @@ These documents describe what the YAXB kiosk must do, for the people who decide 
 | 12 | [Platform and editions](12-platform-and-editions.md) | The shared platform database, the anjalai.cc domains, the Community edition, household requests, children and elders, utility bills |
 | 13 | [Foundations](13-foundations.md) | Spell check, maps, charts and timelines, the organisation design, schema.org, storage housekeeping and retention, audit, the Ethics Counsellor, the player, service FAQs and compiled notebooks |
 | 14 | [Media, connectors, routines and websites](14-media-connectors-routines.md) | Photo, audio and video fields, attendance, face verification (parked), connectors, hooks and routines, dependencies, approved sites |
-| 15 | [Identity and sign-in](15-identity.md) | Accounts behind profiles, passkeys, OTP, OIDC, assurance levels, CLI and box sign-in |
+| 15 | [Identity and sign-in](15-identity.md) | Accounts behind profiles, spaces (choosing your family, business or community in the app), passkeys, OTP, OIDC, assurance levels, CLI and box sign-in |
 | 16 | [The email assistant](16-email-assistant.md) | review@anjalai.cc: summaries and drafts reviewed on the kiosk, sent from the person's Gmail |
 
 ## Conventions

@@ -15,7 +15,7 @@ const emit = defineEmits<{ close: [] }>();
     <header class="min-w-0">
       <button type="button" class="btn-ghost -ml-2 h-9 px-2 text-sm" @click="emit('close')"><ArrowLeft class="size-4" aria-hidden="true" /> Back</button>
       <h2 id="prefs-title" class="mt-1 text-lg font-semibold text-ink">Preferences</h2>
-      <p class="text-xs text-gray-500">{{ nickname ? `Signed in as ${nickname}` : "Not signed in" }} · changes apply at once and stay on this device</p>
+      <p class="text-xs text-gray-500">{{ nickname ? `Profile: ${nickname}` : "No profile open" }} · changes apply at once and stay on this device</p>
     </header>
     <SettingsPanel :fill="fill" :class="fill && 'min-h-0 flex-1'" />
   </section>

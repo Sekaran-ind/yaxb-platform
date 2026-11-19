@@ -3,10 +3,10 @@ import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import type { D1Like } from "../src/stores/d1.js";
 
-/** D1's prepare/bind/first/all/run over node:sqlite, with every migration applied. */
-export function sqliteD1(): D1Like {
+/** D1's prepare/bind/first/all/run over node:sqlite, with every migration applied (an edition's, or the platform database's). */
+export function sqliteD1({ folder = "migrations" }: { folder?: "migrations" | "migrations-platform" } = {}): D1Like {
   const db = new DatabaseSync(":memory:");
-  const dir = new URL("../migrations/", import.meta.url);
+  const dir = new URL(`../${folder}/`, import.meta.url);
   for (const f of readdirSync(dir).sort()) db.exec(readFileSync(new URL(f, dir), "utf8"));
   // D1 binds ?1..?N positionally (a number may repeat); node:sqlite doesn't, so expand them to plain ?s.
   const expand = (sql: string, values: unknown[]) => {

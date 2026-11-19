@@ -39,7 +39,7 @@
 // Each screen goes to the next one in the list unless it says `next:`. A journey whose last screen
 // doesn't end it gets an ending ("Thank you"). Journeys may name the service's roles, the built-in
 // ones (administrator, moderator, reviewer) and `visitor` (anyone at the kiosk).
-import { DEFAULT_ROLES, ROLE_ID, VISITOR_ROLE, type Role } from "./roles.js";
+import { DEFAULT_ROLES, MANAGER_OF_REQUESTER, ROLE_ID, VISITOR_ROLE, type Role } from "./roles.js";
 import { serviceConsent } from "./consent.js";
 
 export const isNestedService = (doc: unknown): doc is Record<string, unknown> =>
@@ -123,7 +123,7 @@ export function expandService(doc: Record<string, unknown>): Expanded {
   serviceDates(doc.dates, problems);
   for (const k of Object.keys(doc)) if (!SERVICE_KEYS.has(k)) problems.push(k === "items" ? "a service with journeys lists no items: each journey is one" : `unknown key '${k}'`);
   const roles = serviceRoles(doc.roles, problems);
-  const known = new Set<string>([VISITOR_ROLE, ...DEFAULT_ROLES.map((r) => r.id), ...roles.map((r) => r.id)]);
+  const known = new Set<string>([VISITOR_ROLE, MANAGER_OF_REQUESTER, ...DEFAULT_ROLES.map((r) => r.id), ...roles.map((r) => r.id)]);
   serviceConsent(doc.consent, known, problems);
 
   const list = Array.isArray(doc.journeys) ? (doc.journeys as unknown[]) : [];

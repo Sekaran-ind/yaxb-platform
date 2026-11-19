@@ -3,10 +3,41 @@
 // call (yaxb-core context), shared with the Worker.
 import { offers as contextOffers, resolveContext, surfaceName, type Feature } from "@sekaran-ind/yaxb-core/context";
 
-export const CONTEXT = resolveContext({ surface: import.meta.env.VITE_SURFACE ?? "all" });
+const BUILT = (import.meta.env.VITE_SURFACE ?? "all") as "family" | "business" | "community" | "all";
+const SPACE_KIND = "yaxb.space.kind";
+/**
+ * The open space's kind (SPC-3): on the combined site (and the native app) the sections follow the
+ * space the person chose, remembered from the last start; an edition's own build is fixed.
+ */
+function spaceKind(): "family" | "business" | "community" | null {
+  if (BUILT !== "all") return null;
+  try {
+    const k = localStorage.getItem(SPACE_KIND);
+    return k === "family" || k === "business" || k === "community" ? k : null;
+  } catch {
+    return null;
+  }
+}
+/** Remember the open space's kind for the next start (composables/identity.ts). */
+export function rememberSpaceKind(kind: "family" | "business" | "community" | null) {
+  if (BUILT !== "all") return;
+  try {
+    if (kind) localStorage.setItem(SPACE_KIND, kind);
+    else localStorage.removeItem(SPACE_KIND);
+  } catch {
+    /* private mode: the combined site's sections */
+  }
+}
+
+export const CONTEXT = resolveContext({ surface: BUILT });
 export const SURFACE = CONTEXT.surface;
-/** Whether this build offers a feature (the catalogue, requests, staff, the child lock…). */
-export const offers = (f: Feature) => contextOffers(CONTEXT, f);
+/** The sections' context: the open space's kind on the combined site (SPC-3), else the build's. */
+const SECTIONS_CONTEXT = (() => {
+  const kind = spaceKind();
+  return kind ? resolveContext({ surface: kind }) : CONTEXT;
+})();
+/** Whether this build (or, on the combined site, the open space) offers a feature: the catalogue, requests, staff, the child lock… */
+export const offers = (f: Feature) => contextOffers(SECTIONS_CONTEXT, f);
 export const SURFACE_NAME = surfaceName(CONTEXT);
 /** The name in the site's header and footer: the combined site is the Yaxb.ai portal (SUR-7). */
 export const SITE_BRAND = SURFACE === "all" ? "Yaxb.ai" : "Anjalai";

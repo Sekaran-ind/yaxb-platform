@@ -169,6 +169,10 @@ function ensureDevVars() {
     setVar(DEV_VARS, "SESSION_SECRET", secret());
     info("Generated SESSION_SECRET");
   }
+  if (!vars.IDENTITY_SECRET || vars.IDENTITY_SECRET.length < 32) {
+    setVar(DEV_VARS, "IDENTITY_SECRET", secret());
+    info("Generated IDENTITY_SECRET (accounts and spaces)");
+  }
   if (!vars.MODERATOR_TOKEN) {
     const token = secret(24);
     setVar(DEV_VARS, "MODERATOR_TOKEN", token);

@@ -5,7 +5,7 @@
 // signed-in member also gets the ones their roles start (the server says which, `allowed`).
 import { JOURNEY_SERVICES, kioskContent } from "@sekaran-ind/yaxb-core/content";
 import { trackWrite } from "@/lib/browser/sync-hook";
-import { compileBundle, DEFAULT_ROLES, journeyRolesNeeded, roleLabel, type Journey, type Role, type RunActor, type Service } from "@sekaran-ind/yaxb-journeys";
+import { compileBundle, DEFAULT_ROLES, journeyRolesNeeded, MANAGER_OF_REQUESTER, roleLabel, type Journey, type Organisation, type Role, type RunActor, type Service } from "@sekaran-ind/yaxb-journeys";
 import { HOUSEHOLD_ENTRY, HOUSEHOLD_ROLE_LABELS, householdJourneys } from "@sekaran-ind/yaxb-core/household";
 import { useHousehold } from "@/composables/household";
 import { offers } from "@/lib/surface";
@@ -33,7 +33,7 @@ export type CatalogueService = {
 /** Whether the team has someone for a role: signed in, invited (not yet signed in), or nobody (LIB-37). */
 export type Staffing = "ready" | "invited" | "nobody";
 type Viewer = { roles: string[]; member: boolean; admin: boolean; id?: string; name?: string };
-type Published = { roles: Role[]; services: CatalogueService[]; staffing?: Record<string, Staffing>; viewer?: Viewer };
+type Published = { roles: Role[]; services: CatalogueService[]; organisation?: Organisation | null; staffing?: Record<string, Staffing>; viewer?: Viewer };
 
 const KEY = "yaxb.kiosk.catalogue";
 function readLoaded(): string[] {
@@ -55,6 +55,9 @@ function saveLoaded(ids: string[]) {
 const published = shallowRef<CatalogueService[]>([]);
 const roles = shallowRef<Role[]>([...DEFAULT_ROLES]);
 const staffing = shallowRef<Record<string, Staffing>>({});
+/** The published organisation (ORG-1): units, roles, reporting lines; null until one is published. */
+const organisation = shallowRef<Organisation | null>(null);
+export const publishedOrganisation = computed(() => organisation.value);
 const viewer = shallowRef<Viewer>({ roles: [], member: false, admin: false });
 const loadedIds = ref<string[]>(readLoaded());
 const ready = ref(false);
@@ -68,6 +71,7 @@ export function loadCatalogue(): Promise<void> {
       published.value = p.services;
       roles.value = p.roles;
       staffing.value = p.staffing ?? {};
+      organisation.value = p.organisation ?? null;
       if (p.viewer) viewer.value = p.viewer;
     } catch {
       /* no network or no Worker: built-in content only */
@@ -155,7 +159,13 @@ export function needsOf(entryId: string): RoleNeed[] {
       if (!out.has(n.role)) out.set(n.role, new Set());
       for (const f of n.for) out.get(n.role)!.add(`${WHY[f]} ${j.title}`);
     }
-  return [...out].map(([role, why]) => ({ role, label: roleLabel(role, roles.value), staffing: staffing.value[role] ?? "nobody", why: [...why] }));
+  // "The requester's manager" is whoever leads the requester's unit: staffed when the organisation is published.
+  return [...out].map(([role, why]) => ({
+    role,
+    label: roleLabel(role, roles.value),
+    staffing: role === MANAGER_OF_REQUESTER ? (organisation.value ? "ready" : "nobody") : (staffing.value[role] ?? "nobody"),
+    why: [...why],
+  }));
 }
 
 /** Who is at this kiosk: a signed-in member (id, name, roles), or nobody (a visitor). */

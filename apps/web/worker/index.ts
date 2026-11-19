@@ -24,8 +24,14 @@ import { HUB_HEADERS } from "./team";
 export { TeamHub } from "./team";
 import { clientId, fromApp, isAdmin, MODERATOR_COOKIE, moderatorCookie, moderatorOf, safeEqual, sessionId, setAdminCookie, setModeratorCookie } from "./session";
 import { getCookie } from "hono/cookie";
+import { accountContext, identityRoutes } from "./identity";
+import { IdentityError, type Membership, type TokenClaims } from "@sekaran-ind/yaxb-core/identity";
 
-export type AppEnv = { Bindings: Bindings; Variables: { reviewer: Reviewer } };
+export type AppEnv = {
+  Bindings: Bindings;
+  /** `account` and `space`: the signed-in account and its open space, checked on this request (identity.ts). */
+  Variables: { reviewer: Reviewer; account?: TokenClaims; space?: Membership };
+};
 
 const MAX_CHAT_BODY = 4_500_000;
 const MAX_FORM_BODY = 64_000;
@@ -97,16 +103,22 @@ app.use("/api/*", async (c, next) => {
   await next();
 });
 
+// The signed-in account and its open space (15-identity.md, SPC-7), checked before the tenant is chosen.
+app.use("/api/*", accountContext);
+
 /**
- * The business a request acts for (TEN-2): a signed-in member's own; otherwise `?tenant=<short
- * name>` for reading a business's published services from the directory; otherwise the default.
- * Every service below is scoped to it (kiosk.ts tenantContext).
+ * The business a request acts for (TEN-2): the account's open space (SPC-7, its membership checked);
+ * else a signed-in member's own; otherwise `?tenant=<short name>` for reading a business's published
+ * services from the directory; otherwise the default. Every service below is scoped to it (kiosk.ts
+ * tenantContext).
  */
 app.use("/api/*", async (c, next) => {
   let tenant = DEFAULT_TENANT;
   const cookie = getCookie(c, MODERATOR_COOKIE) ?? "";
   const id = cookie.slice(0, Math.max(cookie.indexOf("."), 0));
-  if (/^[0-9a-f-]{36}$/.test(id)) tenant = (await tenantOfMember(c.env, id)) ?? DEFAULT_TENANT;
+  const space = c.get("space");
+  if (space) tenant = space.tenant_id;
+  else if (/^[0-9a-f-]{36}$/.test(id)) tenant = (await tenantOfMember(c.env, id)) ?? DEFAULT_TENANT;
   else {
     const asked = c.req.query("tenant");
     if (asked && SLUG.test(asked) && c.req.method === "GET") tenant = (await tenants(c.env).tenant(asked))?.id ?? DEFAULT_TENANT;
@@ -745,6 +757,73 @@ const caseKey = (c: Context<AppEnv>) => {
   const k = (c.req.param("id") ?? "").trim();
   return /^r-/i.test(k) ? k.toUpperCase() : k;
 };
+// ---- accounts and spaces (15-identity.md step 1) ----------------------------------------------------
+
+/** A space's name when its tenant has none (the edition's own space). */
+const OWN_SPACE: Record<string, { name: string; kind: "family" | "business" | "community" }> = {
+  family: { name: "Our home", kind: "family" },
+  business: { name: "Our business", kind: "business" },
+  community: { name: "Our community", kind: "community" },
+  all: { name: "Anjal", kind: "business" },
+};
+app.route(
+  "/api/identity",
+  identityRoutes({
+    sameOrigin,
+    ip,
+    limited: (c, key) => withinLimit("form", c.env.FORM_LIMITER, key),
+    tenant: currentTenant,
+    isAdmin,
+    async spaceInfo(env, tenant) {
+      const own = OWN_SPACE[settings(env).SURFACE ?? "all"]!;
+      if (tenant === DEFAULT_TENANT) return own;
+      const t = await tenants(env).tenant(tenant);
+      return t ? { name: t.name, kind: t.kind } : own;
+    },
+    async signedInMember(c) {
+      const who = await moderatorOf(c, moderators(c.env));
+      return who?.moderator ? { id: who.moderator.id, roles: [...who.moderator.roles] } : null;
+    },
+    async startSpace(c, input) {
+      const base = input.name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 36) || "space";
+      const slug = `${base}-${crypto.getRandomValues(new Uint32Array(1))[0]!.toString(36).slice(0, 5)}`;
+      const t = await tenants(c.env).createTenant({ name: input.name, slug, kind: input.kind });
+      const { moderator } = await moderators(c.env, t.id).issue({ name: input.person.slice(0, 80) || "Administrator", label: "Started the space", roles: ["administrator"] }, { name: input.person });
+      return { tenant_id: t.id, name: t.name, kind: t.kind, member_id: moderator.id, roles: [...moderator.roles] };
+    },
+    async joinSpace(c, token, person) {
+      try {
+        const svc = tenants(c.env);
+        const { request, claim } = await svc.redeem(token, { name: person });
+        const t = await svc.tenant(request.tenant_id);
+        const own = OWN_SPACE[settings(c.env).SURFACE ?? "all"]!;
+        return { tenant_id: request.tenant_id, space_name: t?.name ?? own.name, kind: t?.kind ?? own.kind, request_id: request.id, claim, accepted: request.status === "accepted" };
+      } catch (e) {
+        if (e instanceof TenantError) throw new IdentityError(e.message, e.status);
+        throw e;
+      }
+    },
+    async collectJoin(c, requestId, claim) {
+      const svc = tenants(c.env);
+      try {
+        const s = await svc.status(requestId, claim);
+        if (s.status === "pending") return { status: "pending" };
+        if (s.status === "declined") return { status: "declined" };
+        if (s.status === "collected") return { status: "gone" };
+        const { memberId } = await svc.collect(requestId, claim);
+        const m = await moderators(c.env).store.get(memberId);
+        return { status: "collected", member_id: memberId, roles: m ? [...m.roles] : [s.role] };
+      } catch {
+        return { status: "gone" };
+      }
+    },
+    async memberFor(c, input) {
+      const { moderator } = await moderators(c.env).issue({ name: input.name.slice(0, 80) || "Administrator", label: "Linked to an account", roles: input.roles as never }, { name: "Administrator" });
+      return { id: moderator.id, roles: [...moderator.roles] };
+    },
+  }),
+);
+
 app.post("/api/cases", (c) => caseCall(c, (a, body) => cases(c.env).start(a, body), { limited: true }));
 app.get("/api/cases", (c) => caseCall(c, (a) => cases(c.env).list(a)));
 app.get("/api/cases/:id", (c) => caseCall(c, (a) => cases(c.env).get(a, caseKey(c))));
@@ -895,6 +974,14 @@ app.get("/api/library", (c) =>
     };
   }),
 );
+/** Organisation templates for this edition (ORG-2); the combined site offers every one. */
+const templateEdition = (c: Context<AppEnv>) => {
+  const s = settings(c.env).SURFACE;
+  return s === "family" || s === "business" || s === "community" ? s : null;
+};
+app.get("/api/library/templates", (c) => libraryCall(c, async () => ({ templates: library(c.env).templates(templateEdition(c)) })));
+/** Start from a template: the organisation and its starter services, as drafts (administrators). */
+app.post("/api/library/templates/:id", (c) => libraryCall(c, (a) => library(c.env).applyTemplate(a, c.req.param("id"), templateEdition(c))));
 app.post("/api/library/roles", (c) => libraryCall(c, (a, body) => library(c.env).addRole(a, body)));
 app.patch("/api/library/roles/:id", (c) => libraryCall(c, (a, body) => library(c.env).updateRole(a, c.req.param("id"), body)));
 app.delete("/api/library/roles/:id", (c) =>

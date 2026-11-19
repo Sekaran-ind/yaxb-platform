@@ -1,0 +1,179 @@
+# Signing in and choosing a space, one step at a time in the conversation (docs/specs/15-identity.md
+# IDN-40, SPC-2, SPC-4, SPC-8). It replaces finding the right page: the player's Account button, the
+# Account preferences and Quick tools all start it. Each step's work is an identity.* handler in the
+# kiosk; a step that fails comes back to the choice before it, with the reason.
+kind: journey
+id: your-account
+version: 1
+title: Sign in and choose your space
+summary: Sign in, then open, start or join your family, business or community.
+icon: user-round
+category: account
+start: check
+steps:
+  check:
+    label: Checking who you are
+    service: identity.status
+    next: signed-in
+  signed-in:
+    decide:
+      - { if: "steps.check.signedIn == true", to: spaces }
+      - { to: how }
+
+  # ---- signing in ----------------------------------------------------------------------------------
+  how:
+    label: How to sign in
+    stage: Sign in
+    ask: "How would you like to sign in? A passkey uses your fingerprint, face or screen lock: nothing to remember or type."
+    submitLabel: Continue
+    fields:
+      - id: way
+        type: select
+        label: Sign in
+        required: true
+        options:
+          - { value: passkey, label: "With my passkey" }
+          - { value: new, label: "I'm new here: make my account" }
+          - { value: google, label: "Continue with Google" }
+          - { value: recovery, label: "I have a recovery code" }
+    next: which-way
+  which-way:
+    decide:
+      - { if: "answers.how.way == 'passkey'", to: passkey }
+      - { if: "answers.how.way == 'new'", to: notice }
+      - { if: "answers.how.way == 'google'", to: google }
+      - { to: code }
+  passkey:
+    label: Using your passkey
+    stage: Sign in
+    service: identity.passkey.signin
+    onError: continue
+    next: passkey-done
+  passkey-done:
+    decide:
+      - { if: "steps.passkey.error", to: how }
+      - { to: spaces }
+  notice:
+    label: Your new account
+    stage: Sign in
+    ask: "Anjal keeps only what it needs to know it's you: your passkey's public key, and the spaces you belong to. Your profile's contents stay on your devices. You can delete your account at any time."
+    submitLabel: Make my account
+    fields:
+      - { id: name, type: text, label: "Your name, as others in your spaces see it (optional)" }
+      - { id: agree, type: boolean, label: "I've read this", required: true }
+    service: identity.passkey.create
+    with: { name: "{{answers.notice.name}}", consent: "{{answers.notice.agree}}" }
+    onError: continue
+    next: made
+  made:
+    decide:
+      - { if: "steps.notice.error", to: how }
+      - { to: spaces }
+  google:
+    label: Google
+    stage: Sign in
+    service: identity.google
+    onError: continue
+    next: google-done
+  google-done:
+    decide:
+      - { if: "steps.google.error", to: how }
+      - { to: spaces }
+  code:
+    label: Your recovery code
+    stage: Sign in
+    ask: "Type one of the recovery codes you saved when you made your account. Each works once."
+    submitLabel: Sign in
+    fields:
+      - { id: code, type: text, label: Recovery code, required: true, placeholder: ABCDE-23456 }
+    service: identity.recovery
+    with: { code: "{{answers.code.code}}" }
+    onError: continue
+    next: code-done
+  code-done:
+    decide:
+      - { if: "steps.code.error", to: how }
+      - { to: spaces }
+
+  # ---- choosing a space ----------------------------------------------------------------------------
+  spaces:
+    label: Your spaces
+    stage: Your space
+    ask: "You're signed in. Which space would you like to use? A space is your family, a business you work in, or a community you belong to."
+    submitLabel: Continue
+    fields:
+      - id: action
+        type: select
+        label: Your space
+        required: true
+        options:
+          - { value: open, label: "Open one of my spaces" }
+          - { value: start, label: "Start a new space" }
+          - { value: join, label: "Join one with a code someone sent me" }
+          - { value: later, label: "Not now" }
+    next: which-space
+  which-space:
+    decide:
+      - { if: "answers.spaces.action == 'open'", to: open }
+      - { if: "answers.spaces.action == 'start'", to: start }
+      - { if: "answers.spaces.action == 'join'", to: join }
+      - { to: later }
+  open:
+    label: Opening your space
+    stage: Your space
+    service: identity.space.open
+    onError: continue
+    next: opened
+  opened:
+    decide:
+      - { if: "steps.open.error", to: spaces }
+      - { to: ready }
+  start:
+    label: Your new space
+    stage: Your space
+    ask: "What is it, and what is it called? You'll be its administrator, and can invite others."
+    submitLabel: Start it
+    fields:
+      - id: kind
+        type: select
+        label: It's a
+        required: true
+        options:
+          - { value: family, label: "Family or household" }
+          - { value: business, label: "Business" }
+          - { value: community, label: "Community: an association, club or group" }
+      - { id: name, type: text, label: "Its name", required: true, placeholder: "e.g. Sri Ram Hardware" }
+    service: identity.space.start
+    with: { kind: "{{answers.start.kind}}", name: "{{answers.start.name}}" }
+    onError: continue
+    next: started
+  started:
+    decide:
+      - { if: "steps.start.error", to: spaces }
+      - { to: ready }
+  join:
+    label: Joining a space
+    stage: Your space
+    ask: "Paste the join link or code you were sent."
+    submitLabel: Join
+    fields:
+      - { id: code, type: text, label: Join link or code, required: true }
+    service: identity.space.join
+    with: { code: "{{answers.join.code}}" }
+    onError: continue
+    next: joined
+  joined:
+    decide:
+      - { if: "steps.join.error", to: spaces }
+      - { if: "steps.join.pending == true", to: waiting }
+      - { to: ready }
+
+  ready:
+    final: true
+    result: { title: "You're in", text: "Your space is open. Switch spaces any time from Account in the player or in Preferences.", outcome: signed-in }
+  waiting:
+    final: true
+    result: { title: "Asked to join", text: "{{steps.join.space}}'s administrator will let you in. Your account adds the space by itself once they do.", outcome: pending }
+  later:
+    final: true
+    result: { title: "You're signed in", text: "Open, start or join a space whenever you like: Account in the player, or Preferences → Account.", outcome: signed-in }
