@@ -31,9 +31,11 @@ import ConsentPanel from "./ConsentPanel.vue";
 import JourneyFlow from "./JourneyFlow.vue";
 import EntryStatus from "./EntryStatus.vue";
 import ServiceAudit from "./ServiceAudit.vue";
+import OrganisationView from "./OrganisationView.vue";
 import SegmentedControl from "@/components/site/SegmentedControl.vue";
 import { useWidth } from "@/composables/width";
-import type { CatalogueService } from "@/composables/library";
+import { catalogue, type CatalogueService } from "@/composables/library";
+import type { BundleProblem } from "@sekaran-ind/yaxb-journeys";
 import { api, ApiError } from "@/lib/api";
 
 /** A new service opened from one of the home page's ideas (`/catalogue?service=new&idea=…`) starts the designer's first message with it. */
@@ -113,7 +115,12 @@ function startOver() {
   openView("design");
 }
 
-type View = "design" | "yaml" | "preview" | "flow" | "consent" | "summary" | "audit" | "history";
+type View = "design" | "org" | "yaml" | "preview" | "flow" | "consent" | "summary" | "audit" | "history";
+/** The organisation (ORG-1) is an entry too: it has its own view, YAML, audit and history. */
+const isOrg = computed(() => entry.value?.kind === "organisation" || /^kind:\s*organisation\b/m.test(yaml.value));
+/** The server's problems as of the last save: the organisation's checks need the catalogue and who is staffed (ORG-5). */
+const serverProblems = ref<BundleProblem[]>([]);
+const orgWarnings = computed(() => (dirty.value ? check.value.problems : serverProblems.value).filter((p) => p.level === "warning" && p.kind === "organisation"));
 const view = ref<View>("design");
 const dirty = computed(() => yaml.value !== saved.value);
 const editable = computed(() => (props.entryId === null || mayChange.value) && !readOnlyCopy.value && entry.value?.status !== "archived");
@@ -149,7 +156,8 @@ async function load() {
     return;
   }
   try {
-    const r = await api<{ entry: LibraryEntry; revisions: EntryRevision[]; canChange: boolean }>(`/api/library/entries/${props.entryId}`);
+    const r = await api<{ entry: LibraryEntry; revisions: EntryRevision[]; canChange: boolean; problems?: BundleProblem[] }>(`/api/library/entries/${props.entryId}`);
+    serverProblems.value = r.problems ?? [];
     entry.value = r.entry;
     revisions.value = r.revisions;
     mayChange.value = r.canChange;
@@ -200,6 +208,8 @@ function designFromYaml(): boolean {
   return !why;
 }
 function openView(v: View) {
+  if (isOrg.value && v !== "yaml" && v !== "audit" && v !== "history") v = check.value.bundle.organisations[0] ? "org" : "yaml";
+  else if (v === "org") v = "design";
   if (v === "design" && !designFromYaml()) v = "yaml";
   if ((v === "audit" || v === "history") && !entry.value) v = "summary";
   view.value = v;
@@ -305,7 +315,11 @@ const entryStorage = computed(() => {
   const st = (entry.value as { storage?: string } | null)?.storage ?? props.published?.storage;
   return st === "box" || st === "server" ? st : "none";
 });
-const VIEWS = computed<{ value: View; label: string }[]>(() => [
+const VIEWS = computed<{ value: View; label: string }[]>(() => isOrg.value ? [
+  { value: "org", label: "Organisation" },
+  { value: "yaml", label: "YAML" },
+  ...(entry.value ? [{ value: "audit" as const, label: "Audit" }, { value: "history" as const, label: `History (${revisions.value.length})` }] : []),
+] : [
   { value: "design", label: "Design" },
   { value: "yaml", label: "YAML" },
   { value: "preview", label: "Preview" },
@@ -317,7 +331,7 @@ const VIEWS = computed<{ value: View; label: string }[]>(() => [
 
 watch([yaml, threadId], keepUnsaved);
 /** Reviewers of a service in review can talk to the designer too (suggestions); so can whoever may change it. */
-const showChat = computed(() => !readOnlyCopy.value && (editable.value || canReview.value));
+const showChat = computed(() => !isOrg.value && !readOnlyCopy.value && (editable.value || canReview.value));
 
 // Last: load() fills refs declared above (an immediate watcher runs during setup).
 watch(
@@ -383,7 +397,8 @@ watch(
 
     <p v-if="designNote" class="rounded-lg bg-mist px-3 py-2 text-sm text-ink">{{ designNote }}</p>
 
-    <template v-if="view === 'design'">
+    <OrganisationView v-if="view === 'org' && check.bundle.organisations[0]" :organisation="check.bundle.organisations[0]" :services="catalogue" :warnings="orgWarnings" @line="goToLine" />
+    <template v-else-if="view === 'design'">
       <ServiceDesigner :model-value="design" :service-names="JOURNEY_SERVICES" :readonly="!editable" @update:model-value="onDesign" @last="(v) => (designerAtEnd = v)" @step="(st) => emit('step', st)">
         <!-- The last step offers the real next action: create or save, then submit for review. -->
         <template #finish="{ ok }">
@@ -399,8 +414,8 @@ watch(
       <p v-if="designProblems.length" role="alert" class="text-sm text-red-800">{{ designProblems.join(" ") }}</p>
     </template>
     <div v-else-if="view === 'yaml'" class="space-y-2">
-      <p class="text-xs text-gray-500">A service with its journeys and their screens. Changing the design rewrites this YAML, and comments are dropped.</p>
-      <YamlEditor ref="editor" v-model="yaml" :problems="check.problems" label="Service YAML" :readonly="!editable" height="32rem" />
+      <p class="text-xs text-gray-500">{{ isOrg ? "The organisation: its units, their roles, who reports to whom, and the services each runs." : "A service with its journeys and their screens. Changing the design rewrites this YAML, and comments are dropped." }}</p>
+      <YamlEditor ref="editor" v-model="yaml" :problems="check.problems" :label="isOrg ? 'Organisation YAML' : 'Service YAML'" :readonly="!editable" height="32rem" />
     </div>
     <div v-else-if="view === 'preview'" class="rounded-2xl bg-canvas p-3 ring-1 ring-gray-200">
       <FlowPreview :bundle="check.bundle" :layout="resolveLayout(width - 24)" :width="width - 24" storage-key="catalogue.preview" />

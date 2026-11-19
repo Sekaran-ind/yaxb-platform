@@ -16,6 +16,7 @@
 // ("R-7KQ4MX", shown when they hand it over), like a parcel's tracking code, and acts on it as the
 // person who started it. Members open cases by id from their work queue.
 import { canInitiate, mayAnswer, replay, type Journey, type RunActor, type RunSnapshot } from "@sekaran-ind/yaxb-journeys/journeys";
+import { resolveForRequester, type Organisation } from "@sekaran-ind/yaxb-journeys";
 import { z } from "zod";
 
 export type CaseStatus = "waiting" | "to_finish" | "done" | "declined";
@@ -111,6 +112,11 @@ export type CaseOptions = {
    * request goes only to that child's guardians, EDN-21). Default: everyone the roles allow.
    */
   allows?: (c: Pick<Case, "entry_id" | "started_by">, a: CaseActor) => boolean;
+  /**
+   * The published organisation (ORG-3): a screen for `manager-of-requester` goes to the lead of the
+   * starter's unit, fixed when the case starts and kept with it.
+   */
+  organisation?: () => Promise<Organisation | null>;
 };
 
 const REF_CHARS = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -210,8 +216,10 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
       sized(p);
       const found = await options.journeyFor(p.entry, p.journey);
       if (!found) throw new CaseError("That journey isn't in the published catalogue.", 404);
-      const { journey } = found;
-      if (!canInitiate(journey, a.roles)) throw new CaseError("Your roles can't start this journey.", 403);
+      if (!canInitiate(found.journey, a.roles)) throw new CaseError("Your roles can't start this journey.", 403);
+      const resolved = resolveForRequester(found.journey, options.organisation ? await options.organisation() : null, a.roles, { service: found.service_id });
+      if (!resolved.ok) throw new CaseError(resolved.problem, 422);
+      const { journey } = resolved;
       const r = await replay(journey, p);
       if (!r.ok) throw new CaseError(r.problems[0] ?? "The answers don't fit the journey.");
       const starter: RunActor = { starter: true, roles: a.roles };

@@ -895,6 +895,14 @@ app.get("/api/library", (c) =>
     };
   }),
 );
+/** Organisation templates for this edition (ORG-2); the combined site offers every one. */
+const templateEdition = (c: Context<AppEnv>) => {
+  const s = settings(c.env).SURFACE;
+  return s === "family" || s === "business" || s === "community" ? s : null;
+};
+app.get("/api/library/templates", (c) => libraryCall(c, async () => ({ templates: library(c.env).templates(templateEdition(c)) })));
+/** Start from a template: the organisation and its starter services, as drafts (administrators). */
+app.post("/api/library/templates/:id", (c) => libraryCall(c, (a) => library(c.env).applyTemplate(a, c.req.param("id"), templateEdition(c))));
 app.post("/api/library/roles", (c) => libraryCall(c, (a, body) => library(c.env).addRole(a, body)));
 app.patch("/api/library/roles/:id", (c) => libraryCall(c, (a, body) => library(c.env).updateRole(a, c.req.param("id"), body)));
 app.delete("/api/library/roles/:id", (c) =>

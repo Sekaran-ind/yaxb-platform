@@ -12,7 +12,7 @@
 import { createMachine, type AnyStateMachine } from "xstate";
 import { toDirectedGraph } from "@xstate/graph";
 import type { Branch, Journey, Step } from "./journeys.js";
-import { VISITOR_ROLE } from "./roles.js";
+import { MANAGER_OF_REQUESTER, VISITOR_ROLE } from "./roles.js";
 import { afterTasks, journeyTasks } from "./run.js";
 
 export const FAILED_STATE = "(failed)";
@@ -276,7 +276,7 @@ export function designChecks(j: Journey, { roles = [] as readonly string[], orde
   // A role one letter away from a known one ("curators" for "curator").
   const used = new Set([...(j.roles?.initiate ?? []), ...(j.roles?.complete ?? []), ...Object.values(j.steps).flatMap((s) => (s.role ? [s.role] : []))]);
   for (const r of used) {
-    if (r === VISITOR_ROLE || roles.includes(r)) continue;
+    if (r === VISITOR_ROLE || r === MANAGER_OF_REQUESTER || roles.includes(r)) continue;
     const near = roles.find((k) => k !== r && (k === `${r}s` || `${k}s` === r || k === r.replace(/es$/, "") || oneEdit(k, r)));
     if (near) out.push({ level: "warning", step: null, message: `role '${r}' looks like '${near}': members with '${near}' won't get these requests. Use '${near}', or give people '${r}'.` });
   }

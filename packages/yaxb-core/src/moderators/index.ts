@@ -82,6 +82,7 @@ export const AUDIT_ACTIONS = {
   "library.archived": "Library archived",
   "library.restored": "Library restored",
   "library.entry_created": "Service created",
+  "library.template_applied": "Organisation template applied",
   "library.entry_saved": "Service saved",
   "library.entry_submitted": "Service submitted for review",
   "library.entry_accepted": "Service accepted",

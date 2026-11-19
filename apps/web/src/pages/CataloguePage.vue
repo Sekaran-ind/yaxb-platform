@@ -5,6 +5,7 @@
 //   Catalogue      published services, to open or load into a kiosk
 //   My services    a guest's own (members: every service)
 //   Review         what is waiting for a reviewer
+//   Organisation   units, roles and reporting lines, from a template (ORG-1..5; members)
 //   Roles          the built-in roles, the organisation's, and those services define
 //   Libraries      how members organise services
 //   Designer       what the Service Designer agent has learnt (administrators)
@@ -27,6 +28,7 @@ import EntryStatus from "@/components/catalogue/EntryStatus.vue";
 import { useWidth } from "@/composables/width";
 import DesignerLessons from "@/components/catalogue/DesignerLessons.vue";
 import ServiceWorkspace from "@/components/catalogue/ServiceWorkspace.vue";
+import OrganisationScreen from "@/components/catalogue/OrganisationScreen.vue";
 import ModeratorSignIn from "@/components/moderation/ModeratorSignIn.vue";
 import { catalogue, loadCatalogue, roleCatalogue, type CatalogueService } from "@/composables/library";
 import { api } from "@/lib/api";
@@ -49,7 +51,7 @@ const signingIn = ref(false);
 
 const q = (k: string) => (typeof route.query[k] === "string" ? (route.query[k] as string) : null);
 const service = computed(() => q("service"));
-const VIEWS = ["ask", "catalogue", "mine", "review", "roles", "libraries", "designer"] as const;
+const VIEWS = ["ask", "catalogue", "mine", "review", "organisation", "roles", "libraries", "designer"] as const;
 /** Preferences (model, layout, theme, voice…) open here, inside the catalogue, as in the kiosk. */
 const prefs = computed(() => q("prefs"));
 const account = useAccount();
@@ -156,6 +158,7 @@ const navScreens = computed<NavScreen[]>(() => [
   { id: "catalogue", label: "Catalogue", icon: "library", badge: String(catalogue.value.length) },
   { id: "mine", label: me.value?.can.view ? "All services" : "My services", icon: "clipboard-list", badge: String(overview.value?.services.length ?? 0) },
   ...(can.value?.view ? [{ id: "review", label: "Review", icon: "message-square", badge: overview.value?.queue.length ? String(overview.value.queue.length) : undefined }] : []),
+  ...(can.value?.view ? [{ id: "organisation", label: "Organisation", icon: "library" }] : []),
   { id: "roles", label: "Roles", icon: "user-round" },
   ...(can.value?.view ? [{ id: "libraries", label: "Libraries", icon: "notebook" }] : []),
   ...(can.value?.manage ? [{ id: "designer", label: "AI designer", icon: "sparkles" }] : []),
@@ -278,6 +281,9 @@ watch(signingIn, (v) => !v && void load());
               </li>
             </ul>
           </section>
+            </template>
+            <template #organisation>
+              <OrganisationScreen :entries="overview.services" :can="can" @open="(id) => go({ service: id })" @changed="changed" />
             </template>
             <template #roles>
               <section aria-label="Roles" class="max-w-4xl space-y-3">

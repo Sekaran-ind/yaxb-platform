@@ -23,7 +23,15 @@ import {
   canInitiate,
   checkDocument,
   compileBundle,
+  compileOrganisation,
   DEFAULT_ROLES,
+  organisationChecks,
+  organisationRoles,
+  problemLine,
+  splitDocuments,
+  templatesFor,
+  type Organisation,
+  type TemplateEdition,
   parseDocument,
   ROLE_ID,
   VISITOR_ROLE,
@@ -33,8 +41,11 @@ import {
 import { z } from "zod";
 import { auditEvent, type AuditAction, type AuditEvent } from "../moderators/index.js";
 
-/** Entries are services (with their journeys and screens inside). */
-export const ENTRY_KINDS = ["service"] as const;
+/**
+ * Entries are services (with their journeys and screens inside), and at most one organisation
+ * (ORG-1: units, roles, reporting lines and sites), reviewed and published the same way.
+ */
+export const ENTRY_KINDS = ["service", "organisation"] as const;
 export type EntryKind = (typeof ENTRY_KINDS)[number];
 export const ENTRY_STATUSES = ["draft", "in_review", "accepted", "rejected", "archived"] as const;
 export type EntryStatus = (typeof ENTRY_STATUSES)[number];
@@ -188,6 +199,8 @@ export type LibraryOptions = {
   auditTrail?: (targetId: string) => Promise<AuditEvent[]>;
   /** Told about every review (the Service Designer learns from drafts). Its failures don't fail the review. */
   onReviewed?: (entry: LibraryEntry, decision: "accepted" | "rejected", note: string | null, reviewer: LibraryActor) => Promise<unknown>;
+  /** Every member's roles: the organisation's check for units running a service with nobody staffed (ORG-5). */
+  memberRoles?: () => Promise<string[][]>;
   now?: () => Date;
 };
 
@@ -273,25 +286,84 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
     return l;
   }
 
-  async function problemsOf(yaml: string): Promise<BundleProblem[]> {
-    return checkDocument(yaml, [], await compileOptions()).problems;
+  /** The accepted organisation, compiled, and its entry. */
+  async function publishedOrganisation(entries?: LibraryEntry[]): Promise<{ entry: LibraryEntry; organisation: Organisation } | null> {
+    const all = entries ?? (await store.entries());
+    const e = all.find((x) => x.kind === "organisation" && x.status !== "archived" && x.published_yaml);
+    if (!e) return null;
+    const p = parseDocument(e.published_yaml!);
+    const r = p.ok ? compileOrganisation(p.doc) : null;
+    return r?.ok ? { entry: e, organisation: r.organisation } : null;
   }
 
-  /** A service document: one mapping with kind service, journeys inside, and an id unique in the catalogue. */
-  async function validDocument(yaml: string, self?: string) {
+  async function problemsOf(yaml: string): Promise<BundleProblem[]> {
+    const own = checkDocument(yaml, [], await compileOptions());
+    const org = own.bundle.organisations[0];
+    if (!org) return own.problems;
+    // An organisation is checked against the published services and who is staffed (ORG-5).
+    const { services } = await api.published([], { all: true });
+    const named = services.map((s) => ({ id: s.id, title: s.title, roles: s.named }));
+    const chunk = { text: yaml.replace(/\r\n?/g, "\n"), line: 1 };
+    const members = options.memberRoles ? await options.memberRoles().catch(() => undefined) : undefined;
+    const checks = organisationChecks(org, named, members).map((c): BundleProblem => ({ level: "warning", line: problemLine(chunk, c.message), kind: "organisation", id: org.id, message: c.message }));
+    return [...own.problems, ...checks].sort((a, b) => a.line - b.line);
+  }
+
+  /**
+   * A service document (one mapping with kind service, journeys inside) or the organisation, with an
+   * id unique in the catalogue. Only an administrator designs the organisation, and there is one.
+   */
+  async function validDocument(yaml: string, self?: string, a?: LibraryActor) {
     if (!yaml.trim()) throw new LibraryError("The service is empty.");
     const d = readDocument(yaml);
     if ("error" in d) throw new LibraryError(d.error);
-    if (d.kind !== "service") throw new LibraryError("The document needs kind: service.");
-    const clash = (await store.entries()).find((x) => x.id !== self && x.doc_id === d.id && x.status !== "archived");
+    if (d.kind !== "service" && d.kind !== "organisation") throw new LibraryError("The document needs kind: service (or kind: organisation).");
+    const kind = d.kind as EntryKind;
+    const entries = await store.entries();
+    if (kind === "organisation") {
+      if (a && !permissionsOf(a).manage) throw new LibraryError("Only an administrator designs the organisation.", 403);
+      const other = entries.find((x) => x.id !== self && x.kind === "organisation" && x.status !== "archived");
+      if (other) throw new LibraryError(`The catalogue already has an organisation ("${other.title}"). Change that one, or archive it first.`, 409);
+    }
+    const clash = entries.find((x) => x.id !== self && x.doc_id === d.id && x.status !== "archived");
     if (clash) throw new LibraryError(`The catalogue already has a service with the id '${d.id}' ("${clash.title}"). Choose another id.`, 409);
-    return d;
+    return { ...d, kind };
   }
 
-  return {
+  const api = {
     store,
     permissionsOf,
     catalogue,
+
+    /** The organisation templates for an edition (ORG-2), without their YAML. */
+    templates(edition?: TemplateEdition | null) {
+      return templatesFor(edition).map((t) => ({ id: t.id, edition: t.edition, title: t.title, summary: t.summary, services: t.services.length }));
+    },
+
+    /**
+     * Start from a template (ORG-2): its organisation and starter services, as drafts, in one step.
+     * A starter whose id the catalogue already has is left out. Administrators only.
+     */
+    async applyTemplate(a: LibraryActor, templateId: unknown, edition?: TemplateEdition | null) {
+      need(a, "manage");
+      const t = templatesFor(edition).find((x) => x.id === templateId);
+      if (!t) throw new LibraryError("No such template.", 404);
+      const entries = await store.entries();
+      const other = entries.find((x) => x.kind === "organisation" && x.status !== "archived");
+      if (other) throw new LibraryError(`The catalogue already has an organisation ("${other.title}"). Archive it first to start from a template.`, 409);
+      const created: LibraryEntry[] = [];
+      const skipped: string[] = [];
+      for (const yaml of [t.organisation, ...t.services]) {
+        const d = readDocument(yaml);
+        if (!("error" in d) && entries.some((x) => x.doc_id === d.id && x.status !== "archived")) {
+          skipped.push(d.id);
+          continue;
+        }
+        created.push((await api.createEntry(a, null, { yaml })).entry);
+      }
+      await audit(a, "library.template_applied", created[0]?.id ?? null, { template: t.id, created: created.length, skipped: skipped.length });
+      return { created, skipped };
+    },
 
     // ---- the organisation's roles ------------------------------------------------------------------
     async addRole(a: LibraryActor, input: unknown): Promise<Role> {
@@ -399,12 +471,12 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
       const p = parse(entryInputSchema, input);
       if (a.guest && (await store.entries()).filter((e) => e.owner_id === a.id && e.status !== "archived").length >= MAX_GUEST_SERVICES)
         throw new LibraryError(`You have ${MAX_GUEST_SERVICES} services already. Archive one, or sign in as a team member.`, 429);
-      const d = await validDocument(p.yaml);
+      const d = await validDocument(p.yaml, undefined, a);
       const at = now();
       const e: LibraryEntry = {
         id: crypto.randomUUID(),
         library_id: l.id,
-        kind: p.kind,
+        kind: d.kind,
         doc_id: d.id,
         title: d.title,
         yaml: p.yaml,
@@ -438,7 +510,8 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
       if (e.status === "archived") throw new LibraryError("This service is archived. Restore it first.", 409);
       const p = parse(entrySaveSchema, input);
       if (p.yaml === e.yaml) return { entry: e, problems: await problemsOf(e.yaml) };
-      const d = await validDocument(p.yaml, e.id);
+      const d = await validDocument(p.yaml, e.id, a);
+      if (d.kind !== e.kind) throw new LibraryError(e.kind === "organisation" ? "This entry is the organisation: keep kind: organisation." : "This entry is a service: keep kind: service.");
       const at = now();
       const next: LibraryEntry = { ...e, yaml: p.yaml, doc_id: d.id, title: d.title, status: "draft", revision: e.revision + 1, updated_at: at, updated_by_name: a.name };
       await store.putEntry(next);
@@ -512,7 +585,7 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
       const e = await getEntry(a, id);
       mustChange(a, e);
       if (archived === (e.status === "archived")) return e;
-      if (!archived) await validDocument(e.yaml, e.id);
+      if (!archived) await validDocument(e.yaml, e.id, a);
       const next: LibraryEntry = archived ? { ...e, status: "archived", published_yaml: null, published_revision: null, updated_at: now() } : { ...e, status: "draft", updated_at: now() };
       await store.putEntry(next);
       await audit(a, archived ? "library.entry_archived" : "library.entry_restored", id, { id: e.doc_id });
@@ -581,8 +654,10 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
       const active = new Map(libs.filter((l) => l.status === "active").map((l) => [l.id, l]));
       const opts = await compileOptions();
       const roles: Role[] = [...org];
+      const organisation = (await publishedOrganisation(entries.filter((e) => active.has(e.library_id))))?.organisation ?? null;
+      if (organisation) for (const r of organisationRoles(organisation)) if (!roles.some((x) => x.id === r.id)) roles.push(r);
       const services = entries
-        .filter((e) => active.has(e.library_id) && e.status !== "archived" && e.published_yaml)
+        .filter((e) => e.kind !== "organisation" && active.has(e.library_id) && e.status !== "archived" && e.published_yaml)
         .flatMap((e) => {
           const b = compileBundle(e.published_yaml!, opts);
           const s = b.services[0];
@@ -611,13 +686,16 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
                 complete: j.roles?.complete ?? [],
                 allowed: all || canInitiate(j, viewerRoles),
               })),
+              /** Every role its journeys name: starters, screens and finishers (the organisation's checks). */
+              named: [...new Set([...b.roles.map((r) => r.id), ...b.journeys.flatMap((j) => [...(j.roles?.initiate ?? []), ...(j.roles?.complete ?? []), ...Object.values(j.steps).flatMap((x) => (x.role ? [x.role] : []))])])],
               yaml: e.published_yaml!,
             },
           ];
         });
-      return { roles, services };
+      return { roles, services, organisation };
     },
   };
+  return api;
 }
 export type LibraryService = ReturnType<typeof createLibraryService>;
 
