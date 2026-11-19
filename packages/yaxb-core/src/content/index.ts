@@ -20,6 +20,8 @@ export const JOURNEY_SERVICES = [
   "speech.speak",
   // Signing in and spaces (15-identity.md): the your-account journey.
   "identity.status",
+  // Who is here (IDN-31): display name, level, roles here; never contact details.
+  "identity.whoami",
   "identity.passkey.signin",
   "identity.passkey.create",
   "identity.google",

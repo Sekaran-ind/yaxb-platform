@@ -1,0 +1,44 @@
+# Seeded into the Service Catalogue (LIB-21): an example of how sure the kiosk must be of who someone
+# is (IDN-30..33). Booking needs a verified email or phone (level 2); the secretary's approval needs a
+# strong sign-in, a passkey (level 3). The kiosk asks people to sign in when a screen needs it, and
+# carries on where they were.
+kind: service
+id: hall
+title: Community hall
+summary: Book the hall for an event; the secretary approves it.
+icon: calendar
+order: 30
+roles:
+  - { id: secretary, label: Secretary, description: Approves bookings of the hall }
+journeys:
+  - id: book-hall
+    title: Book the hall
+    summary: Ask for a date and time; the secretary approves it and you hear back here.
+    icon: calendar
+    category: booking
+    level: 2
+    screens:
+      - id: booking
+        title: Your booking
+        ask: When would you like the hall, and what for?
+        submitLabel: Ask the secretary
+        questions:
+          - { id: date, type: date, label: Date, required: true }
+          - { id: time, type: text, label: From and until, required: true, placeholder: "e.g. 5 pm to 9 pm" }
+          - { id: purpose, type: text, label: What it's for, required: true, placeholder: "e.g. a birthday party" }
+          - { id: guests, type: number, label: How many guests }
+      - id: approve
+        title: Approve the booking
+        role: secretary
+        level: 3
+        questions:
+          - { id: approved, type: boolean, label: Approved }
+          - { id: note, type: text, label: A note for them }
+      - id: decision
+        decide:
+          - { if: "answers.approve.approved == true", to: booked }
+          - { to: declined }
+      - id: booked
+        result: { title: "The hall is yours on {{answers.booking.date}}", text: "{{answers.approve.note}}", outcome: booking-approved }
+      - id: declined
+        result: { title: "The hall isn't free for that", text: "{{answers.approve.note}}", ok: false, outcome: booking-declined }

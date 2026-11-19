@@ -4,7 +4,7 @@
 // another in order unless one says where to go next. Who may start and finish the journey comes
 // from the service's roles (the side panel adds them).
 import { idFromName, newScreen, type JourneyDesign, type StepKind } from "@sekaran-ind/yaxb-journeys/forms";
-import type { Role } from "@sekaran-ind/yaxb-journeys/journeys";
+import { ASSURANCE_LEVELS, type Role } from "@sekaran-ind/yaxb-journeys/journeys";
 import { load } from "js-yaml";
 import { computed, nextTick, ref, useId, watch } from "vue";
 import ConfirmAction from "./ConfirmAction.vue";
@@ -49,6 +49,10 @@ const KINDS: { id: StepKind; label: string }[] = [
 ];
 /** Roles a screen can be answered by: the service's and the built-in ones (not visitors: that's the starter). */
 const memberRoles = computed(() => props.roles.filter((r) => r.id !== "visitor"));
+// Who can use this (IDN-33): the level the journey needs, and a screen's own when it needs more (an
+// approval). The designer states how sure the kiosk must be; the kiosk does the signing in.
+const OFFERED_LEVELS = ASSURANCE_LEVELS.filter((l) => l.level <= 3);
+const strongerLevels = computed(() => OFFERED_LEVELS.filter((l) => l.level > (j.value.level ?? 0)));
 const answeredBy = (role: string) => (role ? (props.roles.find((r) => r.id === role)?.label ?? role) : "whoever started it");
 const WITH_PLACEHOLDER = 'message: "Summarise {{answers.questions.name}}"';
 const screenIds = computed(() => j.value.screens.map((s) => s.id).filter(Boolean));
@@ -159,6 +163,13 @@ const open = ref<number | null>(0);
         </div>
       </div>
       <p v-if="j.flow === 'parallel'" class="yj-small yj-muted">The screens that ask or run a service are tasks, done in any order (a screen may wait for others). When all are done, the journey carries on from the first decision or result.</p>
+      <div class="yj-mt">
+        <label :for="id('level')" class="yj-field-label">How sure must the kiosk be of who it is?</label>
+        <select :id="id('level')" v-model.number="j.level" class="yj-input" :disabled="readonly" :aria-describedby="id('levelh')">
+          <option v-for="l in OFFERED_LEVELS" :key="l.level" :value="l.level">{{ l.label }}</option>
+        </select>
+        <p :id="id('levelh')" class="yj-help">{{ OFFERED_LEVELS.find((l) => l.level === (j.level ?? 0))?.detail }} The kiosk asks people to sign in when a screen needs it, then carries on where they were.</p>
+      </div>
       <div class="yj-form-grid yj-mt">
         <RolePicker v-model="j.initiate" :roles="roles" legend="Who may start it" with-visitor :disabled="readonly" hint="None ticked, or Visitor: anyone at the kiosk." />
         <RolePicker v-model="j.complete" :roles="roles" legend="Who finishes it" :disabled="readonly" hint="None ticked: whoever started it." />
@@ -235,6 +246,14 @@ const open = ref<number | null>(0);
                     <option v-for="r in memberRoles" :key="r.id" :value="r.id">{{ r.label }}</option>
                   </select>
                   <p :id="id(`roleh${i}`)" class="yj-help">Another role: the journey waits here and goes to that role's work queue.</p>
+                </div>
+                <div v-if="strongerLevels.length">
+                  <label :for="id(`level${i}`)" class="yj-field-label">Needs a stronger sign-in</label>
+                  <select :id="id(`level${i}`)" v-model="s.level" class="yj-input" :aria-describedby="id(`levelh${i}`)">
+                    <option :value="null">No: as the journey</option>
+                    <option v-for="l in strongerLevels" :key="l.level" :value="l.level">{{ l.label }}</option>
+                  </select>
+                  <p :id="id(`levelh${i}`)" class="yj-help">For an approval or a payment: the person signs in more strongly here, then carries on.</p>
                 </div>
                 <div>
                   <label :for="id(`sub${i}`)" class="yj-field-label">Button label</label>

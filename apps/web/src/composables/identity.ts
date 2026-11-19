@@ -27,6 +27,8 @@ export type Me =
       waiting?: { space_name: string; kind: string }[];
       edition: string;
       locked?: DeviceLocked | null;
+      /** The open space didn't open: this sign-in doesn't meet its rules (IDN-34). */
+      refused?: { space_name: string; why: string; message: string } | null;
     };
 /** This device is kept for one space (SPC-5): no other space opens here. */
 export type DeviceLocked = { space_name: string; label: string; edition: string; created_at: string };
@@ -35,6 +37,8 @@ export type IdentityConfig = { enabled: boolean; passkeys: boolean; google: bool
 export type SessionRow = { id: string; method: string; level: number; device: string | null; created_at: string; last_used_at: string };
 
 const me = shallowRef<Me>({ signedIn: false });
+/** How sure the kiosk is of who this is (IDN-30): the account session's level, 0 when nobody is signed in. */
+export const accountLevel = computed(() => (me.value.signedIn ? me.value.level : 0));
 const config = shallowRef<IdentityConfig | null>(null);
 const loading = ref(false);
 let started = false;

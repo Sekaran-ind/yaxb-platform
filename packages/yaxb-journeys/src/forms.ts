@@ -147,6 +147,8 @@ export type StepForm = {
   resultOutcome: string;
   /** flow: parallel (JRN-46): the screens this one waits for, ids separated by commas. */
   after: string;
+  /** ask: how sure the kiosk must be of who answers it (IDN-33), when more than the journey's; null: the journey's. */
+  level: number | null;
 };
 
 export type JourneyForm = {
@@ -184,6 +186,7 @@ export const newStep = (id = "", kind: StepKind = "ask"): StepForm => ({
   resultOk: "",
   resultOutcome: "",
   after: "",
+  level: null,
 });
 
 export const newJourneyForm = (id = ""): JourneyForm => {
@@ -335,6 +338,8 @@ export type JourneyDesign = {
   start: string;
   /** sequence: one screen after another; parallel (JRN-46): the screens that ask or run a service, in any order. */
   flow: "sequence" | "parallel";
+  /** Who can use this (IDN-33): how sure the kiosk must be of who starts and answers it, 0 (anyone) to 4. */
+  level: number;
   screens: StepForm[];
 };
 
@@ -364,6 +369,7 @@ export const newJourneyDesign = (id = "new-journey", title = "New journey"): Jou
   complete: [],
   start: "",
   flow: "sequence",
+  level: 0,
   screens: [
     { ...newScreen("questions", "ask"), label: "Questions", fieldsYaml: "- { id: name, type: text, label: Your name, required: true }" },
     { ...newScreen("done", "final"), label: "Done", resultTitle: "Thank you" },
@@ -405,13 +411,14 @@ export function designFromDoc(doc: Record<string, unknown>): { design: ServiceDe
         next: typeof next === "string" ? next : "",
         branches: (Array.isArray(s.decide) ? s.decide : Array.isArray(next) ? next : []).map((b: Branch) => ({ ...(b?.if !== undefined ? { if: str(b.if) } : {}), to: str(b?.to) })),
         after: Array.isArray(s.after) ? (s.after as unknown[]).map(str).join(", ") : "",
+        level: typeof s.level === "number" ? s.level : null,
         resultTitle: str(result.title),
         resultText: str(result.text),
         resultOk: result.ok === undefined ? "" : str(result.ok),
       resultOutcome: str(result.outcome),
       };
     });
-    return { id: str(j.id), title: str(j.title), summary: str(j.summary), icon: str(j.icon), initiate: strs(jr.initiate), complete: strs(jr.complete), start: str(j.start), flow: j.flow === "parallel" ? "parallel" : "sequence", screens };
+    return { id: str(j.id), title: str(j.title), summary: str(j.summary), icon: str(j.icon), initiate: strs(jr.initiate), complete: strs(jr.complete), start: str(j.start), flow: j.flow === "parallel" ? "parallel" : "sequence", level: typeof j.level === "number" ? j.level : 0, screens };
   });
   return {
     design: {
@@ -457,7 +464,7 @@ export function designToDoc(d: ServiceDesign): { ok: true; doc: Record<string, u
       const after = task ? s.after.split(/[\s,]+/).filter(Boolean) : [];
       const base = { id: s.id.trim(), title: s.label.trim(), stage: s.stage.trim(), icon: s.icon.trim() };
       let screen: Record<string, unknown>;
-      if (s.kind === "ask") screen = { ...base, ask: s.ask.trim(), questions: parse(at, s.fieldsYaml, "list") ?? [], submitLabel: s.submitLabel.trim(), role: s.role.trim(), next: then, after: after.length ? after : undefined };
+      if (s.kind === "ask") screen = { ...base, ask: s.ask.trim(), questions: parse(at, s.fieldsYaml, "list") ?? [], submitLabel: s.submitLabel.trim(), role: s.role.trim(), next: then, after: after.length ? after : undefined, level: s.level && s.level > (j.level ?? 0) ? s.level : undefined };
       else if (s.kind === "service") screen = { ...base, service: s.service.trim(), with: parse(at, s.withYaml, "mapping"), onError: s.onError === "continue" ? "continue" : undefined, next: then, after: after.length ? after : undefined };
       else if (s.kind === "decide") screen = { ...base, decide: branches(s.branches) };
       else {
@@ -467,7 +474,7 @@ export function designToDoc(d: ServiceDesign): { ok: true; doc: Record<string, u
       return Object.fromEntries(Object.entries(screen).filter(([k, v]) => k === "questions" || !blank(v)));
     });
     const roles = compact({ initiate: j.initiate, complete: j.complete });
-    return compact({ id: j.id.trim(), title: j.title.trim(), summary: j.summary.trim(), icon: j.icon.trim(), roles: Object.keys(roles).length ? roles : undefined, flow: parallel ? "parallel" : undefined, start: j.start.trim(), screens });
+    return compact({ id: j.id.trim(), title: j.title.trim(), summary: j.summary.trim(), icon: j.icon.trim(), roles: Object.keys(roles).length ? roles : undefined, flow: parallel ? "parallel" : undefined, level: j.level ? j.level : undefined, start: j.start.trim(), screens });
   });
   if (problems.length) return { ok: false, problems };
   return {

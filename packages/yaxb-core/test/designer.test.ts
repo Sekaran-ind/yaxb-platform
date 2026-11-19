@@ -76,15 +76,16 @@ describe("few-shot examples", () => {
     expect(kioskContent.designer.map((d) => d.id).sort()).toEqual(["bank-complaints", "housing-repairs", "library-renewals"]);
   });
 
+  const VISITS = () => kioskContent.catalogue.find((c) => c.yaml.includes("id: visits"))!.yaml;
   it("writes a narrative from a published service, and adds it to the pool once", () => {
-    const visits = kioskContent.catalogue[0]!.yaml;
+    const visits = VISITS();
     expect(narrativeOf(visits)).toMatch(/Visits.*Front desk.*Check in for your visit.*Your name/s);
     const pool = examplePool(kioskContent.designer, [{ yaml: visits }, { yaml: visits }, { yaml: kioskContent.designer[0]!.yaml }]);
     expect(pool.filter((e) => e.source === "catalogue").map((e) => e.id)).toEqual(["visits"]);
   });
 
   it("picks the closest examples, always with a built-in one", () => {
-    const pool = examplePool(kioskContent.designer, [{ yaml: kioskContent.catalogue[0]!.yaml }]);
+    const pool = examplePool(kioskContent.designer, [{ yaml: VISITS() }]);
     expect(pickExamples("Customers complain about a card or a loan at the bank", pool)[0]!.id).toBe("bank-complaints");
     const picked = pickExamples("A clinic check-in for visitors: name, symptom, front desk", pool);
     expect(picked.map((e) => e.id)).toContain("visits");

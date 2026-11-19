@@ -14,6 +14,7 @@ import {
   verifyJwt,
   type IdentityStore,
   type SignedIn,
+  policyAllows,
 } from "../src/identity/index.js";
 import { createD1IdentityStore } from "../src/identity/d1.js";
 import { sqliteD1 } from "./sqlite-d1.js";
@@ -321,5 +322,34 @@ describe("devices kept for one space (SPC-5)", () => {
       expect((await id.unlockDevice(lock.id, { edition: "business", tenant_id: "t1" }, null)).unlocked_at).toBeTruthy();
       expect(await id.deviceLockOf(token)).toBeNull();
       expect(await id.deviceLocks("business", "t1")).toEqual([]);
+    });
+});
+
+describe("a space's sign-in rules (IDN-34)", () => {
+  for (const [name, make] of [
+    ["memory", (): IdentityStore => createMemoryIdentityStore()],
+    ["D1", (): IdentityStore => createD1IdentityStore(sqliteD1({ folder: "migrations-platform" }))],
+  ] as const)
+    it(`keeps a space's rules and checks a sign-in against them on ${name}`, async () => {
+      const id = createIdentityService(make(), { secret: "test-secret-0123456789", issuer: "https://anjalai.cc" });
+      expect(await id.spacePolicy("business", "t1")).toMatchObject({ methods: ["passkey", "oidc", "recovery"], staff_passkeys: false, session_hours: 720, updated_at: null });
+      await expect(id.setSpacePolicy("business", "t1", { methods: [], staff_passkeys: false, session_hours: 24 }, null)).rejects.toThrow(/at least one/);
+      await expect(id.setSpacePolicy("business", "t1", { methods: ["oidc"], staff_passkeys: true, session_hours: 24 }, null)).rejects.toThrow(/unless passkeys/);
+      await expect(id.setSpacePolicy("business", "t1", { methods: ["passkey"], staff_passkeys: false, session_hours: 5 }, null)).rejects.toThrow(/how long/);
+      const p = await id.setSpacePolicy("business", "t1", { methods: ["passkey", "oidc", "nonsense"], staff_passkeys: true, session_hours: 8 }, null);
+      expect(p).toMatchObject({ methods: ["passkey", "oidc"], staff_passkeys: true, session_hours: 8 });
+      expect(await id.spacePolicy("business", "t1")).toMatchObject({ methods: ["passkey", "oidc"], staff_passkeys: true, session_hours: 8 });
+      expect((await id.spacePolicy("family", "t1")).staff_passkeys).toBe(false);
+
+      const now = 1_800_000_000;
+      const staff = { roles: ["moderator"] };
+      const visitor = { roles: [] };
+      const google = { amr: ["oidc"], lvl: 2, iat: now, auth_time: now - 60 };
+      const passkey = { amr: ["passkey"], lvl: 3, iat: now, auth_time: now - 60 };
+      expect(policyAllows(p, google, visitor, now)).toEqual({ ok: true });
+      expect(policyAllows(p, google, staff, now)).toMatchObject({ ok: false, why: "passkey" });
+      expect(policyAllows(p, passkey, staff, now)).toEqual({ ok: true });
+      expect(policyAllows(p, { amr: ["recovery"], lvl: 1, iat: now }, visitor, now)).toMatchObject({ ok: false, why: "method", message: expect.stringContaining("a passkey or Google") });
+      expect(policyAllows(p, { ...passkey, auth_time: now - 9 * 3600 }, staff, now)).toMatchObject({ ok: false, why: "expired" });
     });
 });

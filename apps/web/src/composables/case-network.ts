@@ -9,6 +9,7 @@
 // Incoming cases arrive on the team's channel, or are collected from the box and the relay
 // (`collect`, on opening Services and every minute while the kiosk is open). Beacons (reference,
 // role, holder, time; never answers) go to the box, or the relay, so moderators see who has what.
+import { accountLevel } from "@/composables/identity";
 import { HOUSEHOLD_ENTRY, householdAllows, householdCaseJourney, householdRoles, profileActorId } from "@sekaran-ind/yaxb-core/household";
 import { useAccount } from "@/composables/account";
 import { household } from "@/composables/household";
@@ -68,12 +69,14 @@ const account = useAccount();
 export async function deviceActor(): Promise<CaseActor> {
   const v = kioskViewer.value;
   const device = (await thisDevice()).id;
-  if (v.member && v.id) return { id: v.id, name: v.name ?? "A member", roles: v.roles, admin: v.admin, device };
+  // How sure this device is of who is here (IDN-30): the account session's level.
+  const level = accountLevel.value;
+  if (v.member && v.id) return { id: v.id, name: v.name ?? "A member", roles: v.roles, admin: v.admin, device, level };
   // At home (Family, EDN-20): the open profile, with its household roles.
   const me = account.profile.value;
   if (offers("household") && me && account.profileId.value)
-    return { id: profileActorId(account.profileId.value), name: me.nickname, roles: householdRoles(household.value, account.profileId.value), admin: false, device };
-  return { id: `guest:${device}`, name: "Visitor", roles: [], admin: false, guest: true, device };
+    return { id: profileActorId(account.profileId.value), name: me.nickname, roles: householdRoles(household.value, account.profileId.value), admin: false, device, level };
+  return { id: `guest:${device}`, name: "Visitor", roles: [], admin: false, guest: true, device, level };
 }
 
 function mailboxes(): { box: Mailbox | null; relay: Mailbox | null } {

@@ -129,6 +129,7 @@ async function copyCodes() {
       <!-- Spaces (SPC-1..4). -->
       <section class="space-y-2" aria-label="Your spaces">
         <h4 class="text-sm font-semibold text-ink">Your spaces</h4>
+        <p v-if="me.refused" role="alert" class="caution rounded-lg px-3 py-2 text-sm">{{ me.refused.space_name }} didn't open: {{ me.refused.message }}</p>
         <p v-if="id.locked.value" class="caution rounded-lg px-3 py-2 text-sm">This device is kept for {{ id.locked.value.space_name }} ({{ id.locked.value.label }}): no other space opens here. Its administrator releases it in Preferences → Front desk.</p>
         <p v-if="!me.spaces.length" class="text-sm text-gray-600">No spaces on this site yet.</p>
         <ul v-else class="divide-y divide-gray-100 rounded-xl bg-surface ring-1 ring-gray-100">

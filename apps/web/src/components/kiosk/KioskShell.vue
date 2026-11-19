@@ -503,17 +503,28 @@ async function startJourney(id: string) {
   const turn: JourneyTurn = { id: j.id, entry: entryOfJourney(j.id), title: j.title, run: null, status: "running" };
   await chat.addTurns(j.title, { journey: turn, via: "journey" }, turnCtx());
 }
-// A link to a journey (`?journey=<id>`), such as Preferences → Account's "Sign in step by step".
+// A link to a journey (`?journey=<id>`), such as Preferences → Account's "Sign in step by step". A
+// catalogue journey may not be loaded yet when the page opens: it starts once it is (for a while).
+const linkedJourney = ref<{ id: string; until: number } | null>(null);
 watch(
   () => route.query.journey,
   (j) => {
     if (typeof j !== "string" || !j) return;
     const { journey: _, ...rest } = route.query;
     void router.replace({ query: rest });
-    void startJourney(j);
+    if (kioskJourneys.value.some((x) => x.id === j)) void startJourney(j);
+    else linkedJourney.value = { id: j, until: Date.now() + 15_000 };
   },
   { immediate: true },
 );
+watch(kioskJourneys, (list) => {
+  const want = linkedJourney.value;
+  if (!want) return;
+  if (Date.now() > want.until) return void (linkedJourney.value = null);
+  if (!list.some((x) => x.id === want.id)) return;
+  linkedJourney.value = null;
+  void startJourney(want.id);
+});
 
 // ---- designing a service in the conversation (LIB-64) ------------------------------------------------
 
@@ -772,6 +783,13 @@ const services: Record<string, ServiceHandler> = {
     await identity.reload();
     const m = identity.me.value;
     return m.signedIn ? { signedIn: true, name: m.account.display_name ?? "", spaces: mySpaces.value.length, open: m.space?.space_name ?? null } : { signedIn: false };
+  },
+  // Who is here (IDN-31): the name others see, how surely they signed in, and their roles in the open
+  // space. Never an email or a phone.
+  "identity.whoami": async () => {
+    const m = identity.me.value;
+    if (!m.signedIn) return { signedIn: false, level: 0, roles: [] };
+    return { signedIn: true, name: m.account.display_name ?? "", level: m.level, space: m.space?.space_name ?? null, roles: m.space?.roles ?? [] };
   },
   "identity.passkey.signin": async () => {
     if (identity.signedIn.value) return { signedIn: true };

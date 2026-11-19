@@ -19,7 +19,7 @@
 import { assign, createActor, createMachine, fromPromise, type AnyActorRef, type AnyMachineSnapshot } from "xstate";
 import { holds, render, type Scope } from "./expressions.js";
 import { formProblems, keptAnswers } from "./fields.js";
-import { mayAnswer, type Journey, type RunActor, type RunSnapshot, type RunState, type ServiceHandler, type Step, type TaskState } from "./journeys.js";
+import { levelNeeded, mayAnswer, type Journey, type RunActor, type RunSnapshot, type RunState, type ServiceHandler, type Step, type TaskState } from "./journeys.js";
 
 /** XState's assign, for this file's events (SUBMIT's answers, a service's output or error). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -65,6 +65,9 @@ export function createRunner(
   const scope = (c: Pick<Ctx, "answers" | "steps">): Scope => ({ answers: c.answers, steps: c.steps, context });
   const trailOf = (c: Ctx, step: Step, ok: boolean) => [...c.trail, { step: step.id, label: step.label ?? step.id, stage: step.stage, ok }];
   const notMine = (step: Step) => Boolean(who) && !mayAnswer(step, who!);
+  // IDN-32: a step this person may answer, but not yet signed in strongly enough for. Only with an
+  // actor (a plain preview asks every step).
+  const tooLow = (step: Step) => Boolean(who) && (who!.level ?? 0) < levelNeeded(journey, step);
 
   // ---- the machine ----------------------------------------------------------------------------
 
@@ -149,10 +152,13 @@ export function createRunner(
       initial: "enter",
       states: {
         enter: {
-          always: asks ? [{ guard: answered(id), target: "run" }, { guard: () => notMine(step), target: "waiting" }, { target: "asking" }] : [{ target: "run" }],
+          always: asks
+            ? [{ guard: answered(id), target: "run" }, { guard: () => notMine(step), target: "waiting" }, { guard: () => tooLow(step), target: "stepup" }, { target: "asking" }]
+            : [{ target: "run" }],
         },
         asking: { on: { SUBMIT: { guard: forThis(id), target: "run", actions: submit(step) } } },
         waiting: { on: { RECHECK: { target: "enter" } } },
+        stepup: { on: { RECHECK: { target: "enter" } } },
         run: step.service
           ? { invoke: invokeOf(step, { target: "route" }, { target: "route" }) }
           : {
@@ -197,9 +203,10 @@ export function createRunner(
         active: {
           initial: "check",
           states: {
-            check: { always: [{ guard: answered(id), target: after }, { guard: () => notMine(step), target: "waiting" }, { target: "asking" }] },
+            check: { always: [{ guard: answered(id), target: after }, { guard: () => notMine(step), target: "waiting" }, { guard: () => tooLow(step), target: "stepup" }, { target: "asking" }] },
             asking: { on: { SUBMIT: { guard: forThis(id), target: after, actions: submit(step) }, ...otherFocus } },
             waiting: { on: { RECHECK: { target: "check" }, ...otherFocus } },
+            stepup: { on: { RECHECK: { target: "check" }, ...otherFocus } },
             ...(step.service ? { running: run } : {}),
           },
         },
@@ -226,7 +233,7 @@ export function createRunner(
 
   // ---- reading the machine's state -------------------------------------------------------------
 
-  const blank = (): RunState => ({ status: "idle", current: null, waiting: null, prompt: null, answers: {}, steps: {}, trail: [], result: null, error: null });
+  const blank = (): RunState => ({ status: "idle", current: null, waiting: null, stepUp: null, prompt: null, answers: {}, steps: {}, trail: [], result: null, error: null });
   let state: RunState = blank();
   let actor: AnyActorRef | null = null;
   let stopped = false;
@@ -238,7 +245,7 @@ export function createRunner(
 
   function view(snap: AnyMachineSnapshot): RunState {
     const c = snap.context as Ctx;
-    const base = { answers: c.answers, steps: c.steps, trail: c.trail, result: null, error: null, prompt: null, waiting: null };
+    const base = { answers: c.answers, steps: c.steps, trail: c.trail, result: null, error: null, prompt: null, waiting: null, stepUp: null };
     if (stopped) return { ...base, status: "failed", current: state.current, error: "Stopped." };
     if (snap.status === "error") return { ...base, status: "failed", current: state.current, error: snap.error instanceof Error ? snap.error.message : String(snap.error) };
     const value = snap.value as string | Record<string, unknown>;
@@ -251,6 +258,7 @@ export function createRunner(
     const id = top.replace(/^s_/, "");
     if (sub === "asking") return { ...base, status: "asking", current: id, prompt: promptOf(id) };
     if (sub === "waiting") return { ...base, status: "waiting", current: id, waiting: { step: id, role: journey.steps[id]?.role ?? null } };
+    if (sub === "stepup") return { ...base, status: "step_up", current: id, stepUp: { step: id, level: levelNeeded(journey, journey.steps[id]!) } };
     return { ...base, status: "running", current: id };
   }
 
@@ -264,7 +272,7 @@ export function createRunner(
         : r === "ready" ? (step.ask !== undefined && notMine(step) ? "waiting" : "ready")
         : r === "done" ? "done"
         : r === "active" ? "running"
-        : Array.isArray(at) && at[0] === "active" ? (at[1] === "asking" ? "asking" : at[1] === "waiting" ? "waiting" : "running") : "pending";
+        : Array.isArray(at) && at[0] === "active" ? (at[1] === "asking" ? "asking" : at[1] === "waiting" ? "waiting" : at[1] === "stepup" ? "step_up" : "running") : "pending";
       return { step: id, label: step.label ?? id, role: step.role ?? null, status, after: step.after ?? [] };
     });
     const asking = list.find((t) => t.status === "asking");
@@ -272,6 +280,8 @@ export function createRunner(
     if (list.some((t) => t.status === "running")) return { ...base, status: "running", current: list.find((t) => t.status === "running")!.step, tasks: list };
     // A task of this person's is ready: not settled yet (settle() focuses it).
     if (list.some((t) => t.status === "ready")) return { ...base, status: "running", current: null, tasks: list };
+    const up = list.find((t) => t.status === "step_up");
+    if (up) return { ...base, status: "step_up", current: up.step, stepUp: { step: up.step, level: levelNeeded(journey, journey.steps[up.step]!) }, tasks: list };
     const waiting = list.find((t) => t.status === "waiting");
     if (waiting) return { ...base, status: "waiting", current: waiting.step, waiting: { step: waiting.step, role: waiting.role }, tasks: list };
     return { ...base, status: "running", current: null, tasks: list };
@@ -339,7 +349,7 @@ export function createRunner(
       launch(snap.current, { answers: snap.answers, steps: snap.steps, trail: snap.trail, done });
       return settle();
     },
-    /** Hand a waiting run to another actor in place (the designer's preview: "continue as"). */
+    /** Hand a waiting run to another actor in place (the designer's preview: "continue as"), or carry on after a stronger sign-in (IDN-32). */
     continueAs: (as: RunActor) => {
       who = as;
       actor?.send({ type: "RECHECK" });

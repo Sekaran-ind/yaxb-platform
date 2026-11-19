@@ -15,7 +15,7 @@
 // often shared, so a visitor's cases are never listed: a visitor opens theirs by its reference
 // ("R-7KQ4MX", shown when they hand it over), like a parcel's tracking code, and acts on it as the
 // person who started it. Members open cases by id from their work queue.
-import { canInitiate, mayAnswer, replay, type Journey, type RunActor, type RunSnapshot } from "@sekaran-ind/yaxb-journeys/journeys";
+import { ASSURANCE_LEVELS, canInitiate, levelNeeded, mayAnswer, replay, type Journey, type RunActor, type RunSnapshot } from "@sekaran-ind/yaxb-journeys/journeys";
 import { resolveForRequester, type Organisation } from "@sekaran-ind/yaxb-journeys";
 import { z } from "zod";
 
@@ -24,7 +24,16 @@ export type CaseStatus = "waiting" | "to_finish" | "done" | "declined";
 export const CASE_STATUSES: readonly CaseStatus[] = ["waiting", "to_finish", "done", "declined"];
 
 /** Someone acting on a case: a member (their roles), an administrator, or a visitor (guest:<session>). */
-export type CaseActor = { id: string; name: string; roles: readonly string[]; admin: boolean; guest?: boolean; device?: string };
+/** `level`: how sure the server is of who this is (IDN-30): the account session's level; absent, 0. */
+export type CaseActor = { id: string; name: string; roles: readonly string[]; admin: boolean; guest?: boolean; device?: string; level?: number };
+
+/** The first of these screens the actor isn't signed in strongly enough to answer (IDN-32), as a refusal. */
+function tooLowFor(journey: Journey, stepIds: readonly string[], actor: Pick<CaseActor, "level">): CaseError | null {
+  const low = stepIds.find((s) => (actor.level ?? 0) < levelNeeded(journey, journey.steps[s] ?? {}));
+  if (!low) return null;
+  const need = levelNeeded(journey, journey.steps[low]!);
+  return new CaseError(`The screen "${journey.steps[low]?.label ?? low}" needs ${ASSURANCE_LEVELS[need]?.label.toLowerCase() ?? `level ${need}`}: sign in more strongly first.`, 403);
+}
 
 export type Case = {
   id: string;
@@ -170,7 +179,7 @@ export function isTurnOf(c: Pick<Case, "status" | "waiting_role" | "started_by" 
 export const mayReassign = (a: CaseActor) => a.admin || a.roles.includes("moderator") || a.roles.includes("administrator");
 
 /** The actor's part of the journey, for the runner. */
-export const runActor = (c: Pick<Case, "started_by">, a: CaseActor): RunActor => ({ starter: c.started_by === a.id, roles: a.roles });
+export const runActor = (c: Pick<Case, "started_by">, a: CaseActor): RunActor => ({ starter: c.started_by === a.id, roles: a.roles, level: a.level ?? 0 });
 
 export function createCaseService(store: CaseStore, options: CaseOptions) {
   const now = () => (options.now?.() ?? new Date()).toISOString();
@@ -225,6 +234,8 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
       const starter: RunActor = { starter: true, roles: a.roles };
       const notMine = r.answered.find((s) => !mayAnswer(journey.steps[s]!, starter));
       if (notMine) throw new CaseError(`The screen "${journey.steps[notMine]?.label ?? notMine}" is answered by someone else.`, 403);
+      const low = tooLowFor(journey, r.answered, a);
+      if (low) throw low;
       const at = position(journey, r);
       if (at.status === "waiting" && at.waiting_role === null) throw new CaseError("Finish your part of the journey first.");
       if (at.status === "done") throw new CaseError("This journey ends here: there is nothing to hand over.");
@@ -279,6 +290,8 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
       if (!fresh.length) throw new CaseError("Answer the screen first.");
       const notMine = fresh.find((s) => !mayAnswer(c.journey.steps[s]!, me));
       if (notMine) throw new CaseError(`The screen "${c.journey.steps[notMine]?.label ?? notMine}" is answered by someone else.`, 403);
+      const low = tooLowFor(c.journey, fresh, actor);
+      if (low) throw low;
       const at = position(c.journey, r);
       const t = now();
       const next: Case = {
