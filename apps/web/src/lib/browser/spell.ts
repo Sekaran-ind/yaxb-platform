@@ -6,6 +6,11 @@ import type { NotebookRecord } from "./store";
 
 let cached: { key: string; dict: SpellDictionary } | null = null;
 
+/** Drop the dictionary built from a visit's notebook (a front desk session ended, STO-3). */
+export function forgetSpelling() {
+  cached = null;
+}
+
 function dictionaryFor(notebook: NotebookRecord | null | undefined, services: readonly { entry_id: string; yaml: string }[]): SpellDictionary {
   const key = [notebook ? `${notebook.id}@${notebook.updatedAt}` : "", ...services.map((s) => s.entry_id)].join("|");
   if (cached?.key === key) return cached.dict;

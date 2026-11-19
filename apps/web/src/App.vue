@@ -8,9 +8,23 @@ import TextDialog from "@/components/site/TextDialog.vue";
 import { NATIVE } from "@/lib/platform";
 import { restricted } from "@/composables/restricted";
 import { startSync } from "@/composables/sync";
+import { askPersistence } from "@/lib/browser/storage-meter";
+import { watch } from "vue";
 
 // Sync v2 with the box, when Storage is "box" (SYN-5).
 startSync();
+
+// Kiosks and installed apps ask the browser to keep their data (STO-2): the native app, an app
+// installed from the browser, and a front desk. A website visitor isn't asked (Firefox shows a
+// prompt); they can ask from Preferences → Storage.
+const installed = NATIVE || (typeof matchMedia !== "undefined" && matchMedia("(display-mode: standalone)").matches);
+watch(
+  restricted,
+  (frontDesk) => {
+    if (installed || frontDesk) void askPersistence();
+  },
+  { immediate: true },
+);
 
 const route = useRoute();
 </script>
