@@ -4,6 +4,18 @@ import { fieldListProblems, fieldProblem, isMediaRef, type Field } from "../src/
 
 const ref = (n: number) => ({ hash: n.toString(16).padStart(64, "0"), type: "image/jpeg", size: 1000 + n });
 
+describe("voice notes", () => {
+  it("checks an audio field and its answer", () => {
+    expect(fieldListProblems("", [{ id: "v", type: "audio", label: "Voice", max_seconds: 60, transcribe: "device", keep: "box" }])).toEqual([]);
+    expect(fieldListProblems("", [{ id: "v", type: "audio", label: "Voice", max_seconds: 900 }]).join()).toMatch(/max_seconds/);
+    expect(fieldListProblems("", [{ id: "p", type: "photo", label: "P", transcribe: "device" }]).join()).toMatch(/transcribe is for voice notes/);
+    const f: Field = { id: "v", type: "audio", label: "A voice note", required: true };
+    expect(fieldProblem(f, [ref(1)])).toBeNull();
+    expect(fieldProblem(f, [ref(1), ref(2)])).toMatch(/one voice note/);
+    expect(fieldProblem(f, [])).toMatch(/required/);
+  });
+});
+
 describe("photo fields", () => {
   it("checks a photo field's options", () => {
     expect(fieldListProblems("", [{ id: "p", type: "photo", label: "Photo", max: 3, read: "ocr", keep: "box" }])).toEqual([]);

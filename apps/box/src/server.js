@@ -21,7 +21,7 @@
 //   DELETE /v2/collections/:name/:id?baseVersion=&conflict=            → 200 | 409, a tombstone
 //   POST   /v2/collections/:name/batch  { ops: [{ op: put|delete, id, baseVersion, data }], conflict }
 //          (collections: notebooks, threads, schedule, service-data; conflict: reject-stale | last-write-wins)
-//   PUT    /v1/media/:hash   (body: the photo's bytes)    a photo (MED-1), kept only if its SHA-256 is :hash
+//   PUT    /v1/media/:hash   (body: the photo's bytes)    a photo or voice note (MED-1, MED-9), kept only if its SHA-256 is :hash
 //   GET    /v1/media/:hash                                 the photo, with its type
 //   POST   /v1/events  (body: [event])                   a service's events (MET-2): facts, never answers
 //   GET    /v1/events?service=&since=                    a service's events, oldest first
@@ -292,7 +292,7 @@ export function createBoxServer(config, { db = openDb(config.dbPath), link = cre
       }
       if (req.method === 'PUT') {
         const type = String(req.headers['content-type'] || '').split(';')[0].trim();
-        if (!/^image\/(jpeg|png|webp)$/.test(type)) throw new HttpError(415, 'Only photos (JPEG, PNG or WebP).');
+        if (!/^(image\/(jpeg|png|webp)|audio\/(webm|ogg|mp4|mpeg|aac|wav))$/.test(type)) throw new HttpError(415, 'Only photos (JPEG, PNG, WebP) and voice notes.');
         const data = await readBytes(req, MAX_MEDIA_BYTES);
         if (createHash('sha256').update(data).digest('hex') !== a) throw new HttpError(400, 'The photo doesn\'t match its hash.');
         db.putMedia(a, type, data);

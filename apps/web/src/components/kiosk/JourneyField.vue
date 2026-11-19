@@ -8,7 +8,7 @@ import { MediaCapture } from "@sekaran-ind/yaxb-journeys/vue";
 
 // `suggested`: the value came from slot filling (what the visitor said), for them to check.
 const props = defineProps<{ field: Field; value: unknown; notebook: NotebookRecord | null; suggested?: SlotVia }>();
-const emit = defineEmits<{ change: [value: unknown] }>();
+const emit = defineEmits<{ change: [value: unknown]; noted: [event: { kind: "media.captured" | "media.read"; ms: number; ok: boolean }] }>();
 const id = `jf-${props.field.id}`;
 const str = (v: unknown) => (v === null || v === undefined ? "" : String(v));
 const pickSource = (sid: string) => emit("change", props.notebook?.sources.find((s) => s.id === sid) ?? null);
@@ -33,7 +33,7 @@ const ring = computed(() => (props.suggested ? "ring-2 ring-info/40" : ""));
       <span>{{ field.label }}<span v-if="field.required" class="text-red-700"> *</span></span>
       <span v-if="suggested" class="text-xs font-normal text-info">{{ VIA[suggested] }}: please check</span>
     </label>
-    <MediaCapture v-if="field.type === 'photo'" :field="field" :value="value" @change="(v) => emit('change', v)" />
+    <MediaCapture v-if="field.type === 'photo' || field.type === 'audio'" :field="field" :value="value" @change="(v) => emit('change', v)" @noted="(e) => emit('noted', e)" />
     <textarea v-else-if="field.type === 'textarea'" :id="id" :class="cn('input min-h-24', ring)" :placeholder="field.placeholder" :value="str(value)" @input="emit('change', ($event.target as HTMLTextAreaElement).value)" />
     <select v-else-if="field.type === 'select'" :id="id" :class="cn('input', ring)" :value="str(value)" @change="emit('change', ($event.target as HTMLSelectElement).value)">
       <option value="">Choose…</option>

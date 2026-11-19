@@ -458,6 +458,7 @@ onBeforeUnmount(() => {
         :notebook="notebook"
         :suggested="suggested[f.id]"
         @change="(v) => onFieldChange(f.id, v)"
+        @noted="(e) => record(e.kind, { step: state?.prompt?.step ?? null, ms: e.ms, ok: e.ok })"
       />
       <p v-if="problems.length" role="alert" class="text-sm text-red-800">{{ problems.join(" ") }}</p>
       <div class="flex justify-end"><button type="submit" class="btn-primary">{{ state.prompt.submitLabel ?? "Continue" }}</button></div>

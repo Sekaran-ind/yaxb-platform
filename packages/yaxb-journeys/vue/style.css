@@ -682,6 +682,9 @@ textarea.yj-input {
   font-size: 0.8rem;
   color: var(--yj-muted);
 }
+.yj-media-audio {
+  max-width: 100%;
+}
 .yj-media label.yj-btn {
   justify-self: start;
   cursor: pointer;

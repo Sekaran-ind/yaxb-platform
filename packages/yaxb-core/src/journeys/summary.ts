@@ -19,6 +19,9 @@ export const SERVICE_INFO: Record<string, ServiceInfo> = {
   "notebook.remember": { label: "your notebook's memory", where: "notebook" },
   "speech.speak": { label: "read-aloud", where: "device" },
   "identity.status": { label: "your account (who is signed in)", where: "account" },
+  // Media (MED-6): read or transcribed on the device; nothing leaves it.
+  "media.read": { label: "reading a photo on this device (its text, or a description)", where: "device" },
+  "media.transcribe": { label: "writing down a voice note on this device", where: "device" },
   "identity.whoami": { label: "who you are here (your name, how you signed in and your roles; never your email or phone)", where: "account" },
   "identity.passkey.signin": { label: "your passkey", where: "account" },
   "identity.passkey.create": { label: "your passkey and a new account", where: "account" },
@@ -147,6 +150,12 @@ function display(field: Field, value: unknown): string {
       const read = list.map((p) => p.text?.trim()).filter(Boolean).join(" · ");
       return `${list.length} photo${list.length === 1 ? "" : "s"}${read ? `: ${read}` : ""}`;
     }
+    case "audio": {
+      const list = Array.isArray(value) ? (value as { text?: string }[]) : [];
+      if (!list.length) return "";
+      const said = list[0]?.text?.trim();
+      return `A voice note${said ? `: “${said}”` : ""}`;
+    }
     default:
       return String(value).trim();
   }
@@ -163,7 +172,7 @@ export function summarizeRun(journey: Journey, state: RunState): RunSummary {
       const value = state.answers[t.step]?.[f.id];
       const v = display(f, value);
       // Photos go by reference (MED-1): the screen shows them from this device or the box.
-      if (v) answers.push({ step: t.label, field: f.label, value: v, ...(f.type === "photo" && Array.isArray(value) ? { media: value.filter(isMediaRef) } : {}) });
+      if (v) answers.push({ step: t.label, field: f.label, value: v, ...((f.type === "photo" || f.type === "audio") && Array.isArray(value) ? { media: value.filter(isMediaRef) } : {}) });
     }
   }
   const result = state.result ? { title: state.result.title, text: state.result.text } : null;

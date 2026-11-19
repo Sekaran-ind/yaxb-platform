@@ -20,6 +20,9 @@ export const JOURNEY_SERVICES = [
   "speech.speak",
   // Signing in and spaces (15-identity.md): the your-account journey.
   "identity.status",
+  // Media (MED-6): read a photo, transcribe a voice note, on the device.
+  "media.read",
+  "media.transcribe",
   // Who is here (IDN-31): display name, level, roles here; never contact details.
   "identity.whoami",
   "identity.passkey.signin",

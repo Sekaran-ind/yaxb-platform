@@ -28,6 +28,7 @@ const TYPES: Record<FieldType, string> = {
   source: "A notebook source",
   language: "A language",
   photo: "A photo (taken here)",
+  audio: "A voice note (recorded here)",
 };
 
 type Q = Field & Record<string, unknown>;
