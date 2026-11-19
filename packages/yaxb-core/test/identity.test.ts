@@ -272,3 +272,25 @@ for (const [name, make] of [
     });
   });
 }
+
+describe("starting and joining spaces (SPC-8)", () => {
+  for (const [name, make] of [
+    ["memory", (): IdentityStore => createMemoryIdentityStore()],
+    ["D1", (): IdentityStore => createD1IdentityStore(sqliteD1({ folder: "migrations-platform" }))],
+  ] as const)
+    it(`limits starts and keeps waiting joins sealed on ${name}`, async () => {
+      const store = make();
+      const id = createIdentityService(store, { secret: "test-secret-0123456789", issuer: "https://anjalai.cc" });
+      const r = await id.oidcSignIn({ provider: "google", subject: "s", email: "a@b.in", emailVerified: true, consent: true });
+      if (!("session" in r)) throw new Error();
+      for (let i = 0; i < 5; i++) expect(await id.mayStartSpace(r.account.id)).toBe(true);
+      expect(await id.mayStartSpace(r.account.id)).toBe(false);
+      await id.addPendingJoin(r.account.id, { edition: "business", tenant_id: "t1", space_name: "Shop", kind: "business", request_id: "req-1", claim: "yaxb_claim_secret" });
+      expect(JSON.stringify(await store.pendingJoins(r.account.id))).not.toContain("yaxb_claim_secret");
+      const waiting = await id.pendingJoins(r.account.id, "business");
+      expect(waiting).toEqual([expect.objectContaining({ request_id: "req-1", claim: "yaxb_claim_secret", space_name: "Shop" })]);
+      expect(await id.pendingJoins(r.account.id, "family")).toEqual([]);
+      await id.removePendingJoin(waiting[0]!.id);
+      expect(await id.pendingJoins(r.account.id, "business")).toEqual([]);
+    });
+});

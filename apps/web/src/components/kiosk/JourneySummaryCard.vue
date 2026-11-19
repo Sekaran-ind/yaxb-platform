@@ -2,14 +2,14 @@
 // What a journey does (JRN-20), from its definition: the steps in order, what it asks for, what it
 // uses, and whether anything leaves the device.
 import { summarizeJourney, type Journey } from "@sekaran-ind/yaxb-core/journeys";
-import { Bot, Cpu, HelpCircle, NotebookPen, ShieldCheck, Split, Flag } from "@lucide/vue";
+import { Bot, Cpu, HelpCircle, NotebookPen, ShieldCheck, Split, Flag, KeyRound } from "@lucide/vue";
 import { computed } from "vue";
 import { cn } from "@/lib/cn";
 
 const props = defineProps<{ journey: Journey; compact?: boolean }>();
 const s = computed(() => summarizeJourney(props.journey));
 const STEP_ICONS = { ask: HelpCircle, service: Cpu, decide: Split, final: Flag } as const;
-const WHERE_ICONS = { device: Cpu, assistant: Bot, notebook: NotebookPen } as const;
+const WHERE_ICONS = { device: Cpu, assistant: Bot, notebook: NotebookPen, account: KeyRound } as const;
 </script>
 
 <template>

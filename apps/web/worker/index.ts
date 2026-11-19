@@ -25,7 +25,7 @@ export { TeamHub } from "./team";
 import { clientId, fromApp, isAdmin, MODERATOR_COOKIE, moderatorCookie, moderatorOf, safeEqual, sessionId, setAdminCookie, setModeratorCookie } from "./session";
 import { getCookie } from "hono/cookie";
 import { accountContext, identityRoutes } from "./identity";
-import type { Membership, TokenClaims } from "@sekaran-ind/yaxb-core/identity";
+import { IdentityError, type Membership, type TokenClaims } from "@sekaran-ind/yaxb-core/identity";
 
 export type AppEnv = {
   Bindings: Bindings;
@@ -783,6 +783,39 @@ app.route(
     async signedInMember(c) {
       const who = await moderatorOf(c, moderators(c.env));
       return who?.moderator ? { id: who.moderator.id, roles: [...who.moderator.roles] } : null;
+    },
+    async startSpace(c, input) {
+      const base = input.name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 36) || "space";
+      const slug = `${base}-${crypto.getRandomValues(new Uint32Array(1))[0]!.toString(36).slice(0, 5)}`;
+      const t = await tenants(c.env).createTenant({ name: input.name, slug, kind: input.kind });
+      const { moderator } = await moderators(c.env, t.id).issue({ name: input.person.slice(0, 80) || "Administrator", label: "Started the space", roles: ["administrator"] }, { name: input.person });
+      return { tenant_id: t.id, name: t.name, kind: t.kind, member_id: moderator.id, roles: [...moderator.roles] };
+    },
+    async joinSpace(c, token, person) {
+      try {
+        const svc = tenants(c.env);
+        const { request, claim } = await svc.redeem(token, { name: person });
+        const t = await svc.tenant(request.tenant_id);
+        const own = OWN_SPACE[settings(c.env).SURFACE ?? "all"]!;
+        return { tenant_id: request.tenant_id, space_name: t?.name ?? own.name, kind: t?.kind ?? own.kind, request_id: request.id, claim, accepted: request.status === "accepted" };
+      } catch (e) {
+        if (e instanceof TenantError) throw new IdentityError(e.message, e.status);
+        throw e;
+      }
+    },
+    async collectJoin(c, requestId, claim) {
+      const svc = tenants(c.env);
+      try {
+        const s = await svc.status(requestId, claim);
+        if (s.status === "pending") return { status: "pending" };
+        if (s.status === "declined") return { status: "declined" };
+        if (s.status === "collected") return { status: "gone" };
+        const { memberId } = await svc.collect(requestId, claim);
+        const m = await moderators(c.env).store.get(memberId);
+        return { status: "collected", member_id: memberId, roles: m ? [...m.roles] : [s.role] };
+      } catch {
+        return { status: "gone" };
+      }
     },
     async memberFor(c, input) {
       const { moderator } = await moderators(c.env).issue({ name: input.name.slice(0, 80) || "Administrator", label: "Linked to an account", roles: input.roles as never }, { name: "Administrator" });

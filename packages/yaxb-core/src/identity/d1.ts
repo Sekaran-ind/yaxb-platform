@@ -1,6 +1,6 @@
 // Identity in the platform database (PLATFORM_DB, migrations-platform 0002), shared by every edition.
 import type { D1Like } from "../stores/d1.js";
-import type { Account, Challenge, IdentityAuditEvent, IdentityStore, Membership, Method, Session, SigningKey } from "./index.js";
+import type { Account, Challenge, IdentityAuditEvent, IdentityStore, Membership, Method, PendingJoin, Session, SigningKey } from "./index.js";
 
 type MembershipRow = Omit<Membership, "roles"> & { roles: string };
 type AuditRow = Omit<IdentityAuditEvent, "details"> & { details: string | null };
@@ -116,7 +116,23 @@ export function createD1IdentityStore(db: D1Like): IdentityStore {
         ...r,
         details: r.details ? (JSON.parse(r.details) as IdentityAuditEvent["details"]) : null,
       })),
+    pendingJoins: (id) => all<PendingJoin>("SELECT id, account_id, edition, tenant_id, space_name, kind, request_id, sealed_claim, created_at FROM pending_joins WHERE account_id = ?1 ORDER BY created_at, rowid", id),
+    putPendingJoin: async (p) =>
+      void (await run(
+        "INSERT INTO pending_joins (id, account_id, edition, tenant_id, space_name, kind, request_id, sealed_claim, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        p.id,
+        p.account_id,
+        p.edition,
+        p.tenant_id,
+        p.space_name,
+        p.kind,
+        p.request_id,
+        p.sealed_claim,
+        p.created_at,
+      )),
+    removePendingJoin: async (id) => void (await run("DELETE FROM pending_joins WHERE id = ?1", id)),
     eraseAccount: async (id) => {
+      await run("DELETE FROM pending_joins WHERE account_id = ?1", id);
       await run("DELETE FROM account_methods WHERE account_id = ?1", id);
       await run("DELETE FROM memberships WHERE account_id = ?1", id);
       await run("UPDATE sessions SET revoked_at = COALESCE(revoked_at, ?2) WHERE account_id = ?1", id, new Date().toISOString());

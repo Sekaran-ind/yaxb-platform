@@ -4,7 +4,8 @@ import { LANGUAGES } from "../schemas/index.js";
 import { afterTasks, journeyRolesNeeded, journeyTasks, progressOf, type Field, type Journey, type RunState, type Step } from "./index.js";
 
 /** Where a service's work happens, for the visitor. */
-export type ServiceWhere = "device" | "assistant" | "notebook";
+/** `account`: Anjal's account service (sign-in and spaces, 15-identity.md), never the AI assistant. */
+export type ServiceWhere = "device" | "assistant" | "notebook" | "account";
 export type ServiceInfo = { label: string; where: ServiceWhere };
 
 /** Every service a journey may use (content JOURNEY_SERVICES), described for visitors. */
@@ -17,6 +18,14 @@ export const SERVICE_INFO: Record<string, ServiceInfo> = {
   "notebook.add": { label: "your notebook (saving a source)", where: "notebook" },
   "notebook.remember": { label: "your notebook's memory", where: "notebook" },
   "speech.speak": { label: "read-aloud", where: "device" },
+  "identity.status": { label: "your account (who is signed in)", where: "account" },
+  "identity.passkey.signin": { label: "your passkey", where: "account" },
+  "identity.passkey.create": { label: "your passkey and a new account", where: "account" },
+  "identity.google": { label: "Google sign-in", where: "account" },
+  "identity.recovery": { label: "your recovery code", where: "account" },
+  "identity.space.open": { label: "your spaces", where: "account" },
+  "identity.space.start": { label: "a new space for you", where: "account" },
+  "identity.space.join": { label: "a join code", where: "account" },
 };
 
 export type JourneyStepSummary = {
@@ -84,10 +93,12 @@ export function summarizeJourney(journey: Journey): JourneySummary {
   const toAssistant = uses.some((u) => u.where === "assistant");
   // A journey other people answer or finish is handed over: its answers are kept as a request (a case).
   const handedTo = [...new Set(journeyRolesNeeded(journey).filter((n) => n.for.includes("answer") || n.for.includes("finish")).map((n) => n.role))];
-  const leavesDevice = toAssistant || handedTo.length > 0;
+  const toAccount = uses.some((u) => u.where === "account");
+  const leavesDevice = toAssistant || toAccount || handedTo.length > 0;
   const parts = [asks.length ? `Asks for ${list(asks.map((a) => a.toLowerCase()))}` : "Asks for nothing", uses.length ? `uses ${list(uses.map((u) => u.label))}` : null].filter(Boolean);
   const where = [
     toAssistant ? "What you give it is sent to the AI assistant." : null,
+    toAccount ? "Signing in goes to Anjal's account service; only your passkey's public key, a hidden form of your Google id and your spaces are kept there." : null,
     handedTo.length ? "Your answers go, as a request with a reference, to whoever takes it from you." : null,
   ].filter(Boolean);
   const privacy = `${parts.join(", ")}. ${where.length ? where.join(" ") : "Nothing leaves this device."}`;

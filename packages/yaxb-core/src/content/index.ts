@@ -18,6 +18,15 @@ export const JOURNEY_SERVICES = [
   "notebook.add",
   "notebook.remember",
   "speech.speak",
+  // Signing in and spaces (15-identity.md): the your-account journey.
+  "identity.status",
+  "identity.passkey.signin",
+  "identity.passkey.create",
+  "identity.google",
+  "identity.recovery",
+  "identity.space.open",
+  "identity.space.start",
+  "identity.space.join",
 ] as const;
 
 /** Screen components the kiosk renders. */

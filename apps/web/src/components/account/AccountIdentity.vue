@@ -5,13 +5,16 @@
 // the ways to sign in, recovery codes, devices and sessions, sign out and delete (IDN-40).
 // The profile on this device is unchanged: an account is optional (IDN-2, IDN-6).
 import { ConfirmAction } from "@sekaran-ind/yaxb-journeys/vue";
-import { Check, Copy, KeyRound, Loader2, LogOut, MonitorSmartphone, Plus, ShieldCheck, Trash2 } from "@lucide/vue";
+import { Check, Copy, KeyRound, Loader2, LogOut, MonitorSmartphone, Plus, ShieldCheck, Sparkles, Trash2 } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useIdentity, type SessionRow } from "@/composables/identity";
 
 const id = useIdentity();
 const route = useRoute();
+const router = useRouter();
+/** The guided way: the your-account journey in the conversation. */
+const guide = () => void router.push({ path: "/kiosk", query: { journey: "your-account" } });
 const busy = ref<string | null>(null);
 const error = ref<string | null>(null);
 const notice = ref<string | null>(null);
@@ -85,8 +88,10 @@ async function copyCodes() {
         <h3 class="text-base font-semibold text-ink">Keep my things across devices</h3>
         <p class="mt-1 text-sm text-gray-600">An account lets you use your family, business and community spaces on any device, and switch between them without signing in again. It's optional: your profile here works without one.</p>
       </div>
+      <button type="button" class="btn-primary" @click="guide"><Sparkles class="size-4" aria-hidden="true" /> Sign in step by step</button>
+      <p class="text-xs text-gray-500">Or straight away:</p>
       <div class="flex flex-wrap gap-2">
-        <button v-if="id.passkeys.value" type="button" class="btn-primary" :disabled="busy !== null" @click="run('passkey', id.passkeySignIn)">
+        <button v-if="id.passkeys.value" type="button" class="btn-light" :disabled="busy !== null" @click="run('passkey', id.passkeySignIn)">
           <Loader2 v-if="busy === 'passkey'" class="size-4 animate-spin" aria-hidden="true" /><KeyRound v-else class="size-4" aria-hidden="true" /> Sign in with a passkey
         </button>
         <button v-if="id.config.value?.google" type="button" class="btn-light" :disabled="busy !== null" @click="id.google()">Continue with Google</button>
@@ -136,11 +141,18 @@ async function copyCodes() {
             <ConfirmAction label="Leave" :message="`Take “${s.space_name}” off your account? You can add it again as its member.`" trigger-class="btn-ghost h-9 px-2 text-sm" @confirm="run('leave', () => id.leaveSpace(s.tenant_id))" />
           </li>
         </ul>
-        <button v-if="me.space" type="button" class="btn-ghost h-9 px-3 text-sm" @click="run('space', () => id.openSpace(null))">Close the space</button>
-        <div class="rounded-lg bg-mist px-3 py-2 text-sm text-gray-700">
-          <p>To add the space this site is in, sign in to it as its member (your member key) or its administrator, then:</p>
-          <button type="button" class="btn-light mt-2 h-9 px-3 text-sm" :disabled="busy !== null" @click="run('link', id.linkSpace)"><Plus class="size-4" aria-hidden="true" /> Add this space to my account</button>
+        <ul v-if="me.waiting?.length" class="space-y-1 text-sm text-gray-700">
+          <li v-for="w in me.waiting" :key="w.space_name">Waiting for {{ w.space_name }}'s administrator to let you in. It appears here by itself once they do.</li>
+        </ul>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" class="btn-light h-9 px-3 text-sm" @click="guide"><Plus class="size-4" aria-hidden="true" /> Start or join a space</button>
+          <button v-if="me.space" type="button" class="btn-ghost h-9 px-3 text-sm" @click="run('space', () => id.openSpace(null))">Close the space</button>
         </div>
+        <details class="rounded-lg bg-mist px-3 py-2 text-sm text-gray-700">
+          <summary class="cursor-pointer text-ink">I already have a member key for this space</summary>
+          <p class="mt-1">Sign in to this space with your member key (or as its administrator), then add it to your account, so you won't need the key again.</p>
+          <button type="button" class="btn-light mt-2 h-9 px-3 text-sm" :disabled="busy !== null" @click="run('link', id.linkSpace)">Add this space to my account</button>
+        </details>
       </section>
 
       <!-- Ways to sign in (IDN-40). -->

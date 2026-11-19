@@ -14,7 +14,17 @@ import { PLATFORM_URLS, rememberSpaceKind } from "@/lib/surface";
 export type IdentityMethod = { id: string; kind: "passkey" | "oidc" | "recovery" | "phone" | "email" | "member_key"; display: string; created_at: string; last_used_at: string | null };
 export type Me =
   | { signedIn: false }
-  | { signedIn: true; level: number; account: { id: string; display_name: string | null; created_at: string }; methods: IdentityMethod[]; spaces: Membership[]; space: Membership | null; edition: string };
+  | {
+      signedIn: true;
+      level: number;
+      account: { id: string; display_name: string | null; created_at: string };
+      methods: IdentityMethod[];
+      spaces: Membership[];
+      space: Membership | null;
+      /** Join requests waiting for a space's administrator (SPC-8). */
+      waiting?: { space_name: string; kind: string }[];
+      edition: string;
+    };
 export type IdentityConfig = { enabled: boolean; passkeys: boolean; google: boolean; edition: string; notice: string };
 export type SessionRow = { id: string; method: string; level: number; device: string | null; created_at: string; last_used_at: string };
 
@@ -53,6 +63,35 @@ async function load() {
 }
 
 type ConsentNeeded = { consent_required: true; notice: string };
+
+// The app starts again when a space opens. A journey step that opened one (your-account) runs again
+// when the conversation is reopened: this marker, kept a few minutes for this tab, tells it the space
+// is already open, so it carries on instead of opening it again.
+const OPENED = "yaxb.space.opened";
+function markOpened() {
+  try {
+    sessionStorage.setItem(OPENED, String(Date.now()));
+  } catch {
+    /* private mode */
+  }
+}
+/** A space was opened in this tab in the last few minutes (and the marker is used up). */
+export function justOpened(): boolean {
+  try {
+    const at = Number(sessionStorage.getItem(OPENED) ?? 0);
+    sessionStorage.removeItem(OPENED);
+    return Date.now() - at < 5 * 60_000;
+  } catch {
+    return false;
+  }
+}
+/**
+ * Start the app again in the new space. `after`: a journey that opened it first reaches its ending
+ * and the conversation keeps it, then the app restarts (the conversation is reopened, KioskShell).
+ */
+const restart = (after = 400) => setTimeout(() => location.reload(), after);
+/** How long a journey gets to reach its ending before the app restarts. */
+export const JOURNEY_RESTART_MS = 2500;
 
 export function useIdentity() {
   if (!started) {
@@ -125,7 +164,7 @@ export function useIdentity() {
      * Open a space (or none) and start the app again in it. A space of another edition opens on that
      * edition's site, where its data lives (the session cookie is shared across anjalai.cc).
      */
-    async openSpace(tenant: string | null, edition?: string) {
+    async openSpace(tenant: string | null, edition?: string, { after }: { after?: number } = {}) {
       const here = me.value.signedIn ? me.value.edition : "all";
       if (tenant && edition && edition !== here && edition !== "all" && edition in PLATFORM_URLS) {
         location.href = `${PLATFORM_URLS[edition as keyof typeof PLATFORM_URLS]}kiosk?space=${encodeURIComponent(tenant)}`;
@@ -133,13 +172,34 @@ export function useIdentity() {
       }
       const r = await api<{ space: Membership | null }>("/api/identity/space", { tenant });
       rememberSpaceKind(r.space?.kind ?? null);
-      location.reload();
+      markOpened();
+      restart(after);
+      return r.space;
+    },
+    /** Start a family, business or community (SPC-8): you are its administrator, and it opens. */
+    async startSpace(kind: string, name: string, { after }: { after?: number } = {}) {
+      const r = await api<{ space: Membership }>("/api/identity/spaces/start", { kind, name });
+      rememberSpaceKind(r.space.kind);
+      markOpened();
+      restart(after);
+      return r.space;
+    },
+    /** Join with a code or link: it opens at once, or waits for the space's administrator. */
+    async joinSpace(code: string, { after }: { after?: number } = {}) {
+      const r = await api<{ space: Membership | null; pending: boolean; space_name?: string }>("/api/identity/spaces/join", { code });
+      if (r.space) {
+        rememberSpaceKind(r.space.kind);
+        markOpened();
+        restart(after);
+      } else await load();
+      return r;
     },
     /** Add the space this site is in now to the account (as its signed-in member, or the administrator). */
     async linkSpace() {
       const r = await api<{ space: Membership }>("/api/identity/spaces/link", {});
       rememberSpaceKind(r.space.kind);
-      location.reload();
+      markOpened();
+      restart();
     },
     async leaveSpace(tenant: string) {
       await api(`/api/identity/spaces/${encodeURIComponent(tenant)}`, undefined, "DELETE");

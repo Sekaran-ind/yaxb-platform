@@ -58,6 +58,8 @@ export type Session = {
   revoked_at: string | null;
 };
 export type Challenge = { id: string; channel: "sms" | "whatsapp" | "email" | "passkey"; subject_hash: string; code_hash: string; attempts: number; created_at: string; expires_at: string; consumed_at: string | null };
+/** A join request waiting for a space's administrator (SPC-8); the claim is sealed. */
+export type PendingJoin = { id: string; account_id: string; edition: Edition; tenant_id: string; space_name: string; kind: SpaceKind; request_id: string; sealed_claim: string; created_at: string };
 export type SigningKey = { kid: string; public_jwk: string; sealed_private: string; created_at: string; retired_at: string | null };
 
 export const IDENTITY_ACTIONS = [
@@ -100,6 +102,9 @@ export interface IdentityStore {
   count(key: string, windowStart: string): Promise<number>;
   audit(e: IdentityAuditEvent): Promise<void>;
   auditLog(accountId: string, limit: number): Promise<IdentityAuditEvent[]>;
+  pendingJoins(accountId: string): Promise<PendingJoin[]>;
+  putPendingJoin(p: PendingJoin): Promise<void>;
+  removePendingJoin(id: string): Promise<void>;
   /** Erase an account's methods, sessions and memberships (IDN-52), keeping the account row as a tombstone. */
   eraseAccount(accountId: string): Promise<void>;
 }
@@ -129,6 +134,9 @@ export const OTP_SENDS_PER_CLIENT_HOUR = 20;
 export const OTP_FAILURES_PER_DAY = 10;
 export const MAX_SESSIONS = 20;
 export const MAX_MEMBERSHIPS = 50;
+/** Spaces one account may start in a day (SPC-8). */
+export const SPACES_PER_DAY = 5;
+export const MAX_PENDING_JOINS = 10;
 
 /** What the person reads before an account is made (IDN-52). */
 export const CONSENT_NOTICE =
@@ -438,6 +446,26 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
       return (await store.memberships(accountId)).filter((m) => edition === "all" || m.edition === edition);
     },
 
+    /** May this account start another space today (SPC-8)? Counts the attempt. */
+    async mayStartSpace(accountId: string): Promise<boolean> {
+      return (await store.hit(`start:${accountId}`, dayOf(now()))) <= SPACES_PER_DAY;
+    },
+
+    /** Keep a join request that waits for the space's administrator (SPC-8). */
+    async addPendingJoin(accountId: string, p: { edition: Edition; tenant_id: string; space_name: string; kind: SpaceKind; request_id: string; claim: string }) {
+      await liveAccount(accountId);
+      const mine = await store.pendingJoins(accountId);
+      if (mine.length >= MAX_PENDING_JOINS) throw new IdentityError("You have too many requests to join waiting already.", 409);
+      const { claim, ...rest } = p;
+      await store.putPendingJoin({ id: crypto.randomUUID(), account_id: accountId, ...rest, space_name: rest.space_name.slice(0, 80), sealed_claim: await seal(options.secret, claim), created_at: iso(now()) });
+    },
+    /** The account's waiting join requests on an edition, with their claims (the Worker checks each). */
+    async pendingJoins(accountId: string, edition: Edition) {
+      const list = (await store.pendingJoins(accountId)).filter((p) => edition === "all" || p.edition === edition);
+      return Promise.all(list.map(async ({ sealed_claim, ...p }) => ({ ...p, claim: await unseal(options.secret, sealed_claim) })));
+    },
+    removePendingJoin: (id: string) => store.removePendingJoin(id),
+
     async auditLog(accountId: string, limit = 50) {
       return store.auditLog(accountId, Math.min(limit, 200));
     },
@@ -474,6 +502,7 @@ export function createMemoryIdentityStore(): IdentityStore {
   const keys = new Map<string, SigningKey>();
   const counters = new Map<string, number>();
   const events: IdentityAuditEvent[] = [];
+  const pending = new Map<string, PendingJoin>();
   const copy = <T>(x: T): T => structuredClone(x);
   const mkey = (a: string, e: string, t: string) => `${a}|${e}|${t}`;
   return {
@@ -507,7 +536,11 @@ export function createMemoryIdentityStore(): IdentityStore {
     count: async (key, w) => counters.get(`${key}|${w}`) ?? 0,
     audit: async (e) => void events.push(copy(e)),
     auditLog: async (id, limit) => events.filter((e) => e.account_id === id).reverse().slice(0, limit).map(copy),
+    pendingJoins: async (id) => [...pending.values()].filter((p) => p.account_id === id).map(copy),
+    putPendingJoin: async (p) => void pending.set(p.id, copy(p)),
+    removePendingJoin: async (id) => void pending.delete(id),
     eraseAccount: async (id) => {
+      for (const [k, p] of pending) if (p.account_id === id) pending.delete(k);
       for (const [k, m] of methods) if (m.account_id === id) methods.delete(k);
       for (const [k, m] of memberships) if (m.account_id === id) memberships.delete(k);
       for (const [k, s] of sessions) if (s.account_id === id) sessions.set(k, { ...s, revoked_at: s.revoked_at ?? new Date().toISOString() });

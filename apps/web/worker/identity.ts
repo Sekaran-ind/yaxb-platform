@@ -120,6 +120,12 @@ type Deps = {
   isAdmin: (c: Context<AppEnv>) => Promise<boolean>;
   /** The tenant this request acts in (the tenant context). */
   tenant: () => string;
+  /** Start a space on this edition (SPC-8): a new tenant, with the person as its administrator. */
+  startSpace: (c: Context<AppEnv>, input: { kind: SpaceKind; name: string; person: string }) => Promise<{ tenant_id: string; name: string; kind: SpaceKind; member_id: string; roles: string[] }>;
+  /** Use a join code (IDN-40): accepted at once (a new space's first administrator), or waiting for the administrator. */
+  joinSpace: (c: Context<AppEnv>, token: string, person: string) => Promise<{ tenant_id: string; space_name: string; kind: SpaceKind; request_id: string; claim: string; accepted: boolean }>;
+  /** Where a waiting join stands; accepted ones are collected into a member. */
+  collectJoin: (c: Context<AppEnv>, requestId: string, claim: string) => Promise<{ status: "collected"; member_id: string; roles: string[] } | { status: "pending" | "declined" | "gone" }>;
 };
 
 const json = (c: Context, status: number, error: string) => c.json({ error }, status as 400);
@@ -265,6 +271,19 @@ export function identityRoutes(deps: Deps) {
   r.post("/recovery-codes", (c) => call(c, async () => ({ codes: await svc(c).newRecoveryCodes(mustSignIn(c).sub) })));
 
   // ---- the session ----
+  /** Waiting joins whose administrator said yes become spaces; declined or vanished ones are dropped. */
+  async function settleJoins(c: Context<AppEnv>, accountId: string) {
+    const edition = editionOf(c.env);
+    for (const p of await svc(c).pendingJoins(accountId, edition)) {
+      if (p.edition !== edition) continue;
+      const r = await deps.collectJoin(c, p.request_id, p.claim).catch(() => ({ status: "pending" as const }));
+      if (r.status === "collected") {
+        await svc(c).addMembership(accountId, { edition, tenant_id: p.tenant_id, space_name: p.space_name, kind: p.kind, roles: r.roles, member_id: r.member_id });
+        await svc(c).removePendingJoin(p.id);
+      } else if (r.status !== "pending") await svc(c).removePendingJoin(p.id);
+    }
+  }
+
   /** Who is signed in, refreshing the session when the access token has ended (and the refresh token is good). */
   r.get("/me", async (c) => {
     let account = c.get("account");
@@ -282,11 +301,13 @@ export function identityRoutes(deps: Deps) {
     }
     if (!account) return c.json({ signedIn: false });
     try {
+      await settleJoins(c, account.sub).catch(() => undefined);
       const me = await svc(c).me(account.sub);
       const edition = editionOf(c.env);
+      const waiting = (await svc(c).pendingJoins(account.sub, edition)).map((p) => ({ space_name: p.space_name, kind: p.kind }));
       const spaces = me.memberships.filter((m) => edition === "all" || m.edition === edition);
       const tenant = getCookie(c, SPACE_COOKIE);
-      return c.json({ signedIn: true, level: account.lvl, account: me.account, methods: me.methods, spaces, space: spaces.find((m) => m.tenant_id === tenant) ?? null, edition });
+      return c.json({ signedIn: true, level: account.lvl, account: me.account, methods: me.methods, spaces, space: spaces.find((m) => m.tenant_id === tenant) ?? null, waiting, edition });
     } catch {
       setSession(c, null);
       return c.json({ signedIn: false });
@@ -361,6 +382,45 @@ export function identityRoutes(deps: Deps) {
       const m: Membership = await svc(c).addMembership(a.sub, { edition, tenant_id: tenant, space_name: info.name, kind: edition === "all" ? info.kind : edition, roles: member.roles, member_id: member.id });
       setSpace(c, m.tenant_id);
       return { space: m };
+    }),
+  );
+  /** Start a space (SPC-8): its administrator is the person; it opens at once. */
+  r.post("/spaces/start", (c) =>
+    call(c, async () => {
+      const a = mustSignIn(c);
+      if (a.lvl < 2) throw new IdentityError("Add a passkey or Google first: a recovery code is only for getting back in.", 403);
+      const b = await body(c, z.object({ kind: z.enum(["family", "business", "community"]), name: z.string().trim().min(2, "Give it a name.").max(80) }));
+      if (!b) throw new IdentityError("Say what it is and give it a name.");
+      const edition = editionOf(c.env);
+      if (edition !== "all" && b.kind !== edition) throw new IdentityError(`A ${b.kind} is started on its own site: ${b.kind}.anjalai.cc.`, 409);
+      if (!(await svc(c).mayStartSpace(a.sub))) throw new IdentityError("You've started enough spaces for today. Try again tomorrow.", 429);
+      const person = (await svc(c).me(a.sub)).account.display_name ?? "Administrator";
+      const s = await deps.startSpace(c, { kind: b.kind, name: b.name, person });
+      const m = await svc(c).addMembership(a.sub, { edition, tenant_id: s.tenant_id, space_name: s.name, kind: s.kind, roles: s.roles, member_id: s.member_id }, { created: true });
+      setSpace(c, m.tenant_id);
+      return { space: m };
+    }),
+  );
+  /** Join with a code or link (IDN-40): a membership at once, or a request the administrator answers. */
+  r.post("/spaces/join", (c) =>
+    call(c, async () => {
+      const a = mustSignIn(c);
+      await limit(c, "join");
+      const b = await body(c, z.object({ code: z.string().trim().min(1).max(400) }));
+      const token = b?.code.match(/yaxb_join_[A-Za-z0-9_-]+/)?.[0];
+      if (!token) throw new IdentityError("That isn't a join link or code. Paste the whole link you were sent.");
+      const person = (await svc(c).me(a.sub)).account.display_name ?? "A member";
+      const j = await deps.joinSpace(c, token, person);
+      const edition = editionOf(c.env);
+      if (j.accepted) {
+        const r = await deps.collectJoin(c, j.request_id, j.claim);
+        if (r.status !== "collected") throw new IdentityError("That join code couldn't be used. Ask for a new one.", 409);
+        const m = await svc(c).addMembership(a.sub, { edition, tenant_id: j.tenant_id, space_name: j.space_name, kind: j.kind, roles: r.roles, member_id: r.member_id });
+        setSpace(c, m.tenant_id);
+        return { space: m, pending: false };
+      }
+      await svc(c).addPendingJoin(a.sub, { edition, tenant_id: j.tenant_id, space_name: j.space_name, kind: j.kind, request_id: j.request_id, claim: j.claim });
+      return { space: null, pending: true, space_name: j.space_name };
     }),
   );
   r.delete("/spaces/:tenant", (c) =>
