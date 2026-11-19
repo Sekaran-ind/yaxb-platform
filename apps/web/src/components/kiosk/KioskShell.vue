@@ -212,7 +212,15 @@ async function onSpacePick(s: Membership) {
   }
   done(s);
 }
-const mySpaces = computed(() => (identity.me.value.signedIn ? identity.me.value.spaces : []));
+const mySpaces = identity.spacesHere;
+// Child mode (SPC-9): an open space a child may not use is closed (the app starts again without it).
+watch(
+  () => [identity.childMode.value, identity.me.value.signedIn && identity.me.value.space] as const,
+  ([childOn, open]) => {
+    if (!childOn || !open || mySpaces.value.some((s) => s.edition === open.edition && s.tenant_id === open.tenant_id)) return;
+    void identity.openSpace(null).catch(() => undefined);
+  },
+);
 /**
  * "Where are you today?": after the person, when their account has several spaces here and none is
  * open (once per visit, unless asked for again). Never at the front desk or in another surface.
@@ -763,7 +771,7 @@ const services: Record<string, ServiceHandler> = {
   "identity.status": async () => {
     await identity.reload();
     const m = identity.me.value;
-    return m.signedIn ? { signedIn: true, name: m.account.display_name ?? "", spaces: m.spaces.length, open: m.space?.space_name ?? null } : { signedIn: false };
+    return m.signedIn ? { signedIn: true, name: m.account.display_name ?? "", spaces: mySpaces.value.length, open: m.space?.space_name ?? null } : { signedIn: false };
   },
   "identity.passkey.signin": async () => {
     if (identity.signedIn.value) return { signedIn: true };
@@ -777,6 +785,8 @@ const services: Record<string, ServiceHandler> = {
   },
   "identity.passkey.create": async (input) => {
     if (identity.signedIn.value) return { signedIn: true };
+    // A child's profile sits under a guardian's account (IDN-5): a child doesn't make one.
+    if (identity.childMode.value) throw new Error("A parent makes the account. Ask a parent.");
     const i = input as { name?: unknown; consent?: unknown };
     if (i.consent !== true && i.consent !== "true") throw new Error("Tick \u201cI've read this\u201d to make your account.");
     if (!identity.passkeys.value) throw new Error("This device or address can't make passkeys. Choose Google instead.");
@@ -789,6 +799,7 @@ const services: Record<string, ServiceHandler> = {
   },
   "identity.google": async () => {
     if (identity.signedIn.value) return { signedIn: true };
+    if (identity.childMode.value) throw new Error("A child doesn't sign in with Google. Ask a parent.");
     if (!identity.config.value?.google) throw new Error("Sign in with Google isn't set up on this site yet. Choose a passkey.");
     keepConversation();
     identity.google(`${location.pathname}${location.search}`);
@@ -804,9 +815,9 @@ const services: Record<string, ServiceHandler> = {
     const m = identity.me.value;
     if (!m.signedIn) throw new Error("Sign in first.");
     if (justOpened() && m.space) return { space: m.space.space_name };
-    if (!m.spaces.length) throw new Error("You don't have a space here yet. Start one, or join one with a code.");
-    if (m.spaces.length === 1) {
-      const only = m.spaces[0]!;
+    if (!mySpaces.value.length) throw new Error(identity.childMode.value ? "There's no space for you here yet. Ask a parent." : "You don't have a space here yet. Start one, or join one with a code.");
+    if (mySpaces.value.length === 1) {
+      const only = mySpaces.value[0]!;
       if (m.space?.tenant_id === only.tenant_id) return { space: only.space_name };
       keepConversation();
       await identity.openSpace(only.tenant_id, only.edition, { after: JOURNEY_RESTART_MS });
@@ -820,6 +831,7 @@ const services: Record<string, ServiceHandler> = {
     return { space: s.space_name };
   },
   "identity.space.start": async (input) => {
+    if (identity.childMode.value) throw new Error("A parent starts a space. Ask a parent.");
     const i = input as { kind?: unknown; name?: unknown };
     if (justOpened() && identity.me.value.signedIn && identity.me.value.space) return { space: identity.me.value.space.space_name };
     keepConversation();
@@ -827,6 +839,7 @@ const services: Record<string, ServiceHandler> = {
     return { space: started.space_name };
   },
   "identity.space.join": async (input) => {
+    if (identity.childMode.value) throw new Error("A parent adds you to a space. Ask a parent.");
     if (justOpened() && identity.me.value.signedIn && identity.me.value.space) return { space: identity.me.value.space.space_name, pending: false };
     keepConversation();
     const r = await identity.joinSpace(String((input as { code?: unknown }).code ?? ""), { after: JOURNEY_RESTART_MS });
@@ -927,7 +940,7 @@ const playerButtons = computed<PlayerButton[]>(() => {
   else if (identity.config.value?.enabled)
     out.push(me.signedIn ? { id: "account", label: me.space?.space_name ?? me.account.display_name ?? "Account", initials: initialsOf(me.account.display_name ?? "A"), accent: true } : { id: "account", label: "Sign in", icon: UserRound });
   // With profiles, the space is a button of its own once the account has more than one (SPC-4).
-  if (offers("profiles") && me.signedIn && me.spaces.length > 1) out.push({ id: "spaces", label: me.space?.space_name ?? "Spaces", icon: Building2 });
+  if (offers("profiles") && me.signedIn && mySpaces.value.length > 1) out.push({ id: "spaces", label: me.space?.space_name ?? "Spaces", icon: Building2 });
   out.push({ id: "conversations", label: "Conversations", icon: MessagesSquare, badge: nb.threads.value.length || undefined, pressed: threadsOpen.value });
   if (kioskViewer.value.member && !childMode.on.value) out.push({ id: "contacts", label: "Contacts", icon: Users });
   if (childMode.on.value) out.push({ id: "child", label: "Child lock", icon: ShieldCheck, accent: true });
@@ -942,7 +955,7 @@ function onPlayerButton(id: string) {
   if (id === "account") {
     const me = identity.me.value;
     // Signed in with several spaces: choose one; otherwise the guided journey.
-    if (me.signedIn && me.spaces.length > 1 && !identity.locked.value) return void (spacePickerAsked.value = true);
+    if (me.signedIn && mySpaces.value.length > 1 && !identity.locked.value) return void (spacePickerAsked.value = true);
     return void startJourney("your-account");
   }
   if (id === "spaces") return identity.locked.value ? openPrefs("account") : void (spacePickerAsked.value = true);

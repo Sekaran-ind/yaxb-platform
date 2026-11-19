@@ -39,10 +39,10 @@ async function pick(s: Membership) {
   <section class="flex h-full min-h-0 flex-col items-center justify-center gap-8 overflow-y-auto px-4 py-8 text-center" aria-labelledby="space-title">
     <div>
       <h2 id="space-title" class="text-2xl font-semibold tracking-tight text-ink">Where are you today?</h2>
-      <p class="mt-1 text-sm text-gray-600">{{ me?.account.display_name ? `${me.account.display_name}, choose` : "Choose" }} your family, business or community. You can switch any time.</p>
+      <p class="mt-1 text-sm text-gray-600">{{ me?.account.display_name ? `${me.account.display_name}, choose` : "Choose" }} {{ id.childMode.value ? "where you are." : "your family, business or community." }} You can switch any time.</p>
     </div>
     <ul class="grid w-full max-w-2xl gap-3 @lg:grid-cols-2">
-      <li v-for="s in me?.spaces ?? []" :key="key(s)">
+      <li v-for="s in id.spacesHere.value" :key="key(s)">
         <button
           type="button"
           :class="cn('card flex w-full items-center gap-3 p-4 text-left transition hover:border-gray-300', isOpen(s) && 'ring-2 ring-brand')"
@@ -61,7 +61,7 @@ async function pick(s: Membership) {
       </li>
     </ul>
     <div class="flex flex-wrap justify-center gap-2">
-      <button type="button" class="btn-light" @click="emit('more')"><Plus class="size-4" aria-hidden="true" /> Start or join another</button>
+      <button v-if="!id.childMode.value" type="button" class="btn-light" @click="emit('more')"><Plus class="size-4" aria-hidden="true" /> Start or join another</button>
       <button type="button" class="btn-ghost" @click="emit('later')">Not now</button>
     </div>
     <p v-if="error" role="alert" class="text-sm text-red-800">{{ error }}</p>
