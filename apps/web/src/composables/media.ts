@@ -1,13 +1,16 @@
 // The kiosk's media host (MED-1..5, MED-10) for photo fields (yaxb-journeys MediaCapture):
-// - kept on this device by hash; put on the box at once when the field keeps it there (`keep: box`),
-//   or later (`flushMedia`) when the box can't be reached now;
+// - kept on this device by hash; put on the box whenever one is connected (decided 2026-11-20),
+//   unless the field says `keep: device`; later (`flushMedia`) when the box can't be reached now.
+//   Cloud storage (`keep: server`, R2) is the paid tier: until then such media goes to the box too;
 // - shown from this device, else fetched from the box (a staff device opening a request);
-// - read on this device (Florence-2, readImage), never by a cloud model here;
+// - read on this device: text with Tesseract.js in English and the kiosk's language (ocrImage), a
+//   description with Florence-2 (readImage); never by a cloud model here;
 // - no camera while the child safety lock is on (MED-10).
 import type { MediaHost } from "@sekaran-ind/yaxb-journeys/vue";
 import type { MediaRef } from "@sekaran-ind/yaxb-core/journeys";
 import { getMediaRow, pullFromBox, pushToBox, putMedia, setMediaText } from "@/lib/browser/media";
 import { readImage, transcribeAudio } from "@/lib/browser/offline";
+import { ocrImage } from "@/lib/browser/ocr";
 import { settings } from "./settings";
 import { useChildMode } from "./child";
 
@@ -30,8 +33,9 @@ export function kioskMediaHost(): MediaHost {
   return {
     async save(blob, field) {
       const ref = await putMedia(blob);
-      if (field.keep === "box") {
-        const b = box();
+      // The box whenever one is connected; a field may keep its media on this device only.
+      const b = box();
+      if (field.keep !== "device" && (b || field.keep === "box" || field.keep === "server")) {
         if (!b || !(await pushToBox(b, ref.hash))) waiting.add(ref.hash);
       }
       return ref;
@@ -50,7 +54,7 @@ export function kioskMediaHost(): MediaHost {
     async read(ref, mode) {
       const row = await getMediaRow(ref.hash);
       if (!row) return null;
-      const text = await readImage(row.blob, mode);
+      const text = mode === "ocr" ? await ocrImage(row.blob, settings.agent.language) : await readImage(row.blob, mode);
       if (text) await setMediaText(ref.hash, text);
       return text || null;
     },
