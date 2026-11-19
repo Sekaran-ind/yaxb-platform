@@ -21,10 +21,16 @@ function addressEdition(): Surface {
 const BUILT = addressEdition();
 const SPACE_KIND = "yaxb.space.kind";
 /**
- * The open space's kind (SPC-3): the sections follow the space the person chose, remembered from the
- * last start, on every address (a Business space opened on family.anjalai.cc shows Business's).
+ * The open space's kind (SPC-3, SPC-5): the sections follow the space this device is kept for, or the
+ * person's open space, on every address (a Business space opened on family.anjalai.cc shows
+ * Business's). The Worker checks both and writes the kind into the page (`yaxb-sections`); the kind
+ * remembered from the last start covers pages it didn't write (the native app, Vite in development).
  */
 function spaceKind(): Kind | null {
+  if (!NATIVE && typeof document !== "undefined") {
+    const k = document.querySelector<HTMLMetaElement>('meta[name="yaxb-sections"]')?.content;
+    if (k === "family" || k === "business" || k === "community") return k;
+  }
   try {
     const k = localStorage.getItem(SPACE_KIND);
     return k === "family" || k === "business" || k === "community" ? k : null;

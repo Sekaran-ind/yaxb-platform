@@ -218,7 +218,7 @@ const mySpaces = computed(() => (identity.me.value.signedIn ? identity.me.value.
  * open (once per visit, unless asked for again). Never at the front desk or in another surface.
  */
 const showSpacePicker = computed(
-  () => !props.embedded && !restricted.value && !showPicker.value && (spacePickerAsked.value || (mySpaces.value.length > 1 && identity.me.value.signedIn && !identity.me.value.space && !spaceLater.value)),
+  () => !props.embedded && !restricted.value && !identity.locked.value && !showPicker.value && (spacePickerAsked.value || (mySpaces.value.length > 1 && identity.me.value.signedIn && !identity.me.value.space && !spaceLater.value)),
 );
 function spaceNotNow() {
   spacePicked?.(null);
@@ -942,10 +942,10 @@ function onPlayerButton(id: string) {
   if (id === "account") {
     const me = identity.me.value;
     // Signed in with several spaces: choose one; otherwise the guided journey.
-    if (me.signedIn && me.spaces.length > 1) return void (spacePickerAsked.value = true);
+    if (me.signedIn && me.spaces.length > 1 && !identity.locked.value) return void (spacePickerAsked.value = true);
     return void startJourney("your-account");
   }
-  if (id === "spaces") return void (spacePickerAsked.value = true);
+  if (id === "spaces") return identity.locked.value ? openPrefs("account") : void (spacePickerAsked.value = true);
   if (id === "child") return openPrefs("child");
   if (id === "prefs") return prefsOpen.value ? closePrefs() : openPrefs("language");
   if (id === "contacts") return void router.push({ path: "/kiosk", query: { screen: "services", staff: "team" } });

@@ -1,6 +1,6 @@
 // Identity in the platform database (PLATFORM_DB, migrations-platform 0002), shared by every edition.
 import type { D1Like } from "../stores/d1.js";
-import type { Account, Challenge, IdentityAuditEvent, IdentityStore, Membership, Method, PendingJoin, Session, SigningKey } from "./index.js";
+import type { Account, Challenge, DeviceLock, IdentityAuditEvent, IdentityStore, Membership, Method, PendingJoin, Session, SigningKey } from "./index.js";
 
 type MembershipRow = Omit<Membership, "roles"> & { roles: string };
 type AuditRow = Omit<IdentityAuditEvent, "details"> & { details: string | null };
@@ -131,6 +131,21 @@ export function createD1IdentityStore(db: D1Like): IdentityStore {
         p.created_at,
       )),
     removePendingJoin: async (id) => void (await run("DELETE FROM pending_joins WHERE id = ?1", id)),
+    deviceLock: (id) => first<DeviceLock>("SELECT id, edition, tenant_id, space_name, label, secret_hash, locked_by, created_at, unlocked_at FROM device_locks WHERE id = ?1", id),
+    deviceLocks: (e, t) => all<DeviceLock>("SELECT id, edition, tenant_id, space_name, label, secret_hash, locked_by, created_at, unlocked_at FROM device_locks WHERE edition = ?1 AND tenant_id = ?2 ORDER BY created_at DESC, rowid DESC", e, t),
+    putDeviceLock: async (l) =>
+      void (await run(
+        "INSERT INTO device_locks (id, edition, tenant_id, space_name, label, secret_hash, locked_by, created_at, unlocked_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT (id) DO UPDATE SET unlocked_at = ?9",
+        l.id,
+        l.edition,
+        l.tenant_id,
+        l.space_name,
+        l.label,
+        l.secret_hash,
+        l.locked_by,
+        l.created_at,
+        l.unlocked_at,
+      )),
     eraseAccount: async (id) => {
       await run("DELETE FROM pending_joins WHERE account_id = ?1", id);
       await run("DELETE FROM account_methods WHERE account_id = ?1", id);

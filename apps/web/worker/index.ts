@@ -26,12 +26,12 @@ export { TeamHub } from "./team";
 import { clientId, fromApp, isAdmin, MODERATOR_COOKIE, moderatorCookie, moderatorOf, safeEqual, sessionId, setAdminCookie, setModeratorCookie } from "./session";
 import { getCookie } from "hono/cookie";
 import { accountContext, identityRoutes } from "./identity";
-import { IdentityError, type Membership, type TokenClaims } from "@sekaran-ind/yaxb-core/identity";
+import { IdentityError, type DeviceLockView, type Membership, type TokenClaims } from "@sekaran-ind/yaxb-core/identity";
 
 export type AppEnv = {
   Bindings: Bindings;
   /** `account` and `space`: the signed-in account and its open space, checked on this request (identity.ts). */
-  Variables: { reviewer: Reviewer; account?: TokenClaims; space?: Membership };
+  Variables: { reviewer: Reviewer; account?: TokenClaims; space?: Membership; lock?: DeviceLockView };
 };
 
 const MAX_CHAT_BODY = 4_500_000;
@@ -104,7 +104,7 @@ app.use("/api/*", accountContext);
  * The edition this request acts in (SUR-14): the open space's, else the address's, else the
  * SURFACE setting, else the combined site. It chooses the database (edition.ts) and what is served.
  */
-app.use("/api/*", (c, next) => editionContext.run(editionFor({ space: c.get("space")?.edition, host: new URL(c.req.url).hostname, fallback: settings(c.env).SURFACE }), () => next()));
+app.use("/api/*", (c, next) => editionContext.run(editionFor({ space: c.get("lock")?.edition ?? c.get("space")?.edition, host: new URL(c.req.url).hostname, fallback: settings(c.env).SURFACE }), () => next()));
 
 /**
  * Routes for features the edition doesn't offer answer 404 (SUR-4, yaxb-core context). Joining is
@@ -128,7 +128,10 @@ app.use("/api/*", async (c, next) => {
   const cookie = getCookie(c, MODERATOR_COOKIE) ?? "";
   const id = cookie.slice(0, Math.max(cookie.indexOf("."), 0));
   const space = c.get("space");
-  if (space) tenant = space.tenant_id;
+  const lock = c.get("lock");
+  // A device kept for one space acts only there (SPC-5, SPC-7).
+  if (lock) tenant = lock.tenant_id;
+  else if (space) tenant = space.tenant_id;
   else if (/^[0-9a-f-]{36}$/.test(id)) tenant = (await tenantOfMember(c.env, id)) ?? DEFAULT_TENANT;
   else {
     const asked = c.req.query("tenant");
@@ -799,6 +802,10 @@ app.route(
     limited: (c, key) => withinLimit("form", c.env.FORM_LIMITER, key),
     tenant: currentTenant,
     isAdmin,
+    async spaceAdministrator(c) {
+      const who = await moderatorOf(c, moderators(c.env));
+      return Boolean(who?.roles.includes("administrator")) || (await isAdmin(c));
+    },
     async spaceInfo(env, tenant) {
       const own = OWN_SPACE[currentEdition()]!;
       if (tenant === DEFAULT_TENANT) return own;
@@ -1358,19 +1365,33 @@ function securityHeaders(env: Bindings, url: URL): Record<string, string> {
  * The one index.html serves every address (SUR-14): the address's edition, title and description
  * are written into it here, and the app reads `yaxb-edition` to choose its home page and brand.
  */
-function pageFor(res: Response, edition: Edition): Response {
+function pageFor(res: Response, edition: Edition, sections: string | null): Response {
   if (!(res.headers.get("content-type") ?? "").includes("text/html")) return res;
   const head = SURFACE_HEADS[edition];
+  const metas = `<meta name="yaxb-edition" content="${edition}">${sections ? `<meta name="yaxb-sections" content="${sections}">` : ""}`;
   return new HTMLRewriter()
     .on("title", { element: (e) => void e.setInnerContent(head.title) })
     .on('meta[name="description"]', { element: (e) => void e.setAttribute("content", head.description) })
-    .on("head", { element: (e) => void e.append(`<meta name="yaxb-edition" content="${edition}">`, { html: true }) })
+    .on("head", { element: (e) => void e.append(metas, { html: true }) })
     .transform(res);
+}
+
+/**
+ * The sections a page shows (SPC-3, SPC-5): the kind of the space this device is kept for, else of
+ * the account's open space, both checked here as on /api. Null: the app decides (the address's).
+ */
+async function sectionsFor(c: Context<AppEnv>): Promise<string | null> {
+  await accountContext(c, async () => undefined);
+  const lock = c.get("lock");
+  if (lock) return lock.edition === "all" ? null : lock.edition;
+  return c.get("space")?.kind ?? null;
 }
 
 app.get("*", async (c) => {
   const url = new URL(c.req.url);
-  const res = pageFor(await c.env.ASSETS.fetch(c.req.raw), editionFor({ host: url.hostname, fallback: settings(c.env).SURFACE }));
+  // Only pages (no file extension) need the space: assets skip the session check.
+  const page = !/\.[a-z0-9]+$/i.test(url.pathname);
+  const res = pageFor(await c.env.ASSETS.fetch(c.req.raw), editionFor({ host: url.hostname, fallback: settings(c.env).SURFACE }), page ? await sectionsFor(c).catch(() => null) : null);
   const out = new Response(res.body, res);
   for (const [k, v] of Object.entries(securityHeaders(c.env, url))) out.headers.set(k, v);
   return out;
