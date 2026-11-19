@@ -70,5 +70,17 @@
 	<string>The kiosk listens only after you tap the microphone, so you can ask your question by voice.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Your spoken question is turned into text so the kiosk can answer it.</string>
+	<!-- Signing in through the system browser hands back to the app (IDN-43). -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>ai.yaxb.kiosk</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>ai.yaxb.kiosk</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
