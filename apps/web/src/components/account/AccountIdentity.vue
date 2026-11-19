@@ -137,8 +137,8 @@ async function copyCodes() {
               <span v-if="s.roles.length" class="block text-xs text-gray-500">{{ s.roles.join(", ") }}</span>
             </span>
             <span v-if="me.space?.tenant_id === s.tenant_id && s.edition === (me.space?.edition ?? '')" class="inline-flex items-center gap-1 text-sm text-success"><Check class="size-4" aria-hidden="true" /> Open</span>
-            <button v-else type="button" class="btn-light h-9 px-3 text-sm" :disabled="busy !== null" @click="run('space', () => id.openSpace(s.tenant_id, s.edition))">{{ s.edition !== me.edition && me.edition === "all" ? "Open its site" : "Open" }}</button>
-            <ConfirmAction label="Leave" :message="`Take “${s.space_name}” off your account? You can add it again as its member.`" trigger-class="btn-ghost h-9 px-2 text-sm" @confirm="run('leave', () => id.leaveSpace(s.tenant_id))" />
+            <button v-else type="button" class="btn-light h-9 px-3 text-sm" :disabled="busy !== null" @click="run('space', () => id.openSpace(s.tenant_id, s.edition))">Open</button>
+            <ConfirmAction label="Leave" :message="`Take “${s.space_name}” off your account? You can add it again as its member.`" trigger-class="btn-ghost h-9 px-2 text-sm" @confirm="run('leave', () => id.leaveSpace(s.tenant_id, s.edition))" />
           </li>
         </ul>
         <ul v-if="me.waiting?.length" class="space-y-1 text-sm text-gray-700">

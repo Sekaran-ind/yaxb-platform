@@ -13,5 +13,6 @@
     "noEmit": true,
     "types": ["vite/client"]
   },
-  "include": ["worker/**/*.ts", "worker-configuration.d.ts", "worker/env.d.ts"]
+  "include": ["worker/**/*.ts", "worker-configuration.d.ts", "worker/env.d.ts"],
+  "exclude": ["worker/test"]
 }

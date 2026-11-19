@@ -72,10 +72,12 @@ export function roomName(a: string, b: string, channel: Channel = "chat"): strin
 
 /**
  * The name of a tenant's own hub (TEAM-52): presence, invitations and rooms never cross tenants.
- * The default tenant keeps the original name, so its hub carries on unchanged.
+ * One Worker serves every edition (SUR-14), and each edition has its own tenants (even its own
+ * default one), so another edition's hub carries its name. The combined site's names are unchanged.
  */
-export function hubName(tenant: string): string {
-  return tenant === DEFAULT_TENANT ? "team" : `team:${tenant}`;
+export function hubName(tenant: string, edition = "all"): string {
+  const base = tenant === DEFAULT_TENANT ? "team" : `team:${tenant}`;
+  return edition === "all" ? base : `${base}@${edition}`;
 }
 
 /**

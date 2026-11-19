@@ -23,7 +23,11 @@ const schema = z.object({
   MAILCHIMP_API_KEY: z.string().regex(/-[a-z]{2}\d+$/, "expected a Mailchimp key ending in -<dc>").optional(),
   MAILCHIMP_AUDIENCE_ID: z.string().optional(),
   KIOSK_BOX_ORIGINS: z.string().optional(),
-  /** The surface this Worker is (SUR-4, yaxb-core context): routes for features it lacks answer 404; unset: all. */
+  /**
+   * The edition for an address that names none (SUR-14): one Worker serves every address, and each
+   * request's edition is the open space's, else the address's (family.anjalai.cc), else this; unset:
+   * the combined site ("all"). Useful for a workers.dev preview.
+   */
   SURFACE: z.enum(SURFACES).optional(),
   /**
    * Origins of the native app's pages (PLT-14), comma-separated. The app sends its session id in

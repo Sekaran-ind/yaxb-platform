@@ -50,6 +50,8 @@ const fail = (m) => {
 };
 
 // ---------- args ----------
+/** The one Worker's databases: the portal's (yaxb), each edition's, and the shared platform database. */
+const DATABASES = ["yaxb", "anjal-family", "anjal-business", "anjal-community", "anjal-platform"];
 const COMMANDS = ["start", "stop", "restart", "status", "logs", "cli", "test", "deploy", "box", "box-deploy", "help"];
 
 function parseArgs(argv) {
@@ -218,9 +220,8 @@ function ensureSetup() {
   }
   buildCore();
   ensureDevVars();
-  node(WRANGLER, ["d1", "migrations", "apply", "yaxb", "--local"], WEB_DIR, "Applying local D1 migrations", { quiet: true });
-  // The shared platform database beside the edition's (PLA-5).
-  node(WRANGLER, ["d1", "migrations", "apply", "anjal-platform", "--local"], WEB_DIR, "Applying local platform D1 migrations", { quiet: true });
+  // Every edition's database (one Worker serves them all, SUR-11) and the shared platform database (PLA-5).
+  for (const db of DATABASES) node(WRANGLER, ["d1", "migrations", "apply", db, "--local"], WEB_DIR, `Applying local D1 migrations (${db})`, { quiet: true });
 }
 
 // ---------- process control ----------
@@ -401,6 +402,8 @@ function test() {
   run(process.execPath, ["--test", "src/cli.test.js"], join(ROOT, "apps", "cli"), "CLI tests");
   info("yaxb-box tests");
   run(process.execPath, ["--disable-warning=ExperimentalWarning", "--test", "test/box.test.js"], BOX_DIR, "yaxb-box tests");
+  info("Worker tests");
+  node(bin("vitest", "vitest.mjs"), ["run", "-c", "vitest.worker.config.ts"], WEB_DIR, "Worker tests");
   info("Web typecheck and lint");
   node(VUE_TSC, ["-b"], WEB_DIR, "Web typecheck");
   node(bin("eslint", "bin", "eslint.js"), ["."], WEB_DIR, "Web lint");
@@ -414,8 +417,7 @@ function deploy() {
   }
   ensureSetup();
   info("Applying D1 migrations (remote)...");
-  node(WRANGLER, ["d1", "migrations", "apply", "yaxb", "--remote"], WEB_DIR, "Remote D1 migrations");
-  node(WRANGLER, ["d1", "migrations", "apply", "anjal-platform", "--remote"], WEB_DIR, "Remote platform D1 migrations");
+  for (const db of DATABASES) node(WRANGLER, ["d1", "migrations", "apply", db, "--remote"], WEB_DIR, `Remote D1 migrations (${db})`);
   info("Building and deploying the Worker...");
   node(VITE, ["build"], WEB_DIR, "Build");
   node(WRANGLER, ["deploy"], WEB_DIR, "Worker deploy");

@@ -66,3 +66,40 @@ export function servesApi(ctx: Context, path: string): boolean {
 
 /** The surface's name for people. */
 export const surfaceName = (ctx: Context) => (ctx.surface === "family" ? "Anjalai Family" : ctx.surface === "business" ? "Anjalai for Business" : ctx.surface === "community" ? "Anjalai Community" : "Yaxb.ai");
+
+// ---- one address for every edition (SUR-14) ---------------------------------------------------
+//
+// One Worker and one build serve every address. Each request's edition is the open space's (its
+// membership checked by the Worker), else the address's (`family.anjalai.cc` is Family, and so on),
+// else the combined site's. The edition chooses the sections and, on the Worker, the database.
+
+/** The editions an address or a space can name; "all" is the combined site (the portal). */
+export const EDITION_SURFACES = ["family", "business", "community"] as const;
+
+/**
+ * The edition an address names, or null: the first label of the host (`family.anjalai.cc`,
+ * `business.localhost`). Any other host (anjalai.cc, yaxb.ai, workers.dev, localhost) names none.
+ */
+export function surfaceOfHost(host: string): Surface | null {
+  const first = host.toLowerCase().replace(/:\d+$/, "").split(".");
+  if (first.length < 2) return null;
+  return (EDITION_SURFACES as readonly string[]).includes(first[0]!) ? (first[0] as Surface) : null;
+}
+
+/** A request's edition: the open space's, else the address's, else the fallback (a Worker setting), else "all". */
+export function chooseSurface(input: { space?: string | null; host?: string | null; fallback?: string | null }): Surface {
+  const known = (s: string | null | undefined): s is Surface => Boolean(s) && (SURFACES as readonly string[]).includes(s!);
+  if (known(input.space)) return input.space;
+  const fromHost = input.host ? surfaceOfHost(input.host) : null;
+  if (fromHost) return fromHost;
+  return known(input.fallback) ? input.fallback : "all";
+}
+
+/** Each address's page title and description (the Worker writes them into the one index.html). */
+export const SURFACE_HEADS: Record<Surface | "native", { title: string; description: string }> = {
+  all: { title: "Yaxb.ai", description: "Yaxb.ai: AI kiosks that answer with facts and sources, in your own language, for families and communities (Anjalai Family), small businesses (Anjalai for Business) and enterprises in regulated care (ClinüxFlow)." },
+  family: { title: "Anjalai Family", description: "Anjalai Family: one shared notebook the whole family can ask in its own language, key dates that come up by themselves, and a protected space." },
+  business: { title: "Anjalai for Business", description: "Anjalai for Business: connect with your customers, design your services with the AI designer, and get found on Anjalai." },
+  community: { title: "Anjalai Community", description: "Anjalai Community: for apartment associations, clubs and committees. Residents raise complaints and book the hall, the committee answers, and notices reach everyone in their own language." },
+  native: { title: "Anjalai", description: "Anjalai, the kiosk." },
+};

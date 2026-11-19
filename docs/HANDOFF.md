@@ -38,40 +38,24 @@ Merged as PRs #32 and #34 (#33 shipped inside #34) and deployed to all four site
 
 **Accounts are off on the live sites until `IDENTITY_SECRET` is set** (`/api/identity/config` says `enabled: false`). Setting production secrets is for the owner to run:
 1. Make one secret of 32+ characters and keep it in the password manager: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`.
-2. Put **the same value** on every Worker, from `apps/web`: `npx wrangler secret put IDENTITY_SECRET -c wrangler.family.jsonc`, the same with `wrangler.business.jsonc` and `wrangler.community.jsonc`, and `npx wrangler secret put IDENTITY_SECRET` (the portal). Changing it later signs everyone out and makes the stored signing keys unreadable.
-3. Optional, Google: a Google Cloud project → APIs & Services → OAuth consent screen (external, the app's name and the support email), then Credentials → OAuth client ID → Web application, with an authorised redirect URI per site: `https://family.anjalai.cc/api/identity/google/callback`, the same for business, community and anjalai.cc. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` on every Worker. Without them, Google isn't offered.
+2. Put it on the one Worker, from `apps/web`: `npx wrangler secret put IDENTITY_SECRET` (since one address serves every edition, `yaxb-web` is the only Worker). Changing it later signs everyone out and makes the stored signing keys unreadable.
+3. Optional, Google: a Google Cloud project → APIs & Services → OAuth consent screen (external, the app's name and the support email), then Credentials → OAuth client ID → Web application, with an authorised redirect URI per site: `https://family.anjalai.cc/api/identity/google/callback`, the same for business, community and anjalai.cc. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` on the Worker. Without them, Google isn't offered.
 
 No redeploy is needed after setting a secret.
 
-## Next: one address for every edition (do this first)
+## One address for every edition: built, waiting for the owner's deploy
 
-Decided 2026-11-19. Today each edition is its own site and Worker (family., business., community.anjalai.cc, and the portal). With spaces, one address can serve everyone: the open space decides the sections and which database is used. Do this before more edition features are built on the four-site setup.
+Decided 2026-11-19, built in the PR "One address for every edition" (SUR-14). One Worker, `yaxb-web` (`apps/web/wrangler.jsonc`), and one build serve every address. Each request acts in one edition: the open space's, else the address's (`family.anjalai.cc` is Family), else the portal. The edition chooses the sections and the database (`worker/edition.ts`: `DB` is the portal's yaxb, `DB_FAMILY`, `DB_BUSINESS`, `DB_COMMUNITY`). No data moves. Switching space stays on the same address. The per-edition wrangler files and `--mode family|business|community` builds are gone.
 
-**The plan (option 1: one app, one Worker, three databases).** About a day or two, one PR. No data moves.
-1. **Worker.**
-   - One wrangler file for one Worker. It binds the three edition databases (anjal-family, anjal-business, anjal-community, under names such as `DB_FAMILY`, `DB_BUSINESS`, `DB_COMMUNITY`), the portal's `yaxb` and `PLATFORM_DB`.
-   - Choose the edition for each request:
-     - the open space's edition (`c.get("space").edition`, checked by `accountContext`);
-     - else the address (`family.anjalai.cc` is Family, and so on);
-     - else the portal.
-   - Keep the choice in an AsyncLocalStorage like `tenantContext` (worker/kiosk.ts). All 13 uses of `env.DB` are in `worker/kiosk.ts`: they become `dbFor(env, edition())`.
-   - The 7 reads of the fixed `SURFACE` setting (`servesApi` and others) read the request's edition.
-   - Key every per-env cache in kiosk.ts (`perTenant`, `kiosks`, `caseServices`, …) by edition as well as tenant, so one edition's data can never be served from another's cache. Test this.
-2. **Front end.**
-   - `VITE_SURFACE` stops being a build setting: one build serves every address.
-   - `lib/surface.ts` takes the edition from the address on start and from the open space after sign-in. It already follows the space's kind on the combined site (`rememberSpaceKind`). About 15 files read it, mostly through `offers()`.
-   - Each subdomain keeps its home page (Family's, Business's and Community's moods, the portal's at anjalai.cc and yaxb.ai) and opens the app with that kind of space chosen.
-   - `identity.openSpace` no longer jumps to another site: switching space stays on the same address.
-3. **Deploying.**
-   - One Worker with every custom domain: anjalai.cc, family., business., community.anjalai.cc and yaxb.ai.
-   - Each edition database's migrations are applied by the one deploy script.
-   - Retire anjal-family, anjal-business and anjal-community once the new Worker serves all of them. Ask the owner before deleting a Worker or a database.
-4. **Specs.**
-   - Update SUR-1..6, DOM-1..5 and PLA-1..5 in `12-platform-and-editions.md`.
-   - The session cookie no longer needs `.anjalai.cc` scoping for a single site, but keep it while the subdomains exist as addresses.
-   - Passkeys keep the relying party `anjalai.cc`.
+**Deploying it (the owner runs these; each step needs the owner's go-ahead):**
+1. **Secrets on `yaxb-web`.** It is now the only Worker, so it needs every secret the edition Workers had: `npx wrangler secret list` and `npx wrangler secret list -c <old file>` (the old files are in git history) show the names. At least `SESSION_SECRET`, `ADMIN_TOKEN`, the provider keys, `TAVILY_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, and `IDENTITY_SECRET` (see above; now set once).
+   - **One `ADMIN_TOKEN`** administers every edition (by address or open space). The Family, Business and Community tokens stop working; keep the one `yaxb-web` has in the password manager.
+   - **One `SESSION_SECRET`.** Visitors on the three edition addresses get new sessions: a guest's unsaved catalogue drafts on Business and Community are no longer theirs. Members keep their keys.
+2. **Deploy:** `node yaxb.mjs deploy` (or `npm run deploy` in `apps/web`). It applies the migrations to all five databases, builds once and deploys. The deploy takes the custom domains family., business. and community.anjalai.cc from the edition Workers (and declares anjalai.cc and yaxb.ai).
+3. **Check:** each address shows its own home page; a Business and a Family space switch on one address.
+4. **Retire** the anjal-family, anjal-business and anjal-community Workers once the new one serves their addresses. Never delete their databases: `yaxb-web` uses them.
 
-**Done when:** one deploy serves all four addresses; a Business space and a Family space switch on the same address without a page from another site; each edition's data is only read with its own database (a test opens a Business tenant id against Family and gets nothing); the native app uses the same Worker.
+**Locally:** `node yaxb.mjs start`, then http://localhost:3000 (the portal) and http://family.localhost:3000, http://business.localhost:3000, http://community.localhost:3000. Each local address is its own passkey relying party and has its own cookies, so sign in on each.
 
 ## Wave 2: what is left (on the other laptop)
 
@@ -89,14 +73,14 @@ Decided 2026-11-19. Today each edition is its own site and Worker (family., busi
 - **Organisation:** business identity numbers (ORG-6, 7), and ORG-4 weighted by case events.
 - **Everything below** under "Wave 2: where to start" that isn't listed as done here.
 
-Running the editions side by side locally: `apps/web/.env.development.local` points the portal's links at `localhost:3001` (Business), `3002` (Family) and `3003` (Community); start one with `npx vite --mode business --port 3001` in `apps/web`. Cookies are shared across ports, so one sign-in covers them all, like `.anjalai.cc` does live.
+**Order decided 2026-11-19:** one address first (above), then identity steps 2 to 6, the email assistant, media, connectors and routines, and the foundations. **Editions (EDN-6..10, EDN-30..35, households across devices) are deferred.** The vocabulary tool waits for the owner's word-list source.
 
 ## Wave 2: where to start
 
 Each spec file ends with an "Order of work". Requirements still Planned or Partly built:
 - **Identity** (`15-identity.md`) and the **email assistant** (`16-email-assistant.md`). Both use the platform database.
 - **Media, connectors and routines** (`14-media-connectors-routines.md`). Reading bills from billers' pages (BIL-3, WEB-30) is parked and will be built as part of the Playwright work.
-- **Editions** (`12-platform-and-editions.md`):
+- **Editions** (`12-platform-and-editions.md`), deferred (2026-11-19):
   - EDN-6..10 (committees, elections, notices to members);
   - children and elders (EDN-30..35);
   - households across several devices (EDN-20 works on one shared device today).
@@ -125,7 +109,7 @@ Each spec file ends with an "Order of work". Requirements still Planned or Partl
 
 ## Deploying
 
-From `apps/web`: `npm run deploy:family`, `npm run deploy:business` and `npm run deploy:community`. Then, from the repo root, `node yaxb.mjs deploy` for the portal. Each one applies its database's migrations and the platform database's, then builds and deploys. Build right before each deploy: wrangler follows the last build.
+From the repo root, `node yaxb.mjs deploy`: it applies the migrations of all five databases (the portal's, the three editions' and the platform database), builds once and deploys the one Worker. Each deploy needs the owner's go-ahead.
 
 ## Windows gotchas on the first laptop
 
