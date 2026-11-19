@@ -1,12 +1,12 @@
 <script setup lang="ts">
-// "Meet Anjalai": the companion's character and its one-line story (19 words), on the portal and on
+// "Meet Anjalai": the companion's character and its one-line story (20 words), on the portal and on
 // each edition's home page. Theme tokens only, so it sits well on any page and in every theme.
 import AnjalaiCharacter from "./AnjalaiCharacter.vue";
 import BrandText from "./BrandText.vue";
 import { SITE_WIDTH } from "@/lib/site-width";
 
-/** The story: 19 words. */
-const STORY = "is your fearless companion: by your side always, in every language, answering with facts, keeping what's yours safe.";
+/** The story: 20 words. */
+const STORY = "is your fearless companion: by your side always, helping you every step of the way, keeping what's yours safe.";
 </script>
 
 <template>
