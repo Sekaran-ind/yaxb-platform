@@ -1,6 +1,6 @@
 // Identity in the platform database (PLATFORM_DB, migrations-platform 0002), shared by every edition.
 import type { D1Like } from "../stores/d1.js";
-import type { Account, Challenge, DeviceLock, SpacePolicy, IdentityAuditEvent, IdentityStore, Membership, Method, PendingJoin, Session, SigningKey } from "./index.js";
+import type { Account, Challenge, DeviceCredential, DeviceGrant, DeviceLock, SpacePolicy, IdentityAuditEvent, IdentityStore, Membership, Method, PendingJoin, Session, SigningKey } from "./index.js";
 
 type MembershipRow = Omit<Membership, "roles"> & { roles: string };
 type AuditRow = Omit<IdentityAuditEvent, "details"> & { details: string | null };
@@ -131,6 +131,41 @@ export function createD1IdentityStore(db: D1Like): IdentityStore {
         p.created_at,
       )),
     removePendingJoin: async (id) => void (await run("DELETE FROM pending_joins WHERE id = ?1", id)),
+    deviceGrantBy: (col, hash) =>
+      first<DeviceGrant>(`SELECT id, device_code_hash, user_code_hash, client, name, status, account_id, created_at, expires_at FROM device_grants WHERE ${col === "device_code_hash" ? "device_code_hash" : "user_code_hash"} = ?1`, hash),
+    putDeviceGrant: async (g) =>
+      void (await run(
+        "INSERT INTO device_grants (id, device_code_hash, user_code_hash, client, name, status, account_id, created_at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT (id) DO UPDATE SET status = ?6, account_id = ?7",
+        g.id,
+        g.device_code_hash,
+        g.user_code_hash,
+        g.client,
+        g.name,
+        g.status,
+        g.account_id,
+        g.created_at,
+        g.expires_at,
+      )),
+    deviceCredential: async (id) => {
+      const r = await first<Omit<DeviceCredential, "scopes"> & { scopes: string }>("SELECT id, account_id, secret_hash, client, name, scopes, created_at, last_used_at, expires_at, revoked_at FROM device_credentials WHERE id = ?1", id);
+      return r ? { ...r, scopes: JSON.parse(r.scopes) as string[] } : null;
+    },
+    deviceCredentials: async (a) =>
+      (await all<Omit<DeviceCredential, "scopes"> & { scopes: string }>("SELECT id, account_id, secret_hash, client, name, scopes, created_at, last_used_at, expires_at, revoked_at FROM device_credentials WHERE account_id = ?1 ORDER BY created_at DESC, rowid DESC", a)).map((r) => ({ ...r, scopes: JSON.parse(r.scopes) as string[] })),
+    putDeviceCredential: async (d) =>
+      void (await run(
+        "INSERT INTO device_credentials (id, account_id, secret_hash, client, name, scopes, created_at, last_used_at, expires_at, revoked_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) ON CONFLICT (id) DO UPDATE SET last_used_at = ?8, revoked_at = ?10",
+        d.id,
+        d.account_id,
+        d.secret_hash,
+        d.client,
+        d.name,
+        JSON.stringify(d.scopes),
+        d.created_at,
+        d.last_used_at,
+        d.expires_at,
+        d.revoked_at,
+      )),
     spacePolicy: async (e, t) => {
       const r = await first<Omit<SpacePolicy, "methods" | "staff_passkeys"> & { methods: string; staff_passkeys: number }>("SELECT edition, tenant_id, methods, staff_passkeys, session_hours, updated_at FROM space_policies WHERE edition = ?1 AND tenant_id = ?2", e, t);
       return r ? { ...r, methods: JSON.parse(r.methods) as SpacePolicy["methods"], staff_passkeys: Boolean(r.staff_passkeys) } : null;
@@ -165,6 +200,7 @@ export function createD1IdentityStore(db: D1Like): IdentityStore {
       await run("DELETE FROM account_methods WHERE account_id = ?1", id);
       await run("DELETE FROM memberships WHERE account_id = ?1", id);
       await run("UPDATE sessions SET revoked_at = COALESCE(revoked_at, ?2) WHERE account_id = ?1", id, new Date().toISOString());
+      await run("UPDATE device_credentials SET revoked_at = COALESCE(revoked_at, ?2) WHERE account_id = ?1", id, new Date().toISOString());
     },
   };
 }

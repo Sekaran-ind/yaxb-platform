@@ -137,8 +137,37 @@ async function policyOf(svc: IdentityService, edition: Edition, tenant: string) 
  * Reads the account session and the open space, and checks the membership. Sets `account` and
  * `space` for the routes and the tenant context. A space the account doesn't belong to is ignored.
  */
+/**
+ * What a device signed in with a code may call (IDN-18): its scopes' routes, and its own sign-out.
+ * Anything else answers 403.
+ */
+const DEVICE_ROUTES: Record<string, [method: string, path: RegExp][]> = {
+  chat: [
+    ["POST", /^\/api\/agent\/chat$/],
+    ["GET", /^\/api\/agent\/(providers|capabilities|sources|curated|moderation)$/],
+  ],
+  box: [],
+};
+const DEVICE_ALWAYS: [string, RegExp][] = [
+  ["GET", /^\/api\/identity\/me$/],
+  ["DELETE", /^\/api\/identity\/devices\/self$/],
+];
+const deviceMay = (scopes: readonly string[], method: string, path: string) =>
+  [...DEVICE_ALWAYS, ...scopes.flatMap((s) => DEVICE_ROUTES[s] ?? [])].some(([m, re]) => m === method && re.test(path));
+
 export async function accountContext(c: Context<AppEnv>, next: Next) {
   const svc = identity(c);
+  // A device signed in with a code (IDN-17, 18): its credential is the account's, for its scopes only.
+  const bearer = /^Bearer\s+(anj_dev_\S+)$/i.exec(c.req.header("authorization") ?? "")?.[1];
+  if (bearer) {
+    const device = svc ? await svc.deviceCredentialOf(bearer) : null;
+    if (!device) return c.json({ error: "This device is signed out. Sign it in again (yaxb login)." }, 401);
+    if (!deviceMay(device.scopes, c.req.method, new URL(c.req.url).pathname)) return c.json({ error: "This device may not do that." }, 403);
+    const t = Math.floor(Date.now() / 1000);
+    c.set("device", device);
+    c.set("account", { iss: "device", sub: device.account_id, sid: `dev:${device.id}`, lvl: 2, amr: ["device"], iat: t, exp: t + 60, auth_time: Math.floor(new Date(device.created_at).getTime() / 1000) });
+    return next();
+  }
   // A device kept for one space (SPC-5) acts in that space whoever uses it; its visitors stay anonymous.
   const lock = svc ? await lockOf(c, svc) : null;
   if (lock) c.set("lock", lock);
@@ -166,6 +195,8 @@ export async function accountContext(c: Context<AppEnv>, next: Next) {
 type Deps = {
   sameOrigin: (c: Context<AppEnv>) => boolean;
   limited: (c: Context<AppEnv>, key: string) => Promise<boolean>;
+  /** A looser limit for a device waiting for its code to be approved (a poll every few seconds). */
+  polled: (c: Context<AppEnv>, key: string) => Promise<boolean>;
   ip: (c: Context<AppEnv>) => string;
   /** The space's name and kind on this edition (its tenant). */
   spaceInfo: (env: Bindings, tenant: string) => Promise<{ name: string; kind: SpaceKind }>;
@@ -488,6 +519,50 @@ export function identityRoutes(deps: Deps) {
       return { space: null, pending: true, space_name: j.space_name };
     }),
   );
+  // ---- devices signed in with a code (IDN-17, 18, 41) ----
+  /** A device asks for a code (public: it isn't signed in yet). */
+  r.post("/device/start", (c) =>
+    call(c, async () => {
+      await limit(c, "device");
+      const b = await body(c, z.object({ client: z.string().max(10), name: z.string().max(60).optional() }));
+      if (!b) throw new IdentityError("Say what kind of device this is.");
+      const s = await svc(c).deviceStart(b);
+      const page = `${new URL(c.req.url).origin}/kiosk?prefs=account&device=`;
+      return { ...s, verification_uri: `${page}`, verification_uri_complete: `${page}${encodeURIComponent(s.user_code)}` };
+    }),
+  );
+  /** The device waits for the person: polled every few seconds. */
+  r.post("/device/token", (c) =>
+    call(c, async () => {
+      if (!(await deps.polled(c, `device-poll:${deps.ip(c)}`))) throw new IdentityError("Too many tries. Please wait a minute.", 429);
+      const b = await body(c, z.object({ device_code: z.string().max(100) }));
+      if (!b) throw new IdentityError("Which device?");
+      return svc(c).devicePoll(b.device_code);
+    }),
+  );
+  /** What a typed code asks for, before approving it. */
+  r.get("/device/request", (c) => call(c, async () => (mustSignIn(c), svc(c).deviceRequest(c.req.query("code") ?? ""))));
+  r.post("/device/approve", (c) =>
+    call(c, async () => {
+      const a = mustSignIn(c);
+      await limit(c, "device-approve");
+      const b = await body(c, z.object({ code: z.string().max(20), approve: z.boolean() }));
+      if (!b) throw new IdentityError("Type the code the device shows.");
+      return svc(c).deviceApprove(a.sub, a.lvl, b.code, b.approve);
+    }),
+  );
+  r.get("/devices", (c) => call(c, async () => ({ devices: await svc(c).deviceCredentials(mustSignIn(c).sub), here: c.get("device")?.id ?? null })));
+  /** A device signs itself out (yaxb logout). */
+  r.delete("/devices/self", (c) =>
+    call(c, async () => {
+      const d = c.get("device");
+      if (!d) throw new IdentityError("This isn't a device signed in with a code.", 400);
+      return svc(c).revokeDeviceCredential(d.account_id, d.id);
+    }),
+  );
+  /** Sign one device out for good (a lost phone): only that one. */
+  r.delete("/devices/:id", (c) => call(c, async () => svc(c).revokeDeviceCredential(mustSignIn(c).sub, c.req.param("id"))));
+
   // ---- a device kept for one space (SPC-5) ----
   const mustAdminister = async (c: Context<AppEnv>) => {
     if (!(await deps.spaceAdministrator(c))) throw new IdentityError("Only this space's administrator can do that.", 403);

@@ -34,6 +34,8 @@ export type Me =
 export type DeviceLocked = { space_name: string; label: string; edition: string; created_at: string };
 export type KeptDevice = DeviceLocked & { id: string; tenant_id: string; locked_by: string | null; unlocked_at: string | null };
 export type IdentityConfig = { enabled: boolean; passkeys: boolean; google: boolean; edition: string; locked?: DeviceLocked | null; notice: string };
+/** A device signed in with a code (IDN-17, 18): the CLI, a box, a voice device. */
+export type DeviceRow = { id: string; client: string; name: string; scopes: string[]; created_at: string; last_used_at: string | null; expires_at: string };
 export type SessionRow = { id: string; method: string; level: number; device: string | null; created_at: string; last_used_at: string };
 
 const me = shallowRef<Me>({ signedIn: false });
@@ -177,6 +179,12 @@ export function useIdentity() {
     newRecoveryCodes: () => api<{ codes: string[] }>("/api/identity/recovery-codes", {}).then((r) => r.codes),
 
     sessions: () => api<{ current: string; sessions: SessionRow[] }>("/api/identity/sessions"),
+    // ---- devices signed in with a code (IDN-17, 18, 41) ----
+    /** What a code a device shows asks for. */
+    deviceRequest: (code: string) => api<{ client: string; name: string; scopes: string[]; expires_at: string }>(`/api/identity/device/request?code=${encodeURIComponent(code)}`),
+    approveDevice: (code: string, approve: boolean) => api<{ client: string; name: string; approved: boolean }>("/api/identity/device/approve", { code, approve }),
+    devices: () => api<{ devices: DeviceRow[] }>("/api/identity/devices").then((r) => r.devices),
+    revokeDevice: (deviceId: string) => api(`/api/identity/devices/${encodeURIComponent(deviceId)}`, undefined, "DELETE"),
     endSession: (id: string) => api(`/api/identity/sessions/${id}`, undefined, "DELETE"),
     async removeMethod(id: string) {
       await api(`/api/identity/methods/${id}`, undefined, "DELETE");

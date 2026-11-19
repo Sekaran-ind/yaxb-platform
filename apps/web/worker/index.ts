@@ -26,12 +26,12 @@ export { TeamHub } from "./team";
 import { clientId, fromApp, isAdmin, MODERATOR_COOKIE, moderatorCookie, moderatorOf, safeEqual, sessionId, setAdminCookie, setModeratorCookie } from "./session";
 import { getCookie } from "hono/cookie";
 import { accountContext, identityRoutes } from "./identity";
-import { IdentityError, type DeviceLockView, type Membership, type TokenClaims } from "@sekaran-ind/yaxb-core/identity";
+import { IdentityError, type DeviceCredentialView, type DeviceLockView, type Membership, type TokenClaims } from "@sekaran-ind/yaxb-core/identity";
 
 export type AppEnv = {
   Bindings: Bindings;
   /** `account` and `space`: the signed-in account and its open space, checked on this request (identity.ts). */
-  Variables: { reviewer: Reviewer; account?: TokenClaims; space?: Membership; lock?: DeviceLockView; machine?: Moderator; spaceRefused?: { space_name: string; why: string; message: string } };
+  Variables: { reviewer: Reviewer; account?: TokenClaims; space?: Membership; lock?: DeviceLockView; machine?: Moderator; device?: DeviceCredentialView; spaceRefused?: { space_name: string; why: string; message: string } };
 };
 
 const MAX_CHAT_BODY = 4_500_000;
@@ -64,8 +64,9 @@ const jsonError = (c: Context<AppEnv>, status: number, message: string) => {
  * from another site.
  */
 function sameOrigin(c: Context<AppEnv>): boolean {
-  // A machine's bearer key can't be sent by another site's page (browsers never add it), so no CSRF.
-  if (c.get("machine")) return true;
+  // A machine's key or a device's credential is a bearer token another site's page can't send
+  // (browsers never add it), so no CSRF.
+  if (c.get("machine") || c.get("device")) return true;
   const origin = c.req.header("origin");
   if (!origin) return false;
   if (fromApp(c)) return true;
@@ -129,7 +130,8 @@ app.use("/api/*", async (c, next) => {
   // A machine (IDN-16): `Authorization: Bearer yaxb_mod_…`. It acts in its own tenant, never signs in,
   // and may call only what its scopes allow.
   const bearer = /^Bearer\s+(\S+)$/i.exec(c.req.header("authorization") ?? "")?.[1];
-  if (bearer) {
+  // A device's credential (anj_dev_…) is checked with the account (identity.ts), not here.
+  if (bearer && !bearer.startsWith("anj_dev_")) {
     const machine = looksLikeKey(bearer) ? await moderators(c.env).machine(bearer) : null;
     if (!machine) return jsonError(c, 401, "That machine key isn't right, or it has been revoked or has expired.");
     const tenant = machine.tenant ?? DEFAULT_TENANT;
@@ -821,6 +823,7 @@ app.route(
     sameOrigin,
     ip,
     limited: (c, key) => withinLimit("form", c.env.FORM_LIMITER, key),
+    polled: (c, key) => withinLimit("chat", c.env.CHAT_LIMITER, key),
     tenant: currentTenant,
     isAdmin,
     async spaceAdministrator(c) {

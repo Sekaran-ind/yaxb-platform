@@ -3,6 +3,7 @@
 import { createInterface } from 'node:readline/promises';
 import { parseArgs } from 'node:util';
 import { randomUUID } from 'node:crypto';
+import { renderUnicodeCompact } from 'uqr';
 
 export const HELP = `yaxb: talk to the YAXB kiosk agent from a terminal.
 
@@ -13,6 +14,9 @@ Usage
   yaxb sources                       the knowledge sources the kiosk answers from
   yaxb curated [--search <words>]    the moderated Q&A set
   yaxb moderation [--limit <n>]      questions the agent escalated
+  yaxb login [--site <url>]          sign this terminal in: approve its code on a signed-in device
+  yaxb logout                        sign this terminal out (its credential stops working)
+  yaxb whoami                        who this terminal is signed in as
   yaxb help | --version
 
 Options
@@ -25,7 +29,9 @@ Options
   --quiet               don't show tool activity
 
 Configuration
-  Provider keys come from the environment: ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY,
+  Signed in (yaxb login), every question goes to the site with this terminal's own credential, kept
+  in $YAXB_HOME/credentials.json (only you can read it): no provider keys or box token needed.
+  Otherwise provider keys come from the environment: ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY,
   CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID, HF_TOKEN, MISTRAL_API_KEY, OLLAMA_BASE_URL. If $YAXB_HOME/.env exists (default ~/.yaxb/.env) it is loaded first.
   Conversations and escalations are kept in $YAXB_HOME. With YAXB_BOX_URL and YAXB_BOX_TOKEN
   set, conversations and the agent's memory live on that yaxb-box instead.`;
@@ -55,6 +61,7 @@ function parse(argv) {
       temperature: { type: 'string' },
       thread: { type: 'string' },
       search: { type: 'string' },
+      site: { type: 'string' },
       limit: { type: 'string' },
       json: { type: 'boolean', default: false },
       quiet: { type: 'boolean', default: false },
@@ -128,7 +135,7 @@ function table(rows, out) {
  * Run the CLI. `createKiosk` is injected so tests can pass a fake.
  * Returns the process exit code.
  */
-export async function run(argv, { createKiosk, version = '0.0.0', stdout = process.stdout, stderr = process.stderr, stdin = process.stdin, signal } = {}) {
+export async function run(argv, { createKiosk, account, version = '0.0.0', stdout = process.stdout, stderr = process.stderr, stdin = process.stdin, signal } = {}) {
   let parsed;
   try {
     parsed = parse(argv);
@@ -144,6 +151,40 @@ export async function run(argv, { createKiosk, version = '0.0.0', stdout = proce
   if (command === 'version') {
     stdout.write(`${version}\n`);
     return 0;
+  }
+
+  // Signing this terminal in and out (IDN-41): no kiosk needed.
+  if (command === 'login' || command === 'logout' || command === 'whoami') {
+    if (!account) {
+      stderr.write('Signing in isn\'t available here.\n');
+      return 2;
+    }
+    try {
+      if (command === 'login') {
+        const who = await account.login({
+          site: values.site,
+          show: (s) => {
+            // A QR code to scan with a phone that is signed in, then the link and code to type (IDN-41).
+            const qr = renderUnicodeCompact(s.verification_uri_complete, { border: 1 });
+            stderr.write(`\nTo sign this terminal in, scan this with a phone where you are signed in:\n\n${qr}\n\nor open\n\n  ${s.verification_uri_complete}\n\nCheck that it shows the code\n\n  ${s.user_code}\n\nand approve it. Waiting…\n`);
+          },
+          signal,
+        });
+        stdout.write(`Signed in on ${who.site} as ${who.name}.\n`);
+        return 0;
+      }
+      if (command === 'logout') {
+        const was = await account.logout();
+        stdout.write(was ? `Signed out of ${was.site}.\n` : 'This terminal wasn\'t signed in.\n');
+        return 0;
+      }
+      const who = await account.whoami();
+      stdout.write(who ? `${who.name} on ${who.site} (${who.label})\n` : 'Not signed in. Run `yaxb login`.\n');
+      return who ? 0 : 1;
+    } catch (e) {
+      stderr.write(`${e.message}\n`);
+      return 1;
+    }
   }
 
   try {
@@ -228,6 +269,11 @@ export async function run(argv, { createKiosk, version = '0.0.0', stdout = proce
     if (e instanceof UsageError) {
       stderr.write(`${e.message}\n`);
       return 2;
+    }
+    // The site refused (signed out, a limit, offline): its message, not a stack trace.
+    if (e && typeof e === 'object' && e.name === 'RemoteError') {
+      stderr.write(`${e.message}\n`);
+      return 1;
     }
     throw e;
   }

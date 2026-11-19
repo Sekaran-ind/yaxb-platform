@@ -63,6 +63,9 @@ export function sessionId(c: Context<AppEnv>): string {
 }
 
 export async function clientId(c: Context<AppEnv>): Promise<string> {
+  // A device signed in with a code (IDN-18) is one caller across its turns: its credential, not a cookie.
+  const device = c.get("device");
+  if (device) return (await hmac(settings(c.env).SESSION_SECRET, `device:${device.id}`)).slice(0, 32);
   return (await hmac(settings(c.env).SESSION_SECRET, `session:${sessionId(c)}`)).slice(0, 32);
 }
 
