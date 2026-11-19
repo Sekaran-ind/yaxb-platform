@@ -521,6 +521,30 @@ export function identityRoutes(deps: Deps) {
       return { space: null, pending: true, space_name: j.space_name };
     }),
   );
+  // ---- signing in on a kiosk by scanning (IDN-19) ----
+  /** The kiosk asks for a code to show as a QR code: nothing is typed on the kiosk. */
+  r.post("/handoff/start", (c) =>
+    call(c, async () => {
+      await limit(c, "handoff");
+      if (c.get("account")) throw new IdentityError("Someone is signed in here already.", 409);
+      const s = await svc(c).deviceStart({ client: "handoff", name: "A kiosk" });
+      const page = `${new URL(c.req.url).origin}/kiosk?prefs=account&device=`;
+      return { ...s, verification_uri: page, verification_uri_complete: `${page}${encodeURIComponent(s.user_code)}` };
+    }),
+  );
+  /** The kiosk waits for the phone; once approved it is signed in for a short while. */
+  r.post("/handoff/token", (c) =>
+    call(c, async () => {
+      if (!(await deps.polled(c, `handoff-poll:${deps.ip(c)}`))) throw new IdentityError("Too many tries. Please wait a minute.", 429);
+      const b = await body(c, z.object({ device_code: z.string().max(100) }));
+      if (!b) throw new IdentityError("Which code?");
+      const out = await svc(c).handoffPoll(b.device_code, device(c));
+      if (out.status !== "approved") return out;
+      setSession(c, out.session);
+      return { status: "approved", account: out.account };
+    }),
+  );
+
   // ---- the box's offline check (IDN-42) ----
   /** A box token for the person's box, for a week: the box verifies it offline. */
   r.post("/box/token", (c) =>

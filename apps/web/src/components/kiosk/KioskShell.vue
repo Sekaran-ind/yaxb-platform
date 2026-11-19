@@ -125,6 +125,8 @@ watch(sessionEnds, async () => {
   threadsOpen.value = false;
   for (const n of nb.notebooks.value) await nb.remove(n.id).catch(() => undefined);
   screen.value = "transcript";
+  // A visitor signed in by scanning (IDN-19) is signed out with the visit.
+  if (restricted.value && identity.signedIn.value) await identity.signOut().catch(() => undefined);
 });
 
 // ---- profiles (PRF-1): who is using the kiosk ---------------------------------------------------------

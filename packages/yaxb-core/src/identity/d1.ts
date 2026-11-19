@@ -132,10 +132,10 @@ export function createD1IdentityStore(db: D1Like): IdentityStore {
       )),
     removePendingJoin: async (id) => void (await run("DELETE FROM pending_joins WHERE id = ?1", id)),
     deviceGrantBy: (col, hash) =>
-      first<DeviceGrant>(`SELECT id, device_code_hash, user_code_hash, client, name, status, account_id, created_at, expires_at FROM device_grants WHERE ${col === "device_code_hash" ? "device_code_hash" : "user_code_hash"} = ?1`, hash),
+      first<DeviceGrant>(`SELECT id, device_code_hash, user_code_hash, client, name, status, account_id, created_at, expires_at, level FROM device_grants WHERE ${col === "device_code_hash" ? "device_code_hash" : "user_code_hash"} = ?1`, hash),
     putDeviceGrant: async (g) =>
       void (await run(
-        "INSERT INTO device_grants (id, device_code_hash, user_code_hash, client, name, status, account_id, created_at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT (id) DO UPDATE SET status = ?6, account_id = ?7",
+        "INSERT INTO device_grants (id, device_code_hash, user_code_hash, client, name, status, account_id, created_at, expires_at, level) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) ON CONFLICT (id) DO UPDATE SET status = ?6, account_id = ?7, level = ?10",
         g.id,
         g.device_code_hash,
         g.user_code_hash,
@@ -145,6 +145,7 @@ export function createD1IdentityStore(db: D1Like): IdentityStore {
         g.account_id,
         g.created_at,
         g.expires_at,
+        g.level ?? null,
       )),
     deviceCredential: async (id) => {
       const r = await first<Omit<DeviceCredential, "scopes"> & { scopes: string }>("SELECT id, account_id, secret_hash, client, name, scopes, created_at, last_used_at, expires_at, revoked_at FROM device_credentials WHERE id = ?1", id);
