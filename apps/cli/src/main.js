@@ -7,6 +7,8 @@ import { createKiosk } from '@sekaran-ind/yaxb-core/agent';
 import { createBoxClient, createBoxThreadStore } from '@sekaran-ind/yaxb-core/stores/box';
 import { KvStore } from '@sekaran-ind/yaxb-core/stores/kv';
 import { createFileModerationStore, createFileThreadStore } from '@sekaran-ind/yaxb-core/stores/node';
+import { createRemoteKiosk } from '@sekaran-ind/yaxb-core/remote';
+import { createAccount } from './account.js';
 import { run } from './cli.js';
 
 const home = process.env.YAXB_HOME || join(homedir(), '.yaxb');
@@ -22,11 +24,17 @@ process.once('SIGINT', () => {
   process.exit(130);
 });
 
+mkdirSync(home, { recursive: true, mode: 0o700 });
+const account = createAccount(home);
+
 const code = await run(process.argv.slice(2), {
   version,
   signal: controller.signal,
+  account,
   createKiosk: async () => {
-    mkdirSync(home, { recursive: true, mode: 0o700 });
+    // Signed in (yaxb login): the kiosk on the site, with this terminal's credential (IDN-41).
+    const signedIn = account.current();
+    if (signedIn) return createRemoteKiosk({ site: signedIn.site, token: signedIn.token });
     // With a yaxb-box configured, conversations and the agent's long-term memory (Deep Agents
     // StoreBackend) live on the box; otherwise conversations are files in $YAXB_HOME.
     const { YAXB_BOX_URL: boxUrl, YAXB_BOX_TOKEN: boxToken } = process.env;

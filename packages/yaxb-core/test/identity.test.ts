@@ -353,3 +353,52 @@ describe("a space's sign-in rules (IDN-34)", () => {
       expect(policyAllows(p, { ...passkey, auth_time: now - 9 * 3600 }, staff, now)).toMatchObject({ ok: false, why: "expired" });
     });
 });
+
+describe("devices signed in with a code (IDN-17, 18, 41)", () => {
+  for (const [name, make] of [
+    ["memory", (): IdentityStore => createMemoryIdentityStore()],
+    ["D1", (): IdentityStore => createD1IdentityStore(sqliteD1({ folder: "migrations-platform" }))],
+  ] as const)
+    it(`a device asks, a person approves, and each device is revoked on its own, on ${name}`, async () => {
+      const store = make();
+      const id = createIdentityService(store, { secret: "test-secret-0123456789", issuer: "https://anjalai.cc" });
+      const r = await id.oidcSignIn({ provider: "google", subject: "s", email: "a@b.in", emailVerified: true, consent: true });
+      if (!("session" in r)) throw new Error();
+      const me = r.account.id;
+      await expect(id.deviceStart({ client: "toaster" })).rejects.toThrow(/Unknown kind/);
+      const laptop = await id.deviceStart({ client: "cli", name: "Meena's laptop" });
+      expect(laptop.user_code).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+      expect(await id.devicePoll(laptop.device_code)).toEqual({ status: "pending" });
+      expect(await id.deviceRequest(laptop.user_code.toLowerCase().replace("-", " "))).toMatchObject({ client: "cli", name: "Meena's laptop", scopes: ["chat"] });
+      await expect(id.deviceApprove(me, 1, laptop.user_code, true)).rejects.toThrow(/passkey or Google/);
+      await id.deviceApprove(me, 2, laptop.user_code, true);
+      const got = await id.devicePoll(laptop.device_code);
+      if (got.status !== "approved") throw new Error(got.status);
+      expect(got.token).toMatch(/^anj_dev_/);
+      // Used once: polling again gets nothing.
+      expect(await id.devicePoll(laptop.device_code)).toEqual({ status: "expired" });
+      expect((await id.deviceCredentialOf(got.token))?.account_id).toBe(me);
+      expect(await id.deviceCredentialOf(`${got.token.split(".")[0]}.${"A".repeat(43)}`)).toBeNull();
+      expect(JSON.stringify(await store.deviceCredential(got.credential.id))).not.toContain(got.token.split(".")[1]!);
+
+      // A phone, signed in the same way; a third device turned down.
+      const phone = await id.deviceStart({ client: "voice", name: "Phone" });
+      await id.deviceApprove(me, 3, phone.user_code, true);
+      const p = await id.devicePoll(phone.device_code);
+      if (p.status !== "approved") throw new Error(p.status);
+      const other = await id.deviceStart({ client: "cli" });
+      await id.deviceApprove(me, 3, other.user_code, false);
+      expect(await id.devicePoll(other.device_code)).toEqual({ status: "denied" });
+      expect((await id.deviceCredentials(me)).map((d) => d.name).sort()).toEqual(["Meena's laptop", "Phone"]);
+
+      // The phone is lost: only it stops working (the gate).
+      await id.revokeDeviceCredential(me, p.credential.id);
+      expect(await id.deviceCredentialOf(p.token)).toBeNull();
+      expect((await id.deviceCredentialOf(got.token))?.id).toBe(got.credential.id);
+      expect((await id.deviceCredentials(me)).map((d) => d.name)).toEqual(["Meena's laptop"]);
+      await expect(id.revokeDeviceCredential("someone-else", got.credential.id)).rejects.toThrow(/isn't yours/);
+      // Deleting the account ends every device.
+      await id.deleteAccount(me);
+      expect(await id.deviceCredentialOf(got.token)).toBeNull();
+    });
+});

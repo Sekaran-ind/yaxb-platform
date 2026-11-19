@@ -81,6 +81,8 @@ export const IDENTITY_ACTIONS = [
   "device.locked",
   "device.unlocked",
   "space.policy_changed",
+  "token.issued",
+  "token.revoked",
 ] as const;
 export type IdentityAction = (typeof IDENTITY_ACTIONS)[number];
 export type IdentityAuditEvent = { id: string; at: string; account_id: string | null; action: IdentityAction; details: Record<string, string | number | boolean> | null };
@@ -113,6 +115,11 @@ export interface IdentityStore {
   putPendingJoin(p: PendingJoin): Promise<void>;
   removePendingJoin(id: string): Promise<void>;
   spacePolicy(edition: Edition, tenantId: string): Promise<SpacePolicy | null>;
+  deviceGrantBy(column: "device_code_hash" | "user_code_hash", hash: string): Promise<DeviceGrant | null>;
+  putDeviceGrant(g: DeviceGrant): Promise<void>;
+  deviceCredential(id: string): Promise<DeviceCredential | null>;
+  deviceCredentials(accountId: string): Promise<DeviceCredential[]>;
+  putDeviceCredential(d: DeviceCredential): Promise<void>;
   putSpacePolicy(p: SpacePolicy): Promise<void>;
   deviceLock(id: string): Promise<DeviceLock | null>;
   /** A space's locks, released ones too, newest first. */
@@ -198,6 +205,25 @@ export type IdentityOptions = {
 
 /** `auth_time`: when the person signed in (the session began), for a space's session length (IDN-34). */
 export type TokenClaims = { iss: string; sub: string; sid: string; lvl: number; amr: string[]; iat: number; exp: number; auth_time?: number };
+
+// ---- devices signed in with a code (IDN-17, 18, 41) -----------------------------------------------------
+
+/** What a device signs in as: the CLI, a box, a kiosk, a voice device. */
+export const DEVICE_CLIENTS = ["cli", "box", "kiosk", "voice"] as const;
+export type DeviceClient = (typeof DEVICE_CLIENTS)[number];
+/** What each kind of device may do with its credential. */
+export const DEVICE_SCOPES: Record<DeviceClient, readonly string[]> = { cli: ["chat"], box: ["box"], kiosk: ["chat"], voice: ["chat"] };
+/** A code to type lasts ten minutes; a device's credential a year (sign in again after). */
+export const DEVICE_CODE_MINUTES = 10;
+export const DEVICE_CREDENTIAL_DAYS = 365;
+export const DEVICE_TOKEN_PREFIX = "anj_dev_";
+export type DeviceGrant = { id: string; device_code_hash: string; user_code_hash: string; client: DeviceClient; name: string; status: "pending" | "approved" | "denied" | "used"; account_id: string | null; created_at: string; expires_at: string };
+export type DeviceCredential = { id: string; account_id: string; secret_hash: string; client: DeviceClient; name: string; scopes: string[]; created_at: string; last_used_at: string | null; expires_at: string; revoked_at: string | null };
+export type DeviceCredentialView = Omit<DeviceCredential, "secret_hash">;
+/** Letters and digits that can't be mistaken for one another, for a code a person types. */
+const USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ23456789";
+/** A user code as typed: upper case, without spaces or dashes. */
+export const normalizeUserCode = (code: string) => code.toUpperCase().replace(/[^A-Z0-9]/g, "");
 
 // ---- a space's sign-in rules (IDN-34) ---------------------------------------------------------------
 
@@ -298,6 +324,10 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
     if (!a || a.deleted_at) throw new IdentityError("There is no such account.", 404);
     return a;
   }
+  const liveAccountOrNull = async (id: string) => {
+    const a = await store.account(id);
+    return a && !a.deleted_at ? a : null;
+  };
 
   const api = {
     store,
@@ -510,6 +540,102 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
       return store.auditLog(accountId, Math.min(limit, 200));
     },
 
+    // ---- devices signed in with a code (IDN-17, 18, 41) -------------------------------------------------
+
+    /**
+     * A device asks to sign in: it shows the person `user_code` (and where to type it) and polls
+     * with `device_code`, which only it holds. Nothing is linked to an account yet.
+     */
+    async deviceStart(input: { client: string; name?: string }) {
+      if (!(DEVICE_CLIENTS as readonly string[]).includes(input.client)) throw new IdentityError("Unknown kind of device.");
+      const device = randomToken(32);
+      const letters = crypto.getRandomValues(new Uint8Array(8));
+      const user = [...letters].map((b) => USER_CODE_ALPHABET[b % USER_CODE_ALPHABET.length]).join("");
+      const g: DeviceGrant = {
+        id: crypto.randomUUID(),
+        device_code_hash: await h("device-grant", device),
+        user_code_hash: await h("device-user", user),
+        client: input.client as DeviceClient,
+        name: (input.name ?? "").trim().slice(0, 60) || input.client,
+        status: "pending",
+        account_id: null,
+        created_at: iso(now()),
+        expires_at: iso(new Date(now().getTime() + DEVICE_CODE_MINUTES * 60_000)),
+      };
+      await store.putDeviceGrant(g);
+      return { device_code: device, user_code: `${user.slice(0, 4)}-${user.slice(4)}`, expires_in: DEVICE_CODE_MINUTES * 60, interval: 5 };
+    },
+    /** What a typed code asks for, so the person sees what they approve (never its device code). */
+    async deviceRequest(userCode: string) {
+      const g = await store.deviceGrantBy("user_code_hash", await h("device-user", normalizeUserCode(userCode)));
+      if (!g || g.status !== "pending" || g.expires_at <= iso(now())) throw new IdentityError("That code isn't waiting any more. Ask the device for a new one.", 404);
+      return { client: g.client, name: g.name, scopes: DEVICE_SCOPES[g.client], expires_at: g.expires_at };
+    },
+    /** A signed-in person approves (or turns down) a device's code. Needs a real sign-in, not a recovery code. */
+    async deviceApprove(accountId: string, level: number, userCode: string, approve: boolean) {
+      if (level < 2) throw new IdentityError("Sign in with a passkey or Google to approve a device.", 403);
+      await liveAccount(accountId);
+      const g = await store.deviceGrantBy("user_code_hash", await h("device-user", normalizeUserCode(userCode)));
+      if (!g || g.status !== "pending" || g.expires_at <= iso(now())) throw new IdentityError("That code isn't waiting any more. Ask the device for a new one.", 404);
+      await store.putDeviceGrant({ ...g, status: approve ? "approved" : "denied", account_id: approve ? accountId : null });
+      return { client: g.client, name: g.name, approved: approve };
+    },
+    /**
+     * The device polls: still waiting, turned down, gone, or approved, when it gets its credential
+     * (`anj_dev_<id>.<secret>`, shown once) and the grant is used up.
+     */
+    async devicePoll(deviceCode: string): Promise<{ status: "pending" | "denied" | "expired" } | { status: "approved"; token: string; credential: DeviceCredentialView }> {
+      const g = await store.deviceGrantBy("device_code_hash", await h("device-grant", deviceCode));
+      if (!g || g.status === "used") return { status: "expired" };
+      if (g.status === "denied") return { status: "denied" };
+      if (g.status === "pending") return g.expires_at <= iso(now()) ? { status: "expired" } : { status: "pending" };
+      const id = crypto.randomUUID();
+      const secret = randomToken(32);
+      const cred: DeviceCredential = {
+        id,
+        account_id: g.account_id!,
+        secret_hash: await h("device-credential", `${id}:${secret}`),
+        client: g.client,
+        name: g.name,
+        scopes: [...DEVICE_SCOPES[g.client]],
+        created_at: iso(now()),
+        last_used_at: null,
+        expires_at: iso(new Date(now().getTime() + DEVICE_CREDENTIAL_DAYS * 86400_000)),
+        revoked_at: null,
+      };
+      await store.putDeviceGrant({ ...g, status: "used" });
+      await store.putDeviceCredential(cred);
+      await audit(cred.account_id, "token.issued", { client: cred.client });
+      const { secret_hash: _, ...view } = cred;
+      return { status: "approved", token: `${DEVICE_TOKEN_PREFIX}${id}.${secret}`, credential: view };
+    },
+    /** The credential a device presents, while it holds (seen at most once an hour). */
+    async deviceCredentialOf(token: string | null | undefined): Promise<DeviceCredentialView | null> {
+      const m = new RegExp(`^${DEVICE_TOKEN_PREFIX}([0-9a-f-]{36})\\.([A-Za-z0-9_-]{20,100})$`).exec(token ?? "");
+      if (!m) return null;
+      const d = await store.deviceCredential(m[1]!);
+      if (!d || d.revoked_at || d.expires_at <= iso(now())) return null;
+      if (!sameText(await h("device-credential", `${m[1]}:${m[2]}`), d.secret_hash)) return null;
+      if (!(await liveAccountOrNull(d.account_id))) return null;
+      if (!d.last_used_at || now().getTime() - new Date(d.last_used_at).getTime() > 3600_000) await store.putDeviceCredential({ ...d, last_used_at: iso(now()) });
+      const { secret_hash: _, ...view } = d;
+      return view;
+    },
+    /** The account's devices (the ones still able to sign in first). */
+    async deviceCredentials(accountId: string): Promise<DeviceCredentialView[]> {
+      return (await store.deviceCredentials(accountId)).filter((d) => !d.revoked_at && d.expires_at > iso(now())).map(({ secret_hash: _, ...v }) => v);
+    },
+    /** Sign one device out for good (a lost phone): only that one. */
+    async revokeDeviceCredential(accountId: string, id: string) {
+      const d = await store.deviceCredential(id);
+      if (!d || d.account_id !== accountId) throw new IdentityError("That device isn't yours.", 404);
+      if (!d.revoked_at) {
+        await store.putDeviceCredential({ ...d, revoked_at: iso(now()) });
+        await audit(accountId, "token.revoked", { client: d.client });
+      }
+      return { revoked: id };
+    },
+
     // ---- a space's sign-in rules (IDN-34) -------------------------------------------------------------
 
     /** The space's rules, or the defaults (every method, no passkey rule, 30 days). */
@@ -611,6 +737,8 @@ export function createMemoryIdentityStore(): IdentityStore {
   const pending = new Map<string, PendingJoin>();
   const locks = new Map<string, DeviceLock>();
   const policies = new Map<string, SpacePolicy>();
+  const grants = new Map<string, DeviceGrant>();
+  const creds = new Map<string, DeviceCredential>();
   const copy = <T>(x: T): T => structuredClone(x);
   const mkey = (a: string, e: string, t: string) => `${a}|${e}|${t}`;
   return {
@@ -652,11 +780,17 @@ export function createMemoryIdentityStore(): IdentityStore {
     putDeviceLock: async (l) => void locks.set(l.id, copy(l)),
     spacePolicy: async (e, t) => copy(policies.get(`${e}|${t}`) ?? null),
     putSpacePolicy: async (p) => void policies.set(`${p.edition}|${p.tenant_id}`, copy(p)),
+    deviceGrantBy: async (col, hash) => copy([...grants.values()].find((g) => g[col] === hash) ?? null),
+    putDeviceGrant: async (g) => void grants.set(g.id, copy(g)),
+    deviceCredential: async (id) => copy(creds.get(id) ?? null),
+    deviceCredentials: async (a) => [...creds.values()].filter((d) => d.account_id === a).map(copy),
+    putDeviceCredential: async (d) => void creds.set(d.id, copy(d)),
     eraseAccount: async (id) => {
       for (const [k, p] of pending) if (p.account_id === id) pending.delete(k);
       for (const [k, m] of methods) if (m.account_id === id) methods.delete(k);
       for (const [k, m] of memberships) if (m.account_id === id) memberships.delete(k);
       for (const [k, s] of sessions) if (s.account_id === id) sessions.set(k, { ...s, revoked_at: s.revoked_at ?? new Date().toISOString() });
+      for (const [k, d] of creds) if (d.account_id === id) creds.set(k, { ...d, revoked_at: d.revoked_at ?? new Date().toISOString() });
     },
   };
 }

@@ -113,3 +113,37 @@ test('help and version', async () => {
   await run(['--version'], v);
   assert.equal(v.stdout.text, '9.9.9\n');
 });
+
+test('login, whoami and logout go through the account (IDN-41)', async () => {
+  const calls = [];
+  const account = {
+    login: async ({ site, show }) => {
+      calls.push(['login', site]);
+      show({ user_code: 'BCDF-GHJK', verification_uri_complete: 'https://anjalai.cc/kiosk?prefs=account&device=BCDF-GHJK' });
+      return { site: 'https://anjalai.cc', name: 'yaxb on laptop' };
+    },
+    whoami: async () => ({ site: 'https://anjalai.cc', name: 'Meena', label: 'signed in' }),
+    logout: async () => ({ site: 'https://anjalai.cc' }),
+  };
+  const noKiosk = async () => assert.fail('no kiosk is needed to sign in');
+  const o = { createKiosk: noKiosk, account, stdout: sink(), stderr: sink() };
+  assert.equal(await run(['login', '--site', 'https://anjalai.cc'], o), 0);
+  assert.match(o.stderr.text, /BCDF-GHJK/);
+  assert.match(o.stdout.text, /Signed in on https:\/\/anjalai.cc as yaxb on laptop/);
+  assert.deepEqual(calls, [['login', 'https://anjalai.cc']]);
+  const w = { ...o, stdout: sink() };
+  assert.equal(await run(['whoami'], w), 0);
+  assert.match(w.stdout.text, /Meena on https:\/\/anjalai.cc/);
+  const l = { ...o, stdout: sink() };
+  assert.equal(await run(['logout'], l), 0);
+  assert.match(l.stdout.text, /Signed out of/);
+  const none = { ...o, account: { ...account, whoami: async () => null }, stdout: sink() };
+  assert.equal(await run(['whoami'], none), 1);
+});
+
+test('a site that refuses prints its message, not a stack trace', async () => {
+  const refused = Object.assign(new Error('This device is signed out. Sign it in again (yaxb login).'), { name: 'RemoteError', status: 401 });
+  const o = { createKiosk: async () => { throw refused; }, stdout: sink(), stderr: sink() };
+  assert.equal(await run(['ask', 'hello'], o), 1);
+  assert.match(o.stderr.text, /signed out/);
+});

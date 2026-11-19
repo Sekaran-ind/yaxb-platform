@@ -123,6 +123,10 @@
       "types": "./dist/reviews/index.d.ts",
       "default": "./dist/reviews/index.js"
     },
+    "./remote": {
+      "types": "./dist/remote/index.d.ts",
+      "default": "./dist/remote/index.js"
+    },
     "./team": {
       "types": "./dist/team/index.d.ts",
       "default": "./dist/team/index.js"

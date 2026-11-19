@@ -8,7 +8,7 @@ import { ConfirmAction } from "@sekaran-ind/yaxb-journeys/vue";
 import { Check, Copy, KeyRound, Loader2, LogOut, MonitorSmartphone, Plus, ShieldCheck, Sparkles, Trash2 } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { useIdentity, type SessionRow } from "@/composables/identity";
+import { useIdentity, type DeviceRow, type SessionRow } from "@/composables/identity";
 
 const id = useIdentity();
 const route = useRoute();
@@ -25,6 +25,27 @@ const recoveryCode = ref("");
 const showRecovery = ref(false);
 const codes = ref<string[] | null>(null);
 const sessions = ref<{ current: string; sessions: SessionRow[] } | null>(null);
+// Devices signed in with a code (IDN-17, 18, 41): approving one, and the ones signed in.
+const devices = ref<DeviceRow[]>([]);
+const deviceCode = ref(typeof route.query.device === "string" ? route.query.device : "");
+const asking = ref<{ client: string; name: string; scopes: string[] } | null>(null);
+const CLIENT: Record<string, string> = { cli: "Terminal (yaxb)", box: "Box", kiosk: "Kiosk", voice: "Voice device" };
+const CLIENT_A: Record<string, string> = { cli: "a terminal", box: "a box", kiosk: "a kiosk", voice: "a voice device" };
+const SCOPE: Record<string, string> = { chat: "ask the kiosk as you", box: "use your box" };
+async function lookUpDevice() {
+  asking.value = null;
+  await run("device", async () => (asking.value = await id.deviceRequest(deviceCode.value.trim())));
+}
+async function answerDevice(approve: boolean) {
+  const name = asking.value?.name ?? "The device";
+  await run("device", async () => {
+    await id.approveDevice(deviceCode.value.trim(), approve);
+    asking.value = null;
+    deviceCode.value = "";
+    devices.value = await id.devices();
+  }, approve ? `${name} is signed in. It carries on by itself.` : `${name} wasn't signed in.`);
+}
+
 const copied = ref(false);
 
 // Google comes back with ?signin=<why> on failure, ?signedin=1 on success.
@@ -35,6 +56,8 @@ watch(
 );
 
 const me = computed(() => (id.me.value.signedIn ? id.me.value : null));
+// Arrived from the link a device showed: look its code up at once.
+watch(me, (m) => m && deviceCode.value && !asking.value && void lookUpDevice(), { immediate: true });
 const LEVEL: Record<number, string> = { 1: "signed in with a recovery code: add a passkey or Google now", 2: "signed in with a verified email", 3: "signed in with a passkey" };
 const METHOD: Record<string, string> = { passkey: "Passkey", oidc: "Google", recovery: "Recovery code", phone: "Phone", email: "Email", member_key: "Member key" };
 const methods = computed(() => (me.value?.methods ?? []).filter((m) => m.kind !== "recovery"));
@@ -69,6 +92,7 @@ const makeCodes = () =>
   });
 async function loadSessions() {
   sessions.value = await id.sessions().catch(() => null);
+  devices.value = await id.devices().catch(() => []);
 }
 watch(me, (m) => m && void loadSessions(), { immediate: true });
 async function copyCodes() {
@@ -184,6 +208,23 @@ async function copyCodes() {
         <button type="button" class="btn-light h-9 px-3 text-sm" :disabled="busy !== null" @click="makeCodes">{{ recoveryLeft ? "Make new codes (the old ones stop working)" : "Make recovery codes" }}</button>
       </section>
 
+      <!-- A device asks to sign in with a code (IDN-41). -->
+      <section class="space-y-2" aria-labelledby="approve-h">
+        <h4 id="approve-h" class="text-sm font-semibold text-ink">Approve a device</h4>
+        <p class="text-sm text-gray-600">A terminal (<code>yaxb login</code>), a box or a voice device shows a code. Type it here to sign it in as you.</p>
+        <form class="flex flex-wrap items-end gap-2" @submit.prevent="lookUpDevice">
+          <label class="block text-sm"><span class="mb-1 block font-medium text-ink">The code it shows</span><input v-model="deviceCode" class="input w-40 font-mono uppercase tracking-widest" maxlength="9" placeholder="ABCD-EFGH" autocomplete="off" /></label>
+          <button type="submit" class="btn-light h-10 px-3 text-sm" :disabled="busy !== null || deviceCode.trim().length < 8">Look it up</button>
+        </form>
+        <div v-if="asking" class="space-y-2 rounded-xl bg-mist p-3 text-sm" role="group" aria-label="The device asking">
+          <p class="text-ink"><strong>{{ asking.name }}</strong>, {{ CLIENT_A[asking.client] ?? asking.client }}, asks to {{ asking.scopes.map((s) => SCOPE[s] ?? s).join(" and ") }}. Only approve it if you started it yourself, just now.</p>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="btn-primary h-9 px-3 text-sm" :disabled="busy !== null" @click="answerDevice(true)">Approve</button>
+            <button type="button" class="btn-ghost h-9 px-3 text-sm" :disabled="busy !== null" @click="answerDevice(false)">Turn it down</button>
+          </div>
+        </div>
+      </section>
+
       <!-- Devices and sessions (IDN-40). -->
       <section v-if="sessions" class="space-y-2" aria-label="Devices">
         <h4 class="text-sm font-semibold text-ink">Signed in on</h4>
@@ -193,6 +234,13 @@ async function copyCodes() {
             <span class="min-w-0 flex-1 text-sm"><span class="text-ink">{{ s.device ?? "A device" }}</span><span class="block text-xs text-gray-500">{{ METHOD[s.method] }} · last used {{ when(s.last_used_at) }}</span></span>
             <span v-if="s.id === sessions.current" class="chip">This device</span>
             <button v-else type="button" class="btn-ghost h-8 px-2 text-sm" @click="run('end', async () => (await id.endSession(s.id), await loadSessions()))">Sign out</button>
+          </li>
+        </ul>
+        <ul v-if="devices.length" class="divide-y divide-gray-100 rounded-xl bg-surface ring-1 ring-gray-100" aria-label="Devices signed in with a code">
+          <li v-for="d in devices" :key="d.id" class="flex flex-wrap items-center gap-2 px-3 py-2.5">
+            <MonitorSmartphone class="size-4 text-gray-400" aria-hidden="true" />
+            <span class="min-w-0 flex-1 text-sm"><span class="text-ink">{{ d.name }}</span><span class="block text-xs text-gray-500">{{ CLIENT[d.client] ?? d.client }} · signed in with a code · last used {{ when(d.last_used_at) }}</span></span>
+            <ConfirmAction label="Sign out" :message="`Sign ${d.name} out for good? Only it stops working; sign it in again with a new code.`" trigger-class="btn-ghost h-8 px-2 text-sm" @confirm="run('device-out', async () => (await id.revokeDevice(d.id), (devices = await id.devices())))" />
           </li>
         </ul>
         <button v-if="sessions.sessions.length > 1" type="button" class="btn-ghost h-9 px-3 text-sm" @click="run('all', async () => (await id.signOut(true)))">Sign out everywhere</button>
