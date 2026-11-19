@@ -43,6 +43,36 @@ Merged as PRs #32 and #34 (#33 shipped inside #34) and deployed to all four site
 
 No redeploy is needed after setting a secret.
 
+## Next: one address for every edition (do this first)
+
+Decided 2026-11-19. Today each edition is its own site and Worker (family., business., community.anjalai.cc, and the portal). With spaces, one address can serve everyone: the open space decides the sections and which database is used. Do this before more edition features are built on the four-site setup.
+
+**The plan (option 1: one app, one Worker, three databases).** About a day or two, one PR. No data moves.
+1. **Worker.**
+   - One wrangler file for one Worker. It binds the three edition databases (anjal-family, anjal-business, anjal-community, under names such as `DB_FAMILY`, `DB_BUSINESS`, `DB_COMMUNITY`), the portal's `yaxb` and `PLATFORM_DB`.
+   - Choose the edition for each request:
+     - the open space's edition (`c.get("space").edition`, checked by `accountContext`);
+     - else the address (`family.anjalai.cc` is Family, and so on);
+     - else the portal.
+   - Keep the choice in an AsyncLocalStorage like `tenantContext` (worker/kiosk.ts). All 13 uses of `env.DB` are in `worker/kiosk.ts`: they become `dbFor(env, edition())`.
+   - The 7 reads of the fixed `SURFACE` setting (`servesApi` and others) read the request's edition.
+   - Key every per-env cache in kiosk.ts (`perTenant`, `kiosks`, `caseServices`, …) by edition as well as tenant, so one edition's data can never be served from another's cache. Test this.
+2. **Front end.**
+   - `VITE_SURFACE` stops being a build setting: one build serves every address.
+   - `lib/surface.ts` takes the edition from the address on start and from the open space after sign-in. It already follows the space's kind on the combined site (`rememberSpaceKind`). About 15 files read it, mostly through `offers()`.
+   - Each subdomain keeps its home page (Family's, Business's and Community's moods, the portal's at anjalai.cc and yaxb.ai) and opens the app with that kind of space chosen.
+   - `identity.openSpace` no longer jumps to another site: switching space stays on the same address.
+3. **Deploying.**
+   - One Worker with every custom domain: anjalai.cc, family., business., community.anjalai.cc and yaxb.ai.
+   - Each edition database's migrations are applied by the one deploy script.
+   - Retire anjal-family, anjal-business and anjal-community once the new Worker serves all of them. Ask the owner before deleting a Worker or a database.
+4. **Specs.**
+   - Update SUR-1..6, DOM-1..5 and PLA-1..5 in `12-platform-and-editions.md`.
+   - The session cookie no longer needs `.anjalai.cc` scoping for a single site, but keep it while the subdomains exist as addresses.
+   - Passkeys keep the relying party `anjalai.cc`.
+
+**Done when:** one deploy serves all four addresses; a Business space and a Family space switch on the same address without a page from another site; each edition's data is only read with its own database (a test opens a Business tenant id against Family and gets nothing); the native app uses the same Worker.
+
 ## Wave 2: what is left (on the other laptop)
 
 - **Identity, the rest of step 1:**
