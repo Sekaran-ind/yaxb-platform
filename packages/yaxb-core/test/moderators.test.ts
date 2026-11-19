@@ -1,7 +1,7 @@
 // Moderators and their keys (MOD-20..25, SEC-5), on the memory store and on the real D1 schema
 // (migrations applied to node:sqlite through a small D1-shaped adapter).
 import { describe, expect, it } from "vitest";
-import { AUDIT_GENESIS, auditEvent, verifyAuditChain, createMemoryModeratorStore, createModeratorService, hashKey, KEY_PREFIX, looksLikeKey, moderatorProfileSchema, statusOf, type ModeratorStore } from "../src/moderators/index.js";
+import { AUDIT_GENESIS, auditEvent, verifyAuditChain, createMemoryModeratorStore, createModeratorService, hashKey, KEY_PREFIX, looksLikeKey, moderatorProfileSchema, statusOf, type ModeratorStore, machineMayCall } from "../src/moderators/index.js";
 import { createD1ModeratorStore } from "../src/stores/d1.js";
 import { sqliteD1 } from "./sqlite-d1.js";
 
@@ -130,5 +130,52 @@ describe("the audit chain (AUD-2)", () => {
     await db.prepare("UPDATE audit SET details = ?1 WHERE id = ?2").bind(JSON.stringify({ n: 1 }), chain[1]!.id).run();
     await db.prepare("DELETE FROM audit WHERE id = ?1").bind(chain[2]!.id).run();
     expect(await verifyAuditChain(await store.auditChain())).toMatchObject({ ok: false, brokenAt: chain[3]!.id, reason: expect.stringMatching(/missing/) });
+  });
+});
+
+describe.each(stores)("machine keys and accounts (IDN-16, IDN-44): %s", (_name, makeStore) => {
+  it("issues a machine key with scopes and an expiry; it never signs in like a person", async () => {
+    const svc = createModeratorService(makeStore());
+    await expect(svc.issue({ name: "Nightly export", kind: "machine", expiresInDays: 30 })).rejects.toThrow(/may do/);
+    await expect(svc.issue({ name: "Nightly export", kind: "machine", scopes: ["events:read"] })).rejects.toThrow(/expires within/);
+    await expect(svc.issue({ name: "Meena", scopes: ["events:read"] })).rejects.toThrow(/for machines/);
+    const { moderator, key } = await svc.issue({ name: "Nightly export", kind: "machine", scopes: ["events:read", "events:read", "catalogue:read"], expiresInDays: 30 });
+    expect(moderator).toMatchObject({ kind: "machine", roles: [], scopes: ["events:read", "catalogue:read"] });
+    expect(moderator.expires_at).toBeTruthy();
+    expect(await svc.signIn(key)).toBeNull();
+    expect(await svc.keyKind(key)).toBe("machine");
+    expect((await svc.machine(key))?.id).toBe(moderator.id);
+    // A person's key is no machine.
+    const person = await svc.issue({ name: "Meena", roles: ["moderator"] });
+    expect(await svc.machine(person.key)).toBeNull();
+    // Rotating renews the machine's expiry; the old key stops working.
+    const rotated = await svc.rotate(moderator.id);
+    expect(await svc.machine(key)).toBeNull();
+    expect((await svc.machine(rotated!.key))?.id).toBe(moderator.id);
+    await svc.revoke(moderator.id);
+    expect(await svc.machine(rotated!.key)).toBeNull();
+  });
+
+  it("a person linked to an account no longer signs in with their key", async () => {
+    const svc = createModeratorService(makeStore());
+    const { moderator, key } = await svc.issue({ name: "Meena", roles: ["moderator"] });
+    expect((await svc.signIn(key))?.id).toBe(moderator.id);
+    expect((await svc.linkToAccount(moderator.id))?.linked_at).toBeTruthy();
+    expect(await svc.signIn(key)).toBeNull();
+    expect(await svc.keyKind(key)).toBe("linked");
+    const log = await svc.store.auditLog({ targetId: moderator.id });
+    expect(log.map((e) => e.action)).toContain("moderator.linked");
+  });
+});
+
+describe("what a machine may call", () => {
+  it("allows only its scopes' routes", () => {
+    expect(machineMayCall(["events:write"], "POST", "/api/events")).toBe(true);
+    expect(machineMayCall(["events:write"], "GET", "/api/events")).toBe(false);
+    expect(machineMayCall(["catalogue:read"], "GET", "/api/library/published")).toBe(true);
+    expect(machineMayCall(["catalogue:read"], "POST", "/api/library/services")).toBe(false);
+    expect(machineMayCall(["cases:read"], "GET", "/api/cases/abc")).toBe(true);
+    expect(machineMayCall(["cases:read"], "GET", "/api/casesx")).toBe(false);
+    expect(machineMayCall([], "GET", "/api/library/published")).toBe(false);
   });
 });

@@ -11,9 +11,10 @@ export type Bindings = CloudflareEnv & {
 
 const schema = z.object({
   SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
-  /** Moderators sign in to the curation view with this. Unset = the moderation queue is closed. */
-  MODERATOR_TOKEN: z.string().min(24, "MODERATOR_TOKEN must be at least 24 characters").optional(),
-  /** The administrator signs in to /kiosk/admin with this, to issue and manage moderator keys. Unset = no administration. */
+  /**
+   * Break-glass administration (IDN-44): the administrator signs in with this to issue and manage
+   * member and machine keys when no administrator can sign in with their account. Unset = none.
+   */
   ADMIN_TOKEN: z.string().min(24, "ADMIN_TOKEN must be at least 24 characters").optional(),
   /** The helpdesk Worker the contact form goes to (as ClinüxFlow's does): `{ type: "email", name, clinic, email, message }` → `{ success }`. Unset = Airtable. */
   HELPDESK_URL: z.url({ protocol: /^https$/ }).optional(),

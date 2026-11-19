@@ -2,9 +2,13 @@
 // Administration (MOD-20..23, MOD-25, TEAM-1..6): sign in with the administrator token (or as a
 // member with the administrator role), then invite members (their key is shown once), change their
 // roles, suspend, reinstate or remove them, and read the audit log.
-import { AUDIT_ACTIONS, MODERATOR_ROLES, type AuditEvent, type ChainCheck, type Moderator, type ModeratorStatus } from "@sekaran-ind/yaxb-core/moderators";
+//
+// Machines (IDN-16): a routine or an integration gets a machine key with scopes and an expiry; it
+// calls the API with it and never signs in. People sign in with their account once their member
+// record is linked to it (IDN-44); their key then shows "Signs in with an account".
+import { AUDIT_ACTIONS, MACHINE_MAX_DAYS, MACHINE_SCOPES, MODERATOR_ROLES, type AuditEvent, type ChainCheck, type Moderator, type ModeratorStatus } from "@sekaran-ind/yaxb-core/moderators";
 import { memberStatus, type MemberStatus } from "@sekaran-ind/yaxb-core/team";
-import { Copy, KeyRound, Lock, LogOut, Pencil, RefreshCw, RotateCw, ShieldAlert, Trash2, UserPlus } from "@lucide/vue";
+import { Copy, Cpu, KeyRound, Lock, LogOut, Pencil, RefreshCw, RotateCw, ShieldAlert, Trash2, UserPlus } from "@lucide/vue";
 import { ConfirmAction } from "@sekaran-ind/yaxb-journeys/vue";
 import { computed, onMounted, ref } from "vue";
 import { roleCatalogue, roleName, loadLibraryContent } from "@/composables/library";
@@ -20,7 +24,9 @@ const rows = ref<Row[]>([]);
 const audit = ref<AuditEvent[]>([]);
 /** The audit chain (AUD-2): its head, and a check of the newest records. */
 const chain = ref<{ head: { hash: string; count: number }; check: ChainCheck } | null>(null);
-const form = ref<{ name: string; label: string; roles: string[]; expiresInDays: number | null } | null>(null);
+const form = ref<{ kind: "person" | "machine"; name: string; label: string; roles: string[]; scopes: string[]; expiresInDays: number | null } | null>(null);
+const SCOPES = Object.entries(MACHINE_SCOPES).map(([id, s]) => ({ id, label: s.label }));
+const ready = computed(() => Boolean(form.value?.name.trim()) && (form.value?.kind === "machine" ? form.value.scopes.length > 0 && Boolean(form.value.expiresInDays) : Boolean(form.value?.roles.length)));
 /** A key just issued or rotated: shown once, until dismissed. */
 const shownKey = ref<{ name: string; key: string } | null>(null);
 const copied = ref(false);
@@ -68,8 +74,9 @@ const signOut = () => act(() => api("/api/admin", { method: "DELETE" }));
 const issue = () =>
   act(async () => {
     if (!form.value) return;
-    const { name, label, roles, expiresInDays } = form.value;
-    const r = await api<{ moderator: Row; key: string }>("/api/admin/moderators", { method: "POST", body: JSON.stringify({ name, ...(label.trim() ? { label } : {}), roles, ...(expiresInDays ? { expiresInDays } : {}) }) });
+    const { kind, name, label, roles, scopes, expiresInDays } = form.value;
+    const who = kind === "machine" ? { kind, scopes, roles: [] } : { roles };
+    const r = await api<{ moderator: Row; key: string }>("/api/admin/moderators", { method: "POST", body: JSON.stringify({ name, ...(label.trim() ? { label } : {}), ...who, ...(expiresInDays ? { expiresInDays } : {}) }) });
     shownKey.value = { name: r.moderator.name, key: r.key };
     form.value = null;
   });
@@ -131,32 +138,44 @@ onMounted(load);
         <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h3 class="font-semibold text-ink">Team</h3>
           <div class="flex flex-wrap gap-2">
-            <button type="button" class="btn-light" @click="form = { name: '', label: '', roles: ['moderator'], expiresInDays: null }"><UserPlus class="size-4" aria-hidden="true" /> Invite member</button>
+            <button type="button" class="btn-light" @click="form = { kind: 'person', name: '', label: '', roles: ['moderator'], scopes: [], expiresInDays: null }"><UserPlus class="size-4" aria-hidden="true" /> Invite member</button>
+            <button type="button" class="btn-light" @click="form = { kind: 'machine', name: '', label: '', roles: [], scopes: [], expiresInDays: 90 }"><Cpu class="size-4" aria-hidden="true" /> Add a machine</button>
             <button type="button" class="btn-light" aria-label="Refresh" @click="load"><RefreshCw class="size-4" aria-hidden="true" /></button>
             <button type="button" class="btn-light" @click="signOut"><LogOut class="size-4" aria-hidden="true" /> Sign out</button>
           </div>
         </div>
 
         <form v-if="form" class="mb-4 grid gap-3 rounded-lg bg-mist p-4 @lg:grid-cols-2" @submit.prevent="issue">
-          <div><label for="m-name" class="mb-1 block text-sm font-medium text-ink">Name</label><input id="m-name" v-model="form.name" class="input" required maxlength="80" /></div>
+          <p class="text-sm text-gray-600 @lg:col-span-2">
+            {{
+              form.kind === "machine"
+                ? "A routine or an integration: it calls the API with its key, only for what you tick, and never signs in. Its key expires; give it a new key to renew it."
+                : "A person's key, for someone without an account yet. Once they add this space to their account they sign in with it, and the key stops working. A join link does that in one go."
+            }}
+          </p>
+          <div><label for="m-name" class="mb-1 block text-sm font-medium text-ink">Name</label><input id="m-name" v-model="form.name" class="input" required maxlength="80" :placeholder="form.kind === 'machine' ? 'e.g. Nightly export' : ''" /></div>
           <div><label for="m-label" class="mb-1 block text-sm font-medium text-ink">Label <span class="font-normal text-gray-500">(optional)</span></label><input id="m-label" v-model="form.label" class="input" maxlength="80" placeholder="e.g. Pharmacy team" /></div>
-          <fieldset>
+          <fieldset v-if="form.kind === 'machine'">
+            <legend class="mb-1 text-sm font-medium text-ink">It may</legend>
+            <label v-for="s in SCOPES" :key="s.id" class="flex items-center gap-1.5 py-0.5 text-sm"><input v-model="form.scopes" type="checkbox" :value="s.id" class="size-4 accent-brand" />{{ s.label }}</label>
+          </fieldset>
+          <fieldset v-else>
             <legend class="mb-1 text-sm font-medium text-ink">Roles</legend>
             <label v-for="r in roleOptions" :key="r" class="mr-4 inline-flex items-center gap-1.5 text-sm"><input v-model="form.roles" type="checkbox" :value="r" class="size-4 accent-brand" />{{ roleName(r) }}</label>
           </fieldset>
           <div>
             <label for="m-exp" class="mb-1 block text-sm font-medium text-ink">Key expires after</label>
             <select id="m-exp" v-model="form.expiresInDays" class="input">
-              <option :value="null">Never</option>
+              <option v-if="form.kind !== 'machine'" :value="null">Never</option>
               <option :value="30">30 days</option>
               <option :value="90">90 days</option>
               <option :value="180">180 days</option>
-              <option :value="365">1 year</option>
+              <option :value="MACHINE_MAX_DAYS">1 year</option>
             </select>
           </div>
           <div class="flex justify-end gap-2 @lg:col-span-2">
             <button type="button" class="btn-light" @click="form = null">Cancel</button>
-            <button type="submit" class="btn-primary" :disabled="busy || !form.name.trim() || !form.roles.length">Issue key</button>
+            <button type="submit" class="btn-primary" :disabled="busy || !ready">Issue key</button>
           </div>
         </form>
 
@@ -164,13 +183,14 @@ onMounted(load);
         <div v-else class="overflow-x-auto">
           <table class="w-full min-w-[640px] text-left text-sm">
             <thead class="text-xs text-gray-500">
-              <tr><th class="py-1.5 font-normal">Name</th><th class="font-normal">Roles</th><th class="font-normal">Status</th><th class="font-normal">Key</th><th class="font-normal">Last sign-in</th><th class="font-normal">Reviews</th><th class="sr-only">Actions</th></tr>
+              <tr><th class="py-1.5 font-normal">Name</th><th class="font-normal">Roles or what it may do</th><th class="font-normal">Status</th><th class="font-normal">Key</th><th class="font-normal">Last sign-in</th><th class="font-normal">Reviews</th><th class="sr-only">Actions</th></tr>
             </thead>
             <tbody>
               <tr v-for="m in rows" :key="m.id" class="border-t border-gray-100">
-                <td class="py-2 pr-3"><span class="font-medium text-ink">{{ m.name }}</span><span v-if="m.label" class="block text-xs text-gray-500">{{ m.label }}</span></td>
+                <td class="py-2 pr-3"><span class="font-medium text-ink">{{ m.name }}</span><span v-if="m.kind === 'machine'" class="chip ml-2">Machine</span><span v-if="m.label" class="block text-xs text-gray-500">{{ m.label }}</span></td>
                 <td class="pr-3">
-                  <form v-if="editing?.id === m.id" class="flex flex-wrap items-center gap-2" @submit.prevent="saveRoles">
+                  <span v-if="m.kind === 'machine'" class="text-xs text-gray-600">{{ (m.scopes ?? []).map((s) => MACHINE_SCOPES[s as keyof typeof MACHINE_SCOPES]?.label ?? s).join("; ") }}</span>
+                  <form v-else-if="editing?.id === m.id" class="flex flex-wrap items-center gap-2" @submit.prevent="saveRoles">
                     <label v-for="r in roleOptions" :key="r" class="inline-flex items-center gap-1 text-xs"><input v-model="editing.roles" type="checkbox" :value="r" class="size-3.5 accent-brand" />{{ roleName(r) }}</label>
                     <button type="submit" class="btn-primary h-7 px-2.5 text-xs" :disabled="busy || !editing.roles.length">Save</button>
                     <button type="button" class="btn-ghost h-7 px-2 text-xs" @click="editing = null">Cancel</button>
@@ -183,7 +203,7 @@ onMounted(load);
                   <span :class="cn('rounded-full px-2 py-0.5 text-xs capitalize', STATUS_CLASS[memberStatus(m)])">{{ memberStatus(m) }}</span>
                   <span v-if="m.expires_at && m.status === 'active'" class="block text-xs text-gray-500">until {{ new Date(m.expires_at).toLocaleDateString() }}</span>
                 </td>
-                <td class="pr-3 font-mono text-xs text-gray-600">{{ m.key_prefix }}</td>
+                <td class="pr-3 text-xs text-gray-600"><span v-if="m.linked_at">Signs in with an account</span><span v-else class="font-mono">{{ m.key_prefix }}</span></td>
                 <td class="pr-3 text-xs text-gray-600">{{ when(m.last_seen_at) }}</td>
                 <td class="pr-3">{{ m.reviews }}</td>
                 <td class="text-right whitespace-nowrap">

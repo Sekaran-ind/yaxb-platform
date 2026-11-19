@@ -2,8 +2,9 @@
 //
 // Moderators sign in with their own key (MOD-21): the cookie is the moderator's id and an HMAC
 // bound to their current key's hash, so revoking or rotating the key signs them out at once.
-// The old shared MODERATOR_TOKEN still works while it is set (its cookie id is "shared").
-// The administrator signs in with ADMIN_TOKEN (MOD-23), a different secret with its own cookie.
+// The shared MODERATOR_TOKEN is retired (IDN-44): people sign in with their account or their own key,
+// and machines call the API with a machine key (IDN-16, `c.get("machine")`, never a cookie).
+// The administrator signs in with ADMIN_TOKEN (MOD-23), kept for break-glass use, with its own cookie.
 import type { Moderator, ModeratorService } from "@sekaran-ind/yaxb-core/moderators";
 import { statusOf } from "@sekaran-ind/yaxb-core/moderators";
 import type { Context } from "hono";
@@ -67,28 +68,24 @@ export async function clientId(c: Context<AppEnv>): Promise<string> {
 
 // ---- moderators -------------------------------------------------------------------------------------
 
-/** Who a signed-in moderator is: their record, or the shared token's stand-in. */
-export type ModeratorIdentity = { id: string; name: string; roles: Moderator["roles"]; shared: boolean; moderator: Moderator | null };
+/** Who a signed-in member is: a person (their key's cookie or their account's space) or a machine (its bearer key). */
+export type ModeratorIdentity = { id: string; name: string; roles: Moderator["roles"]; shared: false; moderator: Moderator; machine?: boolean };
 
-const SHARED: Omit<ModeratorIdentity, "moderator"> = { id: "shared", name: "Shared moderator token", roles: ["moderator", "curator"], shared: true };
-
-/** The cookie for a moderator signed in with their key, or with the shared token (moderator null). */
-export async function moderatorCookie(c: Context<AppEnv>, moderator: Moderator | null, keyHash: string | null): Promise<string | null> {
-  const { SESSION_SECRET, MODERATOR_TOKEN } = settings(c.env);
-  if (!moderator) return MODERATOR_TOKEN ? `shared.${await hmac(SESSION_SECRET, `moderator:${MODERATOR_TOKEN}`)}` : null;
+/** The cookie for a person signed in with their key. */
+export async function moderatorCookie(c: Context<AppEnv>, moderator: Moderator, keyHash: string | null): Promise<string | null> {
+  const { SESSION_SECRET } = settings(c.env);
   return keyHash ? `${moderator.id}.${await hmac(SESSION_SECRET, `moderator:${moderator.id}:${keyHash}`)}` : null;
 }
 
 /** The signed-in moderator, checked against their current key and status on every request. */
 export async function moderatorOf(c: Context<AppEnv>, svc: ModeratorService): Promise<ModeratorIdentity | null> {
+  // A machine (IDN-16): checked once per request by the /api middleware; it holds no roles.
+  const machine = c.get("machine");
+  if (machine) return { id: machine.id, name: machine.name, roles: [], shared: false, moderator: machine, machine: true };
   const cookie = getCookie(c, MODERATOR_COOKIE);
   const dot = cookie?.indexOf(".") ?? -1;
   if (!cookie || dot < 1) return memberOfSpace(c, svc);
   const id = cookie.slice(0, dot);
-  if (id === "shared") {
-    const expected = await moderatorCookie(c, null, null);
-    return expected && safeEqual(cookie, expected) ? { ...SHARED, moderator: null } : null;
-  }
   if (!/^[0-9a-f-]{36}$/.test(id)) return null;
   const [m, keyHash] = await Promise.all([svc.store.get(id), svc.store.keyHashOf(id)]);
   if (!m || !keyHash || statusOf(m) !== "active") return null;

@@ -18,7 +18,7 @@ import { beaconSchema, CaseError, envelopeSchema, MAX_CASE_RUN, MAX_ENVELOPE, ma
 import { DesignerError, historyOf, LESSONS_IN_MEMORY, MAX_NARRATIVE } from "@sekaran-ind/yaxb-core/designer";
 import { ADMIN_ACTOR_ID, LibraryError, MAX_ENTRY_BYTES, permissionsOf, type LibraryActor } from "@sekaran-ind/yaxb-core/library";
 import { proposalEntry, ReviewError, type Reviewer } from "@sekaran-ind/yaxb-core/reviews";
-import { auditEvent, hashKey, looksLikeKey, MODERATOR_ROLES, statusOf, TeamRuleError, verifyAuditChain } from "@sekaran-ind/yaxb-core/moderators";
+import { auditEvent, hashKey, looksLikeKey, machineMayCall, MODERATOR_ROLES, statusOf, TeamRuleError, verifyAuditChain, type Moderator } from "@sekaran-ind/yaxb-core/moderators";
 import { AVAILABILITY, hubName, memberStatus, roomName, teamMember } from "@sekaran-ind/yaxb-core/team";
 import { HUB_HEADERS } from "./team";
 
@@ -31,7 +31,7 @@ import { IdentityError, type DeviceLockView, type Membership, type TokenClaims }
 export type AppEnv = {
   Bindings: Bindings;
   /** `account` and `space`: the signed-in account and its open space, checked on this request (identity.ts). */
-  Variables: { reviewer: Reviewer; account?: TokenClaims; space?: Membership; lock?: DeviceLockView };
+  Variables: { reviewer: Reviewer; account?: TokenClaims; space?: Membership; lock?: DeviceLockView; machine?: Moderator };
 };
 
 const MAX_CHAT_BODY = 4_500_000;
@@ -64,6 +64,8 @@ const jsonError = (c: Context<AppEnv>, status: number, message: string) => {
  * from another site.
  */
 function sameOrigin(c: Context<AppEnv>): boolean {
+  // A machine's bearer key can't be sent by another site's page (browsers never add it), so no CSRF.
+  if (c.get("machine")) return true;
   const origin = c.req.header("origin");
   if (!origin) return false;
   if (fromApp(c)) return true;
@@ -124,6 +126,20 @@ app.use("/api/*", async (c, next) => {
  * tenantContext).
  */
 app.use("/api/*", async (c, next) => {
+  // A machine (IDN-16): `Authorization: Bearer yaxb_mod_…`. It acts in its own tenant, never signs in,
+  // and may call only what its scopes allow.
+  const bearer = /^Bearer\s+(\S+)$/i.exec(c.req.header("authorization") ?? "")?.[1];
+  if (bearer) {
+    const machine = looksLikeKey(bearer) ? await moderators(c.env).machine(bearer) : null;
+    if (!machine) return jsonError(c, 401, "That machine key isn't right, or it has been revoked or has expired.");
+    const tenant = machine.tenant ?? DEFAULT_TENANT;
+    if (!machineMayCall(machine.scopes ?? [], c.req.method, new URL(c.req.url).pathname)) {
+      await tenantContext.run(tenant, () => moderators(c.env, tenant).store.audit(auditEvent({ actor_type: "system", actor_id: machine.id, actor_name: machine.name, action: "machine.refused", target_id: machine.id, details: { method: c.req.method } })));
+      return jsonError(c, 403, "This machine key may not do that.");
+    }
+    c.set("machine", machine);
+    return tenantContext.run(tenant, () => next());
+  }
   let tenant = DEFAULT_TENANT;
   const cookie = getCookie(c, MODERATOR_COOKIE) ?? "";
   const id = cookie.slice(0, Math.max(cookie.indexOf("."), 0));
@@ -310,7 +326,7 @@ app.get("/api/moderator", async (c) => {
   return c.json({ moderator: Boolean(who), ...(who ? { name: who.name, roles: who.roles, shared: who.shared } : {}), enabled: true });
 });
 
-/** Sign in with a moderator key (or, while it is set, the shared MODERATOR_TOKEN). */
+/** Sign in with a person's member key (the shared MODERATOR_TOKEN is retired, IDN-44). */
 app.post("/api/moderator", async (c) => {
   if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
   if (!(await withinLimit("form", c.env.FORM_LIMITER, `moderator:${ip(c)}`))) return jsonError(c, 429, "Too many attempts. Please wait a minute.");
@@ -324,15 +340,17 @@ app.post("/api/moderator", async (c) => {
     return tenantContext.run(tenant, async () => {
       const svc = moderators(c.env, tenant);
       const m = await svc.signIn(token);
-      if (!m) return jsonError(c, 401, "That key isn't right, or it has been revoked or has expired.");
+      if (!m) {
+        const why = await svc.keyKind(token);
+        if (why === "machine") return jsonError(c, 401, "That is a machine's key: it calls the API, it doesn't sign in.");
+        if (why === "linked") return jsonError(c, 401, "You sign in with your account now: Preferences → Account.");
+        return jsonError(c, 401, "That key isn't right, or it has been revoked or has expired.");
+      }
       setModeratorCookie(c, await moderatorCookie(c, m, await svc.store.keyHashOf(m.id)));
       return c.json({ moderator: true, name: m.name, roles: m.roles });
     });
   }
-  const { MODERATOR_TOKEN } = settings(c.env);
-  if (!MODERATOR_TOKEN || !safeEqual(token, MODERATOR_TOKEN)) return jsonError(c, 401, "That key isn't right, or it has been revoked or has expired.");
-  setModeratorCookie(c, await moderatorCookie(c, null, null));
-  return c.json({ moderator: true, name: "Shared moderator token", shared: true });
+  return jsonError(c, 401, "That key isn't right, or it has been revoked or has expired.");
 });
 
 /** The signed-in moderator's profile and their own activity (MOD-24). */
@@ -532,6 +550,8 @@ app.post("/api/join-requests/:id/collect", async (c) => {
 
 /** Every admin route below: same origin for changes, and the administrator's cookie. */
 app.use("/api/admin/*", async (c, next) => {
+  // A machine with audit:read reads the chain's head (the box's daily check); nothing else here.
+  if (c.get("machine")) return new URL(c.req.url).pathname === "/api/admin/audit/chain" && c.req.method === "GET" ? next() : jsonError(c, 403, "Forbidden");
   if (c.req.method !== "GET" && !sameOrigin(c)) return jsonError(c, 403, "Forbidden");
   if (!(await administrator(c))) return jsonError(c, 401, "Administrator sign-in required.");
   await next();
@@ -814,13 +834,18 @@ app.route(
     },
     async signedInMember(c) {
       const who = await moderatorOf(c, moderators(c.env));
-      return who?.moderator ? { id: who.moderator.id, roles: [...who.moderator.roles] } : null;
+      if (!who || who.machine) return null;
+      // The person now signs in with their account (IDN-44): their key stops signing in.
+      await moderators(c.env).linkToAccount(who.moderator.id);
+      return { id: who.moderator.id, roles: [...who.moderator.roles] };
     },
     async startSpace(c, input) {
       const base = input.name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 36) || "space";
       const slug = `${base}-${crypto.getRandomValues(new Uint32Array(1))[0]!.toString(36).slice(0, 5)}`;
       const t = await tenants(c.env).createTenant({ name: input.name, slug, kind: input.kind });
       const { moderator } = await moderators(c.env, t.id).issue({ name: input.person.slice(0, 80) || "Administrator", label: "Started the space", roles: ["administrator"] }, { name: input.person });
+      // The person signs in with their account; the key made for the record is never shown or used (IDN-44).
+      await moderators(c.env, t.id).linkToAccount(moderator.id);
       return { tenant_id: t.id, name: t.name, kind: t.kind, member_id: moderator.id, roles: [...moderator.roles] };
     },
     async joinSpace(c, token, person) {
@@ -846,7 +871,9 @@ app.route(
         if (s.status === "declined") return { status: "declined" };
         if (s.status === "collected") return { status: "gone" };
         const { memberId } = await svc.collect(requestId, claim);
-        const m = await moderators(c.env).store.get(memberId);
+        // The member is made in the space's tenant; they sign in with their account from now (IDN-44).
+        const tenant = (await tenantOfMember(c.env, memberId)) ?? currentTenant();
+        const m = await moderators(c.env, tenant).linkToAccount(memberId);
         return { status: "collected", member_id: memberId, roles: m ? [...m.roles] : [s.role] };
       } catch {
         return { status: "gone" };
@@ -854,6 +881,7 @@ app.route(
     },
     async memberFor(c, input) {
       const { moderator } = await moderators(c.env).issue({ name: input.name.slice(0, 80) || "Administrator", label: "Linked to an account", roles: input.roles as never }, { name: "Administrator" });
+      await moderators(c.env).linkToAccount(moderator.id);
       return { id: moderator.id, roles: [...moderator.roles] };
     },
   }),
@@ -905,7 +933,8 @@ app.post("/api/events", async (c) => {
 /** A service's events, for its dashboard and activity log: administrators, moderators and reviewers. */
 app.get("/api/events", async (c) => {
   const a = await libraryActor(c);
-  if (!(a.admin || a.roles.some((r) => r === "administrator" || r === "moderator" || r === "reviewer"))) return jsonError(c, 403, "Administrators, moderators and reviewers only.");
+  // A machine got here only with the events:read scope.
+  if (!(c.get("machine") || a.admin || a.roles.some((r) => r === "administrator" || r === "moderator" || r === "reviewer"))) return jsonError(c, 403, "Administrators, moderators and reviewers only.");
   const service = c.req.query("service") ?? "";
   if (!service || (await serviceStorage(c, service)) !== "server") return jsonError(c, 404, "That service doesn't keep its records on the server.");
   return c.json({ items: await serviceEvents(c.env).list(service, { since: c.req.query("since") ?? undefined }) });
@@ -1214,7 +1243,8 @@ app.get("/api/team", async (c) => {
   if (!me) return jsonError(c, 401, "Sign in with your own moderator key to see the team.");
   const svc = moderators(c.env);
   const list = await svc.store.list();
-  const members = await Promise.all(list.filter((m) => statusOf(m) === "active").map(async (m) => teamMember(m, await svc.store.getProfile(m.id))));
+  // People only: machines aren't on the team.
+  const members = await Promise.all(list.filter((m) => statusOf(m) === "active" && m.kind !== "machine").map(async (m) => teamMember(m, await svc.store.getProfile(m.id))));
   return c.json({ me: members.find((m) => m.id === me.id) ?? teamMember(me, null), members });
 });
 

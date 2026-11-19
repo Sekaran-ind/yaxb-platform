@@ -226,9 +226,9 @@ const auditQueues = new Map<string, ReturnType<typeof serially>>();
 export function createD1ModeratorStore(db: D1Like, { tenant = "default" }: { tenant?: string } = {}): ModeratorStore {
   let inOrder = auditQueues.get(tenant);
   if (!inOrder) auditQueues.set(tenant, (inOrder = serially()));
-  type Row = Omit<Moderator, "roles"> & { roles: string };
-  const COLS = "id, name, label, roles, status, key_prefix, created_at, expires_at, last_seen_at, reviews, tenant_id AS tenant";
-  const mod = (r: Row | null): Moderator | null => (r ? { ...r, roles: JSON.parse(r.roles) as Moderator["roles"] } : null);
+  type Row = Omit<Moderator, "roles" | "scopes"> & { roles: string; scopes: string | null };
+  const COLS = "id, name, label, roles, status, key_prefix, created_at, expires_at, last_seen_at, reviews, tenant_id AS tenant, kind, scopes, linked_at";
+  const mod = (r: Row | null): Moderator | null => (r ? { ...r, roles: JSON.parse(r.roles) as Moderator["roles"], scopes: r.scopes ? (JSON.parse(r.scopes) as string[]) : null } : null);
   return {
     async list() {
       const { results } = await db.prepare(`SELECT ${COLS} FROM moderators WHERE tenant_id = ?1 ORDER BY name`).bind(tenant).all<Row>();
@@ -245,10 +245,10 @@ export function createD1ModeratorStore(db: D1Like, { tenant = "default" }: { ten
     },
     async create(m, keyHash) {
       await db
-        .prepare("INSERT INTO moderators (id, name, label, roles, status, key_hash, key_prefix, created_at, expires_at, tenant_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)")
-        .bind(m.id, m.name, m.label, JSON.stringify(m.roles), m.status, keyHash, m.key_prefix, m.created_at, m.expires_at, tenant)
+        .prepare("INSERT INTO moderators (id, name, label, roles, status, key_hash, key_prefix, created_at, expires_at, tenant_id, kind, scopes, linked_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)")
+        .bind(m.id, m.name, m.label, JSON.stringify(m.roles), m.status, keyHash, m.key_prefix, m.created_at, m.expires_at, tenant, m.kind ?? "person", m.scopes ? JSON.stringify(m.scopes) : null, m.linked_at ?? null)
         .run();
-      return { ...m, last_seen_at: null, reviews: 0, tenant };
+      return { ...m, kind: m.kind ?? "person", scopes: m.scopes ?? null, linked_at: m.linked_at ?? null, last_seen_at: null, reviews: 0, tenant };
     },
     async update(id, patch, keyHash) {
       const sets: string[] = [];

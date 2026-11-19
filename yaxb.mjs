@@ -175,11 +175,6 @@ function ensureDevVars() {
     setVar(DEV_VARS, "IDENTITY_SECRET", secret());
     info("Generated IDENTITY_SECRET (accounts and spaces)");
   }
-  if (!vars.MODERATOR_TOKEN) {
-    const token = secret(24);
-    setVar(DEV_VARS, "MODERATOR_TOKEN", token);
-    info(`Generated MODERATOR_TOKEN (moderator sign-in on /kiosk/curate): ${token}`);
-  }
   if (!vars.ADMIN_TOKEN) {
     const token = secret(32);
     setVar(DEV_VARS, "ADMIN_TOKEN", token);
@@ -423,7 +418,7 @@ function deploy() {
   node(WRANGLER, ["deploy"], WEB_DIR, "Worker deploy");
   console.log(`
   ${green("Deployed.")} Set any missing secrets with:  cd apps/web && npx wrangler secret put <NAME>
-  ${dim("Required: SESSION_SECRET and at least one provider key. Optional: MODERATOR_TOKEN, AIRTABLE_*, MAILCHIMP_*.")}
+  ${dim("Required: SESSION_SECRET and at least one provider key. Optional: ADMIN_TOKEN (break-glass), AIRTABLE_*, MAILCHIMP_*.")}
 `);
 }
 

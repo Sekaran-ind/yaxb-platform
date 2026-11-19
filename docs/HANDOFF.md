@@ -55,6 +55,8 @@ Decided 2026-11-19, built in the PR "One address for every edition" (SUR-14). On
 3. **Check:** each address shows its own home page; a Business and a Family space switch on one address.
 4. **Retire** the anjal-family, anjal-business and anjal-community Workers once the new one serves their addresses. Never delete their databases: `yaxb-web` uses them.
 
+**`MODERATOR_TOKEN` is retired** (IDN-44): the Worker ignores it, so the secret can be deleted (`npx wrangler secret delete MODERATOR_TOKEN`). People sign in with their account or their own key; routines use machine keys (Administration → Add a machine). `ADMIN_TOKEN` stays for break-glass use.
+
 **Locally:** `node yaxb.mjs start`, then http://localhost:3000 (the portal) and http://family.localhost:3000, http://business.localhost:3000, http://community.localhost:3000. Each local address is its own passkey relying party and has its own cookies, so sign in on each.
 
 ## Wave 2: what is left (on the other laptop)
