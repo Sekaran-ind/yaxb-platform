@@ -16,7 +16,7 @@
 import { methodsApi, type RelyingParty } from "./methods.js";
 import { keyedHash, newSigningKey, randomCode, randomToken, sameText, seal, signJwt, unseal, verifyJwt, type Jwk, type PublicJwk } from "./crypto.js";
 
-export { b64url, fromB64url, keyedHash, randomToken, verifyJwt, type PublicJwk } from "./crypto.js";
+export { b64url, fromB64url, keyedHash, randomToken, seal, unseal, verifyJwt, type PublicJwk } from "./crypto.js";
 
 // ---- records -------------------------------------------------------------------------------------
 

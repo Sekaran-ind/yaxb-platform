@@ -24,6 +24,7 @@ import ChildLockSetup from "./ChildLockSetup.vue";
 import BoxSync from "./BoxSync.vue";
 import StorageMeter from "./StorageMeter.vue";
 import HouseholdSetup from "./HouseholdSetup.vue";
+import AccountIdentity from "@/components/account/AccountIdentity.vue";
 import { useChildMode } from "@/composables/child";
 import { casesCaps } from "@/composables/case-network";
 import ChoiceGrid from "./ChoiceGrid.vue";
@@ -31,6 +32,7 @@ import ToggleRow from "./ToggleRow.vue";
 
 const SECTIONS = [
   { id: "profile", label: "Profile", icon: "user-round" },
+  { id: "account", label: "Account", icon: "lock" },
   { id: "language", label: "Language", icon: "languages" },
   { id: "kiosk", label: "Layout, theme & voice", icon: "message-square" },
   { id: "knowledge", label: "Knowledge", icon: "search" },
@@ -306,6 +308,10 @@ async function clearBrowser() {
         <ChildLockSetup />
       </template>
 
+      <!-- Keep my things across devices (15-identity.md): never for a child (IDN-5). -->
+      <template #account>
+        <AccountIdentity />
+      </template>
       <template #household>
         <HouseholdSetup />
       </template>

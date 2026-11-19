@@ -11,8 +11,8 @@ Each edition is its own Worker with its own database (SUR-1). With spaces (15, S
 | ID | Requirement | Status |
 |---|---|---|
 | PLA-1 | One D1 database, `anjal-platform`, must be bound to every edition's Worker (binding `PLATFORM_DB`) next to that edition's own `DB`. Its migrations live in yaxb-core beside the edition migrations, in their own folder. | Built: `PLATFORM_DB` in every wrangler file, migrations in `packages/yaxb-core/migrations-platform` (0001: `platform_meta`). The remote database is created at the first deploy. |
-| PLA-2 | Only records that cross editions go in the platform database: accounts and their sign-in methods (15), the approved-sites catalogue (14), email routing (16) and the directory. Cases, the catalogue, reviews, the team, conversations and everything else stay in the edition's own database. | Planned |
-| PLA-3 | The code that uses the platform database must live in yaxb-core under its own exports (`./identity`, `./sites`, `./email`), like `./tenants` and `./library` today, with memory and D1 stores tested on both. | Planned |
+| PLA-2 | Only records that cross editions go in the platform database: accounts and their sign-in methods (15), the approved-sites catalogue (14), email routing (16) and the directory. Cases, the catalogue, reviews, the team, conversations and everything else stay in the edition's own database. | Partly built: accounts, sign-in methods, memberships, sessions, signing keys and the identity audit (platform migration 0002). The approved sites, email routing and the directory come with their features. |
+| PLA-3 | The code that uses the platform database must live in yaxb-core under its own exports (`./identity`, `./sites`, `./email`), like `./tenants` and `./library` today, with memory and D1 stores tested on both. | Partly built: `./identity` (memory and D1 stores, tested on both). |
 | PLA-4 | Every query on the platform database that touches tenant data must name the tenant and the edition, so a family tenant and a business tenant with the same id cannot meet. | Planned |
 | PLA-5 | A developer's local run (`node yaxb.mjs start`) must create and migrate a local `anjal-platform` beside the edition database, as it does for `DB` today. | Built: `node yaxb.mjs start` (and `db:migrate:local`) migrates a local `anjal-platform`. |
 
@@ -21,10 +21,10 @@ Each edition is its own Worker with its own database (SUR-1). With spaces (15, S
 | ID | Requirement | Status |
 |---|---|---|
 | DOM-1 | The editions are served at `family.anjalai.cc`, `business.anjalai.cc` and `community.anjalai.cc`. The custom domains must be declared in each edition's wrangler file, so a deploy keeps them, and the portal's `VITE_*_URL` defaults must point at them. | Built: `routes` with `custom_domain` in each edition's wrangler file; the portal's links default to the anjalai.cc domains. |
-| DOM-2 | The account session cookie (IDN, 15) must be scoped to `.anjalai.cc`, so one sign-in works on every edition. Each edition's own cookies (`yaxb_sid`, the member cookie) stay host-only. | Planned |
-| DOM-3 | Passkeys must use the relying-party id `anjalai.cc`, so a passkey made on one edition works on the others. | Planned |
+| DOM-2 | The account session cookie (IDN, 15) must be scoped to `.anjalai.cc`, so one sign-in works on every edition. Each edition's own cookies (`yaxb_sid`, the member cookie) stay host-only. | Built: `anj_at` and `anj_rt` are scoped to `.anjalai.cc` there; `anj_space` and the edition's own cookies stay host-only. |
+| DOM-3 | Passkeys must use the relying-party id `anjalai.cc`, so a passkey made on one edition works on the others. | Built: the relying party is `anjalai.cc` on every edition. |
 | DOM-4 | The email assistant's address is `review@anjalai.cc` (16); Email Routing for `anjalai.cc` must be on the same Cloudflare account. | Planned |
-| DOM-5 | The `*.workers.dev` addresses may stay for testing. Nothing that needs a shared site (passkeys, the shared cookie, OAuth redirects) is offered there. | Planned |
+| DOM-5 | The `*.workers.dev` addresses may stay for testing. Nothing that needs a shared site (passkeys, the shared cookie, OAuth redirects) is offered there. | Built: other addresses offer no passkeys; the session cookies are host-only there. |
 
 ## The Community edition
 

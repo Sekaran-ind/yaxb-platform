@@ -83,7 +83,7 @@ export async function moderatorCookie(c: Context<AppEnv>, moderator: Moderator |
 export async function moderatorOf(c: Context<AppEnv>, svc: ModeratorService): Promise<ModeratorIdentity | null> {
   const cookie = getCookie(c, MODERATOR_COOKIE);
   const dot = cookie?.indexOf(".") ?? -1;
-  if (!cookie || dot < 1) return null;
+  if (!cookie || dot < 1) return memberOfSpace(c, svc);
   const id = cookie.slice(0, dot);
   if (id === "shared") {
     const expected = await moderatorCookie(c, null, null);
@@ -94,6 +94,17 @@ export async function moderatorOf(c: Context<AppEnv>, svc: ModeratorService): Pr
   if (!m || !keyHash || statusOf(m) !== "active") return null;
   const expected = await moderatorCookie(c, m, keyHash);
   return expected && safeEqual(cookie, expected) ? { id: m.id, name: m.name, roles: m.roles, shared: false, moderator: m } : null;
+}
+
+/**
+ * The member an open space stands for (SPC-4, SPC-7): the account's membership in this space, checked
+ * on this request, linked to an active member record. The account stands in for the member's key.
+ */
+async function memberOfSpace(c: Context<AppEnv>, svc: ModeratorService): Promise<ModeratorIdentity | null> {
+  const id = c.get("space")?.member_id;
+  if (!id) return null;
+  const m = await svc.store.get(id);
+  return m && statusOf(m) === "active" ? { id: m.id, name: m.name, roles: m.roles, shared: false, moderator: m } : null;
 }
 
 export function setModeratorCookie(c: Context<AppEnv>, value: string | null) {

@@ -38,6 +38,16 @@ const schema = z.object({
   CASES_CENTRAL: z.enum(["on", "off"]).default("off"),
   CASES_RELAY: z.enum(["on", "off"]).default("on"),
   RELAY_HOURS: z.coerce.number().int().min(1).max(168).default(48),
+  /**
+   * Accounts and spaces (15-identity.md): keys the hashes and seals the session-signing keys in the
+   * platform database. The same value on every edition's Worker. Unset = no accounts on this site.
+   */
+  IDENTITY_SECRET: z.string().min(32, "IDENTITY_SECRET must be at least 32 characters").optional(),
+  /** Who signs sessions (the tokens' `iss`), the same on every edition. */
+  IDENTITY_ISSUER: z.string().default("https://anjalai.cc"),
+  /** Sign in with Google (IDN-14): an OAuth client of a Google Cloud project. Unset = not offered. */
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
 });
 
 /** The native app's origins (PLT-14). */
