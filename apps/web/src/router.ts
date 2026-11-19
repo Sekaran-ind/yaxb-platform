@@ -70,5 +70,5 @@ router.beforeEach((to) => {
 
 router.afterEach((to) => {
   const title = to.meta.title as string | undefined;
-  document.title = NATIVE ? "Anjal.ai" : !title || title === SURFACE_NAME ? SURFACE_NAME : `${title} | ${SURFACE_NAME}`;
+  document.title = NATIVE ? "Anjalai" : !title || title === SURFACE_NAME ? SURFACE_NAME : `${title} | ${SURFACE_NAME}`;
 });

@@ -13,7 +13,7 @@ import { cn } from "@/lib/cn";
 import { BRAND } from "@/lib/legal";
 import { SITE_WIDTH } from "@/lib/site-width";
 
-const SLIDES = ["Anjal.ai", "Family and personal", "Small business", "What's in the kiosk", "Community"] as const;
+const SLIDES = ["Anjalai", "Family and personal", "Small business", "What's in the kiosk", "Community"] as const;
 /** The slides this surface shows (SUR-2, EDN-4): its own story, then what's in the kiosk. */
 const SHOWN: number[] = SURFACE === "family" ? [1, 3] : SURFACE === "business" ? [2, 3] : SURFACE === "community" ? [4, 3] : [0, 1, 2, 4, 3];
 const INTERVAL = 9000;
@@ -99,7 +99,7 @@ const place = (i: number) => `${SHOWN.indexOf(i) + 1} of ${SHOWN.length}`;
           <div>
             <p class="eyebrow">{{ BRAND }} · for business and home</p>
             <h1 class="mt-4 text-4xl font-semibold tracking-[-0.035em] text-balance text-ink md:text-6xl">Where businesses meet their customers, and families stay close.</h1>
-            <p class="mt-6 max-w-xl text-lg text-pretty text-gray-600">Businesses design their services and are found on Anjal.ai; customers ask in their own language and every request reaches the right person. At home, the family shares one context in a space that stays private.</p>
+            <p class="mt-6 max-w-xl text-lg text-pretty text-gray-600">Businesses design their services and are found on Anjalai; customers ask in their own language and every request reaches the right person. At home, the family shares one context in a space that stays private.</p>
             <div class="mt-9 flex flex-wrap items-center gap-3">
               <RouterLink to="/kiosk" class="btn-primary h-11 px-6">Try the kiosk</RouterLink>
               <RouterLink to="/catalogue" class="btn-light h-11 px-5">Design a service</RouterLink>
@@ -154,8 +154,8 @@ const place = (i: number) => `${SHOWN.indexOf(i) + 1} of ${SHOWN.length}`;
         <div v-if="SHOWN.includes(2)" :class="slideClass(2)" role="group" aria-roledescription="slide" :aria-label="`${place(2)}: ${SLIDES[2]}`" :inert="SHOWN[current] !== 2">
           <div>
             <p class="eyebrow">Small business</p>
-            <component :is="SHOWN[0] === 2 ? 'h1' : 'h2'" class="mt-4 text-4xl font-semibold tracking-[-0.035em] text-balance text-ink md:text-5xl">Connect with your customers. Get found on Anjal.ai.</component>
-            <p class="mt-6 max-w-xl text-lg text-pretty text-gray-600">Put your catalogue and prices in a notebook and design your services, from a booking to a quote. Customers ask in their own language, start a request, and your team accepts it with a date. Publish your services and new customers find you on Anjal.ai.</p>
+            <component :is="SHOWN[0] === 2 ? 'h1' : 'h2'" class="mt-4 text-4xl font-semibold tracking-[-0.035em] text-balance text-ink md:text-5xl">Connect with your customers. Get found on Anjalai.</component>
+            <p class="mt-6 max-w-xl text-lg text-pretty text-gray-600">Put your catalogue and prices in a notebook and design your services, from a booking to a quote. Customers ask in their own language, start a request, and your team accepts it with a date. Publish your services and new customers find you on Anjalai.</p>
             <div class="mt-9 flex flex-wrap items-center gap-3">
               <a
                 href="#ideas"

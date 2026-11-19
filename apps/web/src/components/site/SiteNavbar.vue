@@ -7,6 +7,7 @@ import { useChildMode } from "@/composables/child";
 import { useRoute } from "vue-router";
 import { cn } from "@/lib/cn";
 import BaseModal from "./BaseModal.vue";
+import BrandText from "./BrandText.vue";
 import ContactPanel from "./ContactPanel.vue";
 import { SITE_WIDTH } from "@/lib/site-width";
 
@@ -36,7 +37,7 @@ const contactOpen = ref(false);
     <div :class="cn('mx-auto flex h-14 flex-wrap items-center justify-between', SITE_WIDTH)">
       <RouterLink to="/" class="flex items-center gap-2.5">
         <BrandLogo class="size-8" />
-        <span class="text-[15px] font-semibold tracking-tight text-ink">{{ SITE_BRAND.replace(".ai", "") }}<span class="text-gray-400">.ai</span></span>
+        <span class="text-[15px] font-semibold tracking-tight text-ink"><BrandText v-if="SITE_BRAND === 'Anjalai'" :text="SITE_BRAND" /><template v-else>{{ SITE_BRAND.replace(".ai", "") }}<span class="text-gray-400">.ai</span></template></span>
       </RouterLink>
       <button type="button" class="rounded-full p-2 md:hidden" :aria-expanded="menuOpen" aria-controls="main-menu" aria-label="Toggle menu" @click="menuOpen = !menuOpen">
         <X v-if="menuOpen" class="size-5" />
