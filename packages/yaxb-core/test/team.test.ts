@@ -30,6 +30,10 @@ describe("pairing two devices", () => {
   it("gives each tenant its own hub, and keeps the default tenant's (TEAM-52)", () => {
     expect(hubName("default")).toBe("team");
     expect(hubName("acme")).toBe("team:acme");
+    // One Worker for every edition: the same tenant id in another edition is another team.
+    expect(hubName("default", "family")).toBe("team@family");
+    expect(hubName("acme", "business")).toBe("team:acme@business");
+    expect(hubName("acme", "all")).toBe("team:acme");
     expect(hubName("acme")).not.toBe(hubName("sri-traders"));
   });
 

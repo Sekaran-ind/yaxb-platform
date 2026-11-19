@@ -32,3 +32,6 @@ Thumbs.db
 !.dev.vars.example
 packages/*/dist/
 apps/*/dist/
+
+# administrator tokens saved locally (keep them in a password manager)
+*admin-token*.txt

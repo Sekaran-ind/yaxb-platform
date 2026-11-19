@@ -1,6 +1,6 @@
 // Context (SUR-1..6): which surface, what it offers, which API routes it serves.
 import { describe, expect, it } from "vitest";
-import { offers, resolveContext, servesApi, surfaceName } from "../src/context/index.js";
+import { chooseSurface, offers, resolveContext, servesApi, SURFACE_HEADS, surfaceName, surfaceOfHost } from "../src/context/index.js";
 
 describe("context", () => {
   it("resolves a surface and what it offers", () => {
@@ -34,5 +34,18 @@ describe("context", () => {
     }
     expect(servesApi(family, "/api/agent/chat")).toBe(true);
     expect(servesApi(family, "/api/librarything")).toBe(true); // a prefix only matches whole segments
+  });
+
+  it("chooses each request's edition: the open space, else the address, else the combined site (SUR-14)", () => {
+    expect(surfaceOfHost("family.anjalai.cc")).toBe("family");
+    expect(surfaceOfHost("Business.anjalai.cc")).toBe("business");
+    expect(surfaceOfHost("community.localhost:5173")).toBe("community");
+    for (const h of ["anjalai.cc", "yaxb.ai", "localhost", "127.0.0.1", "yaxb-web.example.workers.dev", "familyx.anjalai.cc", "www.anjalai.cc"]) expect(surfaceOfHost(h)).toBeNull();
+    expect(chooseSurface({ space: "business", host: "family.anjalai.cc" })).toBe("business");
+    expect(chooseSurface({ space: null, host: "family.anjalai.cc" })).toBe("family");
+    expect(chooseSurface({ host: "anjalai.cc" })).toBe("all");
+    expect(chooseSurface({ host: "localhost", fallback: "community" })).toBe("community");
+    expect(chooseSurface({ space: "clinic", host: "yaxb.ai", fallback: "nonsense" })).toBe("all");
+    expect(SURFACE_HEADS.family.title).toBe("Anjalai Family");
   });
 });

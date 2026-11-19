@@ -11,7 +11,8 @@ import { z } from "zod";
 import { settings, stringEnv, type Bindings } from "./env";
 import { cases, catalogue, currentTenant, designer, kiosk, library, moderators, relay, reviews, serviceEvents, tenantContext, tenantOfMember, tenants } from "./kiosk";
 import { DEFAULT_TENANT, SLUG, TenantError } from "@sekaran-ind/yaxb-core/tenants";
-import { resolveContext, servesApi } from "@sekaran-ind/yaxb-core/context";
+import { offers, resolveContext, servesApi, SURFACE_HEADS } from "@sekaran-ind/yaxb-core/context";
+import { currentEdition, editionContext, editionFor, EDITIONS, firstEdition, withEdition, type Edition } from "./edition";
 import { eventBatchSchema } from "@sekaran-ind/yaxb-core/metrics";
 import { beaconSchema, CaseError, envelopeSchema, MAX_CASE_RUN, MAX_ENVELOPE, mayReassign, RELAY_MAX_HOURS, staffingOf, type Envelope } from "@sekaran-ind/yaxb-core/cases";
 import { DesignerError, historyOf, LESSONS_IN_MEMORY, MAX_NARRATIVE } from "@sekaran-ind/yaxb-core/designer";
@@ -96,15 +97,25 @@ async function readJson(c: Context<AppEnv>, max: number): Promise<{ body: unknow
 
 // ---- API ------------------------------------------------------------------------------------------
 
-/** This Worker's surface (SUR-4): routes for features it doesn't offer answer 404 (yaxb-core context). */
+// The signed-in account and its open space (15-identity.md, SPC-7), checked before the edition and the tenant are chosen.
+app.use("/api/*", accountContext);
+
+/**
+ * The edition this request acts in (SUR-14): the open space's, else the address's, else the
+ * SURFACE setting, else the combined site. It chooses the database (edition.ts) and what is served.
+ */
+app.use("/api/*", (c, next) => editionContext.run(editionFor({ space: c.get("space")?.edition, host: new URL(c.req.url).hostname, fallback: settings(c.env).SURFACE }), () => next()));
+
+/**
+ * Routes for features the edition doesn't offer answer 404 (SUR-4, yaxb-core context). Joining is
+ * looked up in whichever edition issued the link (joinEdition), so it isn't gated by the address.
+ */
+const JOINING = /^\/api\/(join|join-requests)(\/|$)/;
 app.use("/api/*", async (c, next) => {
-  const ctx = resolveContext({ surface: settings(c.env).SURFACE });
-  if (!servesApi(ctx, new URL(c.req.url).pathname)) return jsonError(c, 404, "Not found.");
+  const path = new URL(c.req.url).pathname;
+  if (!JOINING.test(path) && !servesApi(resolveContext({ surface: currentEdition() }), path)) return jsonError(c, 404, "Not found.");
   await next();
 });
-
-// The signed-in account and its open space (15-identity.md, SPC-7), checked before the tenant is chosen.
-app.use("/api/*", accountContext);
 
 /**
  * The business a request acts for (TEN-2): the account's open space (SPC-7, its membership checked);
@@ -460,13 +471,25 @@ app.post("/api/tenant/join-requests/:id/decide", async (c) => {
 });
 
 /**
+ * Join links and requests live in the edition that issued them; one address serves every edition, so
+ * they are looked up in this request's edition first, then the others that offer joining. "Not
+ * found" in one edition means "try the next"; any other refusal is the answer.
+ */
+function joinEdition<T>(find: () => Promise<T>) {
+  const here = currentEdition();
+  const order = [here, ...EDITIONS.filter((e) => e !== here)].filter((e) => offers(resolveContext({ surface: e }), "join"));
+  if (!order.length) throw new TenantError("That join link isn't valid.", 404);
+  return firstEdition(order, find, (e) => e instanceof TenantError && e.status === 404);
+}
+
+/**
  * Joining (public, rate limited): what a link offers, asking to join, where a request stands, and
  * collecting the member key once accepted. The claim code comes in a header, never the address.
  */
 app.get("/api/join/:token", async (c) => {
   // Not rate limited: reading what a link offers changes nothing, and links can't be guessed (192 bits).
   try {
-    return c.json(await tenants(c.env).preview(c.req.param("token")));
+    return c.json((await joinEdition(() => tenants(c.env).preview(c.req.param("token")))).value);
   } catch (e) {
     return tenantError(c, e);
   }
@@ -476,7 +499,7 @@ app.post("/api/join/:token", async (c) => {
   if (!(await withinLimit("form", c.env.FORM_LIMITER, `join:${ip(c)}`))) return jsonError(c, 429, "Too many attempts. Please wait a minute.");
   const body = (await readJson(c, MAX_FORM_BODY)).body as { name?: string };
   try {
-    const { request, claim } = await tenants(c.env).redeem(c.req.param("token"), { name: String(body?.name ?? "") });
+    const { request, claim } = (await joinEdition(() => tenants(c.env).redeem(c.req.param("token"), { name: String(body?.name ?? "") }))).value;
     return c.json({ request: { id: request.id, status: request.status, role: request.role }, claim }, 201);
   } catch (e) {
     return tenantError(c, e);
@@ -484,7 +507,7 @@ app.post("/api/join/:token", async (c) => {
 });
 app.get("/api/join-requests/:id", async (c) => {
   try {
-    return c.json(await tenants(c.env).status(c.req.param("id"), c.req.header("x-yaxb-claim") ?? ""));
+    return c.json((await joinEdition(() => tenants(c.env).status(c.req.param("id"), c.req.header("x-yaxb-claim") ?? ""))).value);
   } catch (e) {
     return tenantError(c, e);
   }
@@ -493,10 +516,12 @@ app.post("/api/join-requests/:id/collect", async (c) => {
   if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
   if (!(await withinLimit("form", c.env.FORM_LIMITER, `join:${ip(c)}`))) return jsonError(c, 429, "Too many attempts. Please wait a minute.");
   try {
-    const { key, memberId } = await tenants(c.env).collect(c.req.param("id"), c.req.header("x-yaxb-claim") ?? "");
-    const t = await tenantOfMember(c.env, memberId);
-    if (t) await tenantContext.run(t, () => audited(c, "join.collected", null, memberId));
-    return c.json({ key });
+    const { edition, value } = await joinEdition(() => tenants(c.env).collect(c.req.param("id"), c.req.header("x-yaxb-claim") ?? ""));
+    await withEdition(edition, async () => {
+      const t = await tenantOfMember(c.env, value.memberId);
+      if (t) await tenantContext.run(t, () => audited(c, "join.collected", null, value.memberId));
+    });
+    return c.json({ key: value.key });
   } catch (e) {
     return tenantError(c, e);
   }
@@ -775,7 +800,7 @@ app.route(
     tenant: currentTenant,
     isAdmin,
     async spaceInfo(env, tenant) {
-      const own = OWN_SPACE[settings(env).SURFACE ?? "all"]!;
+      const own = OWN_SPACE[currentEdition()]!;
       if (tenant === DEFAULT_TENANT) return own;
       const t = await tenants(env).tenant(tenant);
       return t ? { name: t.name, kind: t.kind } : own;
@@ -793,11 +818,14 @@ app.route(
     },
     async joinSpace(c, token, person) {
       try {
-        const svc = tenants(c.env);
-        const { request, claim } = await svc.redeem(token, { name: person });
-        const t = await svc.tenant(request.tenant_id);
-        const own = OWN_SPACE[settings(c.env).SURFACE ?? "all"]!;
-        return { tenant_id: request.tenant_id, space_name: t?.name ?? own.name, kind: t?.kind ?? own.kind, request_id: request.id, claim, accepted: request.status === "accepted" };
+        const { edition, value } = await joinEdition(async () => {
+          const svc = tenants(c.env);
+          const { request, claim } = await svc.redeem(token, { name: person });
+          const t = await svc.tenant(request.tenant_id);
+          const own = OWN_SPACE[currentEdition()]!;
+          return { tenant_id: request.tenant_id, space_name: t?.name ?? own.name, kind: t?.kind ?? own.kind, request_id: request.id, claim, accepted: request.status === "accepted" };
+        });
+        return { ...value, edition };
       } catch (e) {
         if (e instanceof TenantError) throw new IdentityError(e.message, e.status);
         throw e;
@@ -975,9 +1003,9 @@ app.get("/api/library", (c) =>
   }),
 );
 /** Organisation templates for this edition (ORG-2); the combined site offers every one. */
-const templateEdition = (c: Context<AppEnv>) => {
-  const s = settings(c.env).SURFACE;
-  return s === "family" || s === "business" || s === "community" ? s : null;
+const templateEdition = (_c: Context<AppEnv>) => {
+  const s = currentEdition();
+  return s === "all" ? null : s;
 };
 app.get("/api/library/templates", (c) => libraryCall(c, async () => ({ templates: library(c.env).templates(templateEdition(c)) })));
 /** Start from a template: the organisation and its starter services, as drafts (administrators). */
@@ -1222,7 +1250,7 @@ app.get("/api/team/:socket{presence|signal}", async (c) => {
   }
   // One relay per tenant (TEAM-52): a team is small, both sides of a pair must meet in one place, and
   // presence never shows another business's members.
-  const hub = c.env.TEAM.get(c.env.TEAM.idFromName(hubName(currentTenant())));
+  const hub = c.env.TEAM.get(c.env.TEAM.idFromName(hubName(currentTenant(), currentEdition())));
   return hub.fetch(new Request(c.req.raw.url, { headers }));
 });
 
@@ -1295,7 +1323,7 @@ function securityHeaders(env: Bindings, url: URL): Record<string, string> {
     .split(/[\s,]+/)
     .filter((o) => /^https?:\/\/[A-Za-z0-9.-]+(:\d{1,5})?$/.test(o))
     .join(" ");
-  const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  const local = url.hostname === "localhost" || url.hostname.endsWith(".localhost") || url.hostname === "127.0.0.1";
   const csp = [
     "default-src 'self'",
     "script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net",
@@ -1326,10 +1354,25 @@ function securityHeaders(env: Bindings, url: URL): Record<string, string> {
   };
 }
 
+/**
+ * The one index.html serves every address (SUR-14): the address's edition, title and description
+ * are written into it here, and the app reads `yaxb-edition` to choose its home page and brand.
+ */
+function pageFor(res: Response, edition: Edition): Response {
+  if (!(res.headers.get("content-type") ?? "").includes("text/html")) return res;
+  const head = SURFACE_HEADS[edition];
+  return new HTMLRewriter()
+    .on("title", { element: (e) => void e.setInnerContent(head.title) })
+    .on('meta[name="description"]', { element: (e) => void e.setAttribute("content", head.description) })
+    .on("head", { element: (e) => void e.append(`<meta name="yaxb-edition" content="${edition}">`, { html: true }) })
+    .transform(res);
+}
+
 app.get("*", async (c) => {
-  const res = await c.env.ASSETS.fetch(c.req.raw);
+  const url = new URL(c.req.url);
+  const res = pageFor(await c.env.ASSETS.fetch(c.req.raw), editionFor({ host: url.hostname, fallback: settings(c.env).SURFACE }));
   const out = new Response(res.body, res);
-  for (const [k, v] of Object.entries(securityHeaders(c.env, new URL(c.req.url)))) out.headers.set(k, v);
+  for (const [k, v] of Object.entries(securityHeaders(c.env, url))) out.headers.set(k, v);
   return out;
 });
 

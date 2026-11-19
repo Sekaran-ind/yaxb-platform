@@ -3,13 +3,14 @@
 // the screen shows. Passkeys are made and used with SimpleWebAuthn's browser half (IDN-10).
 //
 // Switching space reloads the page, so nothing from one space stays on screen in another (SPC-4).
-// On the combined site and the native app the open space's kind decides the sections (SPC-3): it is
-// remembered for the next start in `yaxb.space.kind` (lib/surface.ts reads it).
+// One address serves every edition (SUR-14): a space of any kind opens where the person is, and its
+// kind decides the sections (SPC-3), remembered for the next start in `yaxb.space.kind`
+// (lib/surface.ts reads it).
 import type { Membership } from "@sekaran-ind/yaxb-core/identity";
 import { browserSupportsWebAuthn, startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { computed, ref, shallowRef } from "vue";
 import { api } from "@/lib/api";
-import { PLATFORM_URLS, rememberSpaceKind } from "@/lib/surface";
+import { rememberSpaceKind } from "@/lib/surface";
 
 export type IdentityMethod = { id: string; kind: "passkey" | "oidc" | "recovery" | "phone" | "email" | "member_key"; display: string; created_at: string; last_used_at: string | null };
 export type Me =
@@ -40,10 +41,12 @@ async function load() {
     config.value ??= await api<IdentityConfig>("/api/identity/config");
     me.value = config.value.enabled ? await api<Me>("/api/identity/me") : { signedIn: false };
     rememberSpaceKind(me.value.signedIn ? (me.value.space?.kind ?? null) : null);
-    // Arrived from another edition's site to open a space here (`?space=<tenant>`).
+    // A link that opens a space (`?space=<tenant>`, or `?space=<edition>:<tenant>`).
     const asked = new URLSearchParams(location.search).get("space");
-    if (asked && me.value.signedIn && me.value.spaces.some((s) => s.tenant_id === asked) && me.value.space?.tenant_id !== asked) {
-      const r = await api<{ space: Membership | null }>("/api/identity/space", { tenant: asked });
+    const [askedEdition, askedTenant] = asked?.includes(":") ? asked.split(":", 2) : [undefined, asked];
+    const target = asked && me.value.signedIn ? me.value.spaces.find((s) => s.tenant_id === askedTenant && (!askedEdition || s.edition === askedEdition)) : undefined;
+    if (target && me.value.signedIn && !(me.value.space?.tenant_id === target.tenant_id && me.value.space.edition === target.edition)) {
+      const r = await api<{ space: Membership | null }>("/api/identity/space", { tenant: target.tenant_id, edition: target.edition });
       rememberSpaceKind(r.space?.kind ?? null);
       const url = new URL(location.href);
       url.searchParams.delete("space");
@@ -160,17 +163,9 @@ export function useIdentity() {
     },
 
     // ---- spaces (SPC-2..4) ----
-    /**
-     * Open a space (or none) and start the app again in it. A space of another edition opens on that
-     * edition's site, where its data lives (the session cookie is shared across anjalai.cc).
-     */
+    /** Open a space (or none), of any edition, and start the app again in it on this address (SUR-14). */
     async openSpace(tenant: string | null, edition?: string, { after }: { after?: number } = {}) {
-      const here = me.value.signedIn ? me.value.edition : "all";
-      if (tenant && edition && edition !== here && edition !== "all" && edition in PLATFORM_URLS) {
-        location.href = `${PLATFORM_URLS[edition as keyof typeof PLATFORM_URLS]}kiosk?space=${encodeURIComponent(tenant)}`;
-        return;
-      }
-      const r = await api<{ space: Membership | null }>("/api/identity/space", { tenant });
+      const r = await api<{ space: Membership | null }>("/api/identity/space", { tenant, ...(tenant && edition ? { edition } : {}) });
       rememberSpaceKind(r.space?.kind ?? null);
       markOpened();
       restart(after);
@@ -201,8 +196,8 @@ export function useIdentity() {
       markOpened();
       restart();
     },
-    async leaveSpace(tenant: string) {
-      await api(`/api/identity/spaces/${encodeURIComponent(tenant)}`, undefined, "DELETE");
+    async leaveSpace(tenant: string, edition?: string) {
+      await api(`/api/identity/spaces/${encodeURIComponent(edition ? `${edition}:${tenant}` : tenant)}`, undefined, "DELETE");
       await load();
     },
   };

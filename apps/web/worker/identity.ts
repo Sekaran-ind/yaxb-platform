@@ -6,10 +6,12 @@
 // Passkeys use the relying party `anjalai.cc` there (DOM-3) and `localhost` locally; other addresses
 // (workers.dev, yaxb.ai) offer no passkeys (DOM-5).
 //
-// The open space (SPC-7) is `anj_space`, host-only, naming a tenant of this edition. Every request
-// checks it against the account's memberships before the tenant context uses it; a membership linked
-// to a member record makes that member signed in (the account stands in for their key), so the
-// person switches spaces without signing in again (SPC-4).
+// The open space (SPC-7) is `anj_space`, host-only, naming an edition and a tenant there
+// (`business:<tenant>`; a plain tenant, from before one address served every edition, is the
+// address's edition). Every request checks it against the account's memberships before the edition
+// and the tenant context use it; a membership linked to a member record makes that member signed in
+// (the account stands in for their key), so the person switches spaces, of any edition, on the same
+// address without signing in again (SPC-4, SUR-14).
 import { Hono, type Context, type Next } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
@@ -31,7 +33,9 @@ import {
   type SpaceKind,
   type TokenClaims,
 } from "@sekaran-ind/yaxb-core/identity";
+import { surfaceOfHost } from "@sekaran-ind/yaxb-core/context";
 import { settings, type Bindings } from "./env";
+import { currentEdition, EDITIONS, withEdition } from "./edition";
 import type { AppEnv } from "./index";
 
 export const ACCESS_COOKIE = "anj_at";
@@ -43,17 +47,26 @@ const EDITION_ORIGINS = ["", "family.", "business.", "community."].map((s) => `h
 
 const hostOf = (c: Context) => new URL(c.req.url).hostname;
 const onShared = (c: Context) => hostOf(c) === SHARED_DOMAIN || hostOf(c).endsWith(`.${SHARED_DOMAIN}`);
-const local = (c: Context) => hostOf(c) === "localhost" || hostOf(c) === "127.0.0.1";
+const local = (c: Context) => hostOf(c) === "localhost" || hostOf(c).endsWith(".localhost") || hostOf(c) === "127.0.0.1";
 
 /** Passkeys' relying party for this address (DOM-3, DOM-5), or null where none is offered. */
 export function relyingParty(c: Context): RelyingParty | null {
   if (onShared(c)) return { id: SHARED_DOMAIN, name: "Anjal", origins: EDITION_ORIGINS };
-  if (hostOf(c) === "localhost") return { id: "localhost", name: "Anjal (local)", origins: [new URL(c.req.url).origin] };
+  // Locally, `localhost`; an edition's local address (family.localhost, …) is its own relying party,
+  // since browsers don't take `localhost` as a parent domain.
+  if (hostOf(c) === "localhost" || hostOf(c).endsWith(".localhost")) return { id: hostOf(c), name: "Anjal (local)", origins: [new URL(c.req.url).origin] };
   return null;
 }
 
-/** This Worker's edition: its surface, or "all" for the combined site. */
-export const editionOf = (env: Bindings): Edition => settings(env).SURFACE ?? "all";
+/** The open space a cookie names: its edition and tenant (a plain tenant is the address's edition). */
+export function spaceCookie(c: Context, value = getCookie(c, SPACE_COOKIE)): { edition: Edition; tenant: string } | null {
+  if (!value) return null;
+  const at = value.indexOf(":");
+  const named = at > 0 ? value.slice(0, at) : null;
+  if (named && (EDITIONS as readonly string[]).includes(named)) return { edition: named as Edition, tenant: value.slice(at + 1) };
+  return { edition: surfaceOfHost(hostOf(c)) ?? settings(c.env as Bindings).SURFACE ?? "all", tenant: value };
+}
+const sameSpace = (a: { edition: string; tenant_id: string }, b: { edition: string; tenant: string } | null) => Boolean(b) && a.edition === b!.edition && a.tenant_id === b!.tenant;
 
 const services = new WeakMap<object, Map<string, IdentityService>>();
 /** The identity service for this request (one per relying party), or null when IDENTITY_SECRET is unset. */
@@ -78,8 +91,8 @@ function setSession(c: Context, s: SignedIn["session"] | null) {
   setCookie(c, ACCESS_COOKIE, s?.access ?? "", { ...cookieBase(c), path: "/", maxAge: s ? 15 * 60 : 0 });
   setCookie(c, REFRESH_COOKIE, s?.refresh ?? "", { ...cookieBase(c), path: "/api/identity", maxAge: s ? 30 * 86400 : 0 });
 }
-function setSpace(c: Context, tenant: string | null) {
-  setCookie(c, SPACE_COOKIE, tenant ?? "", { httpOnly: true, secure: !local(c), sameSite: "Lax", path: "/", maxAge: tenant ? 365 * 86400 : 0 });
+function setSpace(c: Context, m: { edition: Edition; tenant_id: string } | null) {
+  setCookie(c, SPACE_COOKIE, m ? `${m.edition}:${m.tenant_id}` : "", { httpOnly: true, secure: !local(c), sameSite: "Lax", path: "/", maxAge: m ? 365 * 86400 : 0 });
 }
 
 // ---- every request: who is signed in, and in which space (SPC-7) ----------------------------------------
@@ -95,9 +108,9 @@ export async function accountContext(c: Context<AppEnv>, next: Next) {
     const claims = await svc.verify(token).catch(() => null);
     if (claims) {
       c.set("account", claims);
-      const tenant = getCookie(c, SPACE_COOKIE);
-      if (tenant) {
-        const m = await svc.spaceOf(claims.sub, editionOf(c.env), tenant).catch(() => null);
+      const open = spaceCookie(c);
+      if (open) {
+        const m = await svc.spaceOf(claims.sub, open.edition, open.tenant).catch(() => null);
         if (m) c.set("space", m);
       }
     }
@@ -120,11 +133,11 @@ type Deps = {
   isAdmin: (c: Context<AppEnv>) => Promise<boolean>;
   /** The tenant this request acts in (the tenant context). */
   tenant: () => string;
-  /** Start a space on this edition (SPC-8): a new tenant, with the person as its administrator. */
+  /** Start a space (SPC-8): a new tenant, with the person as its administrator. Runs in the space's own edition. */
   startSpace: (c: Context<AppEnv>, input: { kind: SpaceKind; name: string; person: string }) => Promise<{ tenant_id: string; name: string; kind: SpaceKind; member_id: string; roles: string[] }>;
   /** Use a join code (IDN-40): accepted at once (a new space's first administrator), or waiting for the administrator. */
-  joinSpace: (c: Context<AppEnv>, token: string, person: string) => Promise<{ tenant_id: string; space_name: string; kind: SpaceKind; request_id: string; claim: string; accepted: boolean }>;
-  /** Where a waiting join stands; accepted ones are collected into a member. */
+  joinSpace: (c: Context<AppEnv>, token: string, person: string) => Promise<{ edition: Edition; tenant_id: string; space_name: string; kind: SpaceKind; request_id: string; claim: string; accepted: boolean }>;
+  /** Where a waiting join stands; accepted ones are collected into a member. Runs in the join's edition. */
   collectJoin: (c: Context<AppEnv>, requestId: string, claim: string) => Promise<{ status: "collected"; member_id: string; roles: string[] } | { status: "pending" | "declined" | "gone" }>;
 };
 
@@ -166,7 +179,8 @@ export function identityRoutes(deps: Deps) {
   /** A sign-in finished: the cookies, and what the app shows. */
   const signedIn = (c: Context<AppEnv>, s: SignedIn) => {
     setSession(c, s.session);
-    return { account: s.account, memberships: s.memberships.filter((m) => editionOf(c.env) === "all" || m.edition === editionOf(c.env)) };
+    // Every space, of every edition: one address serves them all (SUR-14).
+    return { account: s.account, memberships: s.memberships };
   };
   const mustSignIn = (c: Context<AppEnv>) => {
     const a = c.get("account");
@@ -183,7 +197,7 @@ export function identityRoutes(deps: Deps) {
       enabled: Boolean(identity(c)),
       passkeys: Boolean(relyingParty(c)),
       google: Boolean(s.GOOGLE_CLIENT_ID && s.GOOGLE_CLIENT_SECRET),
-      edition: editionOf(c.env),
+      edition: currentEdition(),
       notice: "Anjal keeps only what it needs to know it's you: your passkey's public key, or your Google account's id with your email shown partly hidden, and the spaces you belong to. Your profile's contents stay on your devices. You can delete your account at any time.",
     });
   });
@@ -273,12 +287,10 @@ export function identityRoutes(deps: Deps) {
   // ---- the session ----
   /** Waiting joins whose administrator said yes become spaces; declined or vanished ones are dropped. */
   async function settleJoins(c: Context<AppEnv>, accountId: string) {
-    const edition = editionOf(c.env);
-    for (const p of await svc(c).pendingJoins(accountId, edition)) {
-      if (p.edition !== edition) continue;
-      const r = await deps.collectJoin(c, p.request_id, p.claim).catch(() => ({ status: "pending" as const }));
+    for (const p of await svc(c).pendingJoins(accountId, "all")) {
+      const r = await withEdition(p.edition, () => deps.collectJoin(c, p.request_id, p.claim)).catch(() => ({ status: "pending" as const }));
       if (r.status === "collected") {
-        await svc(c).addMembership(accountId, { edition, tenant_id: p.tenant_id, space_name: p.space_name, kind: p.kind, roles: r.roles, member_id: r.member_id });
+        await svc(c).addMembership(accountId, { edition: p.edition, tenant_id: p.tenant_id, space_name: p.space_name, kind: p.kind, roles: r.roles, member_id: r.member_id });
         await svc(c).removePendingJoin(p.id);
       } else if (r.status !== "pending") await svc(c).removePendingJoin(p.id);
     }
@@ -303,11 +315,10 @@ export function identityRoutes(deps: Deps) {
     try {
       await settleJoins(c, account.sub).catch(() => undefined);
       const me = await svc(c).me(account.sub);
-      const edition = editionOf(c.env);
-      const waiting = (await svc(c).pendingJoins(account.sub, edition)).map((p) => ({ space_name: p.space_name, kind: p.kind }));
-      const spaces = me.memberships.filter((m) => edition === "all" || m.edition === edition);
-      const tenant = getCookie(c, SPACE_COOKIE);
-      return c.json({ signedIn: true, level: account.lvl, account: me.account, methods: me.methods, spaces, space: spaces.find((m) => m.tenant_id === tenant) ?? null, waiting, edition });
+      const waiting = (await svc(c).pendingJoins(account.sub, "all")).map((p) => ({ space_name: p.space_name, kind: p.kind }));
+      const spaces = me.memberships;
+      const open = spaceCookie(c);
+      return c.json({ signedIn: true, level: account.lvl, account: me.account, methods: me.methods, spaces, space: spaces.find((m) => sameSpace(m, open)) ?? null, waiting, edition: currentEdition() });
     } catch {
       setSession(c, null);
       return c.json({ signedIn: false });
@@ -350,19 +361,19 @@ export function identityRoutes(deps: Deps) {
   );
 
   // ---- spaces (SPC-1..4, 7) ----
-  /** Open a space (or none): only one the account belongs to on this edition. */
+  /** Open a space (or none): only one the account belongs to. Any edition's space opens on any address. */
   r.post("/space", (c) =>
     call(c, async () => {
       const a = mustSignIn(c);
-      const b = await body(c, z.object({ tenant: z.string().max(64).nullable() }));
+      const b = await body(c, z.object({ tenant: z.string().max(64).nullable(), edition: z.enum(EDITIONS as [Edition, ...Edition[]]).optional() }));
       if (!b) throw new IdentityError("Choose a space.");
       if (b.tenant === null) {
         setSpace(c, null);
         return { space: null };
       }
-      const m = await svc(c).spaceOf(a.sub, editionOf(c.env), b.tenant);
-      if (!m) throw new IdentityError("You don't belong to that space here.", 403);
-      setSpace(c, m.tenant_id);
+      const m = await svc(c).spaceOf(a.sub, b.edition ?? currentEdition(), b.tenant);
+      if (!m) throw new IdentityError("You don't belong to that space.", 403);
+      setSpace(c, m);
       return { space: m };
     }),
   );
@@ -378,9 +389,9 @@ export function identityRoutes(deps: Deps) {
       const member = (await deps.signedInMember(c)) ?? ((await deps.isAdmin(c)) ? await deps.memberFor(c, { name: (await svc(c).me(a.sub)).account.display_name ?? "Administrator", roles: ["administrator"] }) : null);
       if (!member) throw new IdentityError("Sign in as a member of this space first (your member key or the administrator token).", 403);
       const info = await deps.spaceInfo(c.env, tenant);
-      const edition = editionOf(c.env);
+      const edition = currentEdition();
       const m: Membership = await svc(c).addMembership(a.sub, { edition, tenant_id: tenant, space_name: info.name, kind: edition === "all" ? info.kind : edition, roles: member.roles, member_id: member.id });
-      setSpace(c, m.tenant_id);
+      setSpace(c, m);
       return { space: m };
     }),
   );
@@ -391,13 +402,13 @@ export function identityRoutes(deps: Deps) {
       if (a.lvl < 2) throw new IdentityError("Add a passkey or Google first: a recovery code is only for getting back in.", 403);
       const b = await body(c, z.object({ kind: z.enum(["family", "business", "community"]), name: z.string().trim().min(2, "Give it a name.").max(80) }));
       if (!b) throw new IdentityError("Say what it is and give it a name.");
-      const edition = editionOf(c.env);
-      if (edition !== "all" && b.kind !== edition) throw new IdentityError(`A ${b.kind} is started on its own site: ${b.kind}.anjalai.cc.`, 409);
+      // A space lives in its kind's edition, whichever address it was started on (SUR-14).
+      const edition: Edition = b.kind;
       if (!(await svc(c).mayStartSpace(a.sub))) throw new IdentityError("You've started enough spaces for today. Try again tomorrow.", 429);
       const person = (await svc(c).me(a.sub)).account.display_name ?? "Administrator";
-      const s = await deps.startSpace(c, { kind: b.kind, name: b.name, person });
+      const s = await withEdition(edition, () => deps.startSpace(c, { kind: b.kind, name: b.name, person }));
       const m = await svc(c).addMembership(a.sub, { edition, tenant_id: s.tenant_id, space_name: s.name, kind: s.kind, roles: s.roles, member_id: s.member_id }, { created: true });
-      setSpace(c, m.tenant_id);
+      setSpace(c, m);
       return { space: m };
     }),
   );
@@ -411,22 +422,27 @@ export function identityRoutes(deps: Deps) {
       if (!token) throw new IdentityError("That isn't a join link or code. Paste the whole link you were sent.");
       const person = (await svc(c).me(a.sub)).account.display_name ?? "A member";
       const j = await deps.joinSpace(c, token, person);
-      const edition = editionOf(c.env);
+      const edition = j.edition;
       if (j.accepted) {
-        const r = await deps.collectJoin(c, j.request_id, j.claim);
+        const r = await withEdition(edition, () => deps.collectJoin(c, j.request_id, j.claim));
         if (r.status !== "collected") throw new IdentityError("That join code couldn't be used. Ask for a new one.", 409);
         const m = await svc(c).addMembership(a.sub, { edition, tenant_id: j.tenant_id, space_name: j.space_name, kind: j.kind, roles: r.roles, member_id: r.member_id });
-        setSpace(c, m.tenant_id);
+        setSpace(c, m);
         return { space: m, pending: false };
       }
       await svc(c).addPendingJoin(a.sub, { edition, tenant_id: j.tenant_id, space_name: j.space_name, kind: j.kind, request_id: j.request_id, claim: j.claim });
       return { space: null, pending: true, space_name: j.space_name };
     }),
   );
-  r.delete("/spaces/:tenant", (c) =>
+  /** Leave a space: `/spaces/<edition>:<tenant>` (a plain tenant is this request's edition). */
+  r.delete("/spaces/:space", (c) =>
     call(c, async () => {
-      const ok = await svc(c).removeMembership(mustSignIn(c).sub, editionOf(c.env), c.req.param("tenant"));
-      if (getCookie(c, SPACE_COOKIE) === c.req.param("tenant")) setSpace(c, null);
+      const raw = c.req.param("space");
+      const named = raw.includes(":") ? spaceCookie(c, raw) : { edition: currentEdition(), tenant: raw };
+      if (!named) throw new IdentityError("Choose a space.");
+      const ok = await svc(c).removeMembership(mustSignIn(c).sub, named.edition, named.tenant);
+      const open = spaceCookie(c);
+      if (open && open.edition === named.edition && open.tenant === named.tenant) setSpace(c, null);
       return { removed: ok };
     }),
   );

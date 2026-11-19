@@ -40,7 +40,7 @@
 
 | ID | Requirement | Status |
 |---|---|---|
-| SUR-1 | The web app is built as two Workers, each with its own database: Anjal Family (anjal-family) and Anjal for Business (anjal-business), both on yaxb-core and yaxb-journeys; the combined site stays. | Built |
+| SUR-1 | Each edition keeps its own database: Anjal Family (anjal-family), Anjal for Business (anjal-business) and Anjal Community (anjal-community), on yaxb-core and yaxb-journeys; the combined site keeps yaxb. | Built: since SUR-14, one Worker binds all of them. |
 | SUR-2 | Each surface has its own home page: Family's story, ideas for families and children; Business's story, from an idea to a running service, and ideas for services. | Built |
 | SUR-3 | Family offers Ask Me, notebooks, the Scheduler, Quick tools, profiles and the child safety lock; Business offers the kiosk and its front desk, the Service Catalogue and AI designer, requests, staff, join links and the directory, without the child lock or family profiles. | Built |
 | SUR-4 | What a surface offers is yaxb-core's context (after clinux-core's resolveContext: surface, tenant, jurisdiction); the Worker answers 404 on routes for features its surface lacks. | Built |
@@ -48,8 +48,9 @@
 | SUR-6 | The packages work in a project outside the monorepo from their packed tarballs, through their public exports only. | Built |
 | SUR-7 | The combined site is the Yaxb.ai portal (yaxb.ai): Yaxb.ai's name, title and description, and a home page that leads to each platform. | Built |
 | SUR-8 | The portal offers three platforms, each on its own site: Personal & Community (Anjal Family), Small Business (Anjal for Business) and Enterprise (ClinüxFlow, clinux.yaxb.ai). "Which fits you?" highlights one, and each card opens its platform. Their addresses are set when the portal is built (`VITE_FAMILY_URL`, `VITE_BUSINESS_URL`, `VITE_ENTERPRISE_URL`). | Built |
-| SUR-9 | The portal shows the one core every platform shares, what every platform does, and how data is kept; each build has its own page title and description. | Built |
+| SUR-9 | The portal shows the one core every platform shares, what every platform does, and how data is kept; each address has its own page title and description. | Built: the Worker writes each address's title and description into the one page (SUR-14). |
 | SUR-10 | The Android and iOS app is named Anjal.ai (its app id stays `ai.yaxb.kiosk`, so installed apps update in place). | Built |
-| SUR-11 | A third surface, Anjal Community (`anjal-community`), with its own Worker and database (EDN-2, EDN-3). | Planned |
-| SUR-12 | The editions are served at `family.anjalai.cc`, `business.anjalai.cc` and `community.anjalai.cc`, declared in their wrangler files (DOM-1). | Planned |
-| SUR-13 | Every edition's Worker also binds the shared platform database (PLA-1). | Planned |
+| SUR-11 | A third surface, Anjal Community (`anjal-community`), with its own database (EDN-2, EDN-3). | Built |
+| SUR-12 | The editions are served at `family.anjalai.cc`, `business.anjalai.cc` and `community.anjalai.cc`, declared in the wrangler file (DOM-1). | Built |
+| SUR-13 | The Worker also binds the shared platform database (PLA-1). | Built |
+| SUR-14 | One address for every edition (decided 2026-11-19): one Worker and one build serve anjalai.cc, family., business., community.anjalai.cc and yaxb.ai. Each request acts in one edition: the open space's (its membership checked), else the address's, else the combined site. The edition chooses the sections and the database; nothing is read through another edition's database or cache. Switching space stays on the same address. Each address keeps its home page, title and description. | Built: `worker/edition.ts` (`editionContext`, `dbFor`, caches keyed by edition and tenant, tested in `worker/test/editions.test.ts`), yaxb-core context `surfaceOfHost`, `chooseSurface`, `SURFACE_HEADS`; `anj_space` names the edition (`business:<tenant>`); join links are looked up in the edition that issued them; the team's relay is per edition (`hubName`). The front end reads the edition from the page (`yaxb-edition`) or the host. Retiring the anjal-family, anjal-business and anjal-community Workers waits for the owner. |

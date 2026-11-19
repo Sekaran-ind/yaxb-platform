@@ -1,6 +1,7 @@
 {
-  // The YAXB web surface on Cloudflare Workers: the Vue app as static assets, and worker/index.ts
-  // (Hono + yaxb-core's agent) for /api. Built and run by Vite's Cloudflare plugin.
+  // The one Worker for every address (SUR-11..13): the Vue app as static assets, and worker/index.ts
+  // (Hono + yaxb-core's agent) for /api. Built and run by Vite's Cloudflare plugin. Each request acts
+  // in one edition (the open space's, else the address's) and reads only that edition's database.
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "yaxb-web",
   "main": "./worker/index.ts",
@@ -16,13 +17,41 @@
   //   "limits": { "cpu_ms": 60000 },
   "observability": { "enabled": true },
 
-  // Threads, the moderation queue and the agent's long-term store. Create once with
-  // `npx wrangler d1 create yaxb` and put the id here; local dev works without it.
+  // Every address (DOM-1), kept by every deploy. anjalai.cc and yaxb.ai are zones on this account.
+  "routes": [
+    { "pattern": "anjalai.cc", "custom_domain": true },
+    { "pattern": "family.anjalai.cc", "custom_domain": true },
+    { "pattern": "business.anjalai.cc", "custom_domain": true },
+    { "pattern": "community.anjalai.cc", "custom_domain": true },
+    { "pattern": "yaxb.ai", "custom_domain": true }
+  ],
+
+  // Each edition's own database (worker/edition.ts): threads, the moderation queue, the agent's
+  // long-term store, members, the catalogue, cases. The combined site (the portal) keeps DB (yaxb).
+  // Every database uses the same migrations; `npm run db:migrate:remote` applies them all.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "yaxb",
       "database_id": "96e1dade-764b-4fe9-9950-8d9988ccf19b",
+      "migrations_dir": "../../packages/yaxb-core/migrations"
+    },
+    {
+      "binding": "DB_FAMILY",
+      "database_name": "anjal-family",
+      "database_id": "3ff23c41-3ae1-46fc-ab2d-4870f25572d6",
+      "migrations_dir": "../../packages/yaxb-core/migrations"
+    },
+    {
+      "binding": "DB_BUSINESS",
+      "database_name": "anjal-business",
+      "database_id": "35d78ba1-0c81-498b-abe9-ec6dd174302f",
+      "migrations_dir": "../../packages/yaxb-core/migrations"
+    },
+    {
+      "binding": "DB_COMMUNITY",
+      "database_name": "anjal-community",
+      "database_id": "393eafc5-5826-4ad8-8ad6-5bff476381da",
       "migrations_dir": "../../packages/yaxb-core/migrations"
     },
     // The shared platform database (PLA-1): records every edition reads and writes (accounts,
