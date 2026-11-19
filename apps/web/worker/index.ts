@@ -130,8 +130,9 @@ app.use("/api/*", async (c, next) => {
   // A machine (IDN-16): `Authorization: Bearer yaxb_mod_…`. It acts in its own tenant, never signs in,
   // and may call only what its scopes allow.
   const bearer = /^Bearer\s+(\S+)$/i.exec(c.req.header("authorization") ?? "")?.[1];
-  // A device's credential (anj_dev_…) is checked with the account (identity.ts), not here.
-  if (bearer && !bearer.startsWith("anj_dev_")) {
+  // A device's credential (anj_dev_…) and the native app's access token are checked with the
+  // account (identity.ts), not here: only member keys are machines.
+  if (bearer && looksLikeKey(bearer)) {
     const machine = looksLikeKey(bearer) ? await moderators(c.env).machine(bearer) : null;
     if (!machine) return jsonError(c, 401, "That machine key isn't right, or it has been revoked or has expired.");
     const tenant = machine.tenant ?? DEFAULT_TENANT;
@@ -167,7 +168,7 @@ app.use("/api/*", async (c, next) => {
       headers: {
         "Access-Control-Allow-Origin": c.req.header("origin")!,
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE",
-        "Access-Control-Allow-Headers": "Content-Type, X-Yaxb-Session, X-Yaxb-Device",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Yaxb-Session, X-Yaxb-Device, X-Yaxb-Space",
         "Access-Control-Max-Age": "600",
         Vary: "Origin",
       },

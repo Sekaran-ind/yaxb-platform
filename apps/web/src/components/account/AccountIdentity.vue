@@ -45,6 +45,8 @@ async function answerDevice(approve: boolean) {
     asking.value = null;
     deviceCode.value = "";
     devices.value = await id.devices();
+    // Opened by the app in the system browser (IDN-43): hand back to the app.
+    if (approve && route.query.back === "app") location.href = "ai.yaxb.kiosk://signed-in";
   }, approve ? `${name} is signed in. It carries on by itself.` : `${name} wasn't signed in.`);
 }
 
@@ -121,13 +123,15 @@ async function copyCodes() {
         <h3 class="text-base font-semibold text-ink">Keep my things across devices</h3>
         <p class="mt-1 text-sm text-gray-600">An account lets you use your family, business and community spaces on any device, and switch between them without signing in again. It's optional: your profile here works without one.</p>
       </div>
-      <button type="button" class="btn-primary" @click="guide"><Sparkles class="size-4" aria-hidden="true" /> Sign in step by step</button>
+      <!-- The app signs in in the system browser, never in its own web view (IDN-43). -->
+      <button v-if="id.native" type="button" class="btn-primary" :disabled="busy !== null" @click="run('app', id.appSignIn)"><Loader2 v-if="busy === 'app'" class="size-4 animate-spin" aria-hidden="true" /><KeyRound v-else class="size-4" aria-hidden="true" /> Sign in with your browser</button>
+      <button v-else type="button" class="btn-primary" @click="guide"><Sparkles class="size-4" aria-hidden="true" /> Sign in step by step</button>
       <p class="text-xs text-gray-500">Or straight away:</p>
       <div class="flex flex-wrap gap-2">
         <button v-if="id.passkeys.value" type="button" class="btn-light" :disabled="busy !== null" @click="run('passkey', id.passkeySignIn)">
           <Loader2 v-if="busy === 'passkey'" class="size-4 animate-spin" aria-hidden="true" /><KeyRound v-else class="size-4" aria-hidden="true" /> Sign in with a passkey
         </button>
-        <button v-if="id.config.value?.google" type="button" class="btn-light" :disabled="busy !== null" @click="id.google()">Continue with Google</button>
+        <button v-if="id.config.value?.google && !id.native" type="button" class="btn-light" :disabled="busy !== null" @click="id.google()">Continue with Google</button>
         <button type="button" class="btn-ghost" :aria-expanded="showRecovery" @click="showRecovery = !showRecovery">Use a recovery code</button>
       </div>
       <!-- Staff of a business with its own sign-in (IDN-15). -->
@@ -238,6 +242,7 @@ async function copyCodes() {
         </form>
         <div v-if="asking" class="space-y-2 rounded-xl bg-mist p-3 text-sm" role="group" aria-label="The device asking">
           <p v-if="asking.client === 'handoff'" class="text-ink">The kiosk you scanned asks to sign you in on it for 30 minutes. Only approve it if you are standing at it, just now.</p>
+          <p v-else-if="asking.client === 'app'" class="text-ink">The Anjal app asks to sign you in on it. Only approve it if you opened this from the app yourself, just now.</p>
           <p v-else class="text-ink"><strong>{{ asking.name }}</strong>, {{ CLIENT_A[asking.client] ?? asking.client }}, asks to {{ asking.scopes.map((s) => SCOPE[s] ?? s).join(" and ") }}. Only approve it if you started it yourself, just now.</p>
           <div class="flex flex-wrap gap-2">
             <button type="button" class="btn-primary h-9 px-3 text-sm" :disabled="busy !== null" @click="answerDevice(true)">Approve</button>

@@ -433,3 +433,37 @@ describe("signing in on a kiosk by scanning (IDN-19)", () => {
       await expect(id.refresh(renewed.session.refresh)).rejects.toThrow(/Sign in again/);
     });
 });
+
+describe("the native app signs in through the system browser (IDN-43)", () => {
+  it("gets its own refreshable session at the level the person signed in at", async () => {
+    const id = createIdentityService(createMemoryIdentityStore(), { secret: "test-secret-0123456789", issuer: "https://anjalai.cc" });
+    const r = await id.oidcSignIn({ provider: "google", subject: "s", email: "a@b.in", emailVerified: true, consent: true });
+    if (!("session" in r)) throw new Error();
+    const app = await id.deviceStart({ client: "app", name: "Anjal on a phone" });
+    expect(await id.appPoll(app.device_code, "phone")).toEqual({ status: "pending" });
+    // Neither a credential nor a scan's session comes from an app's grant.
+    expect(await id.devicePoll(app.device_code)).toEqual({ status: "expired" });
+    expect(await id.handoffPoll(app.device_code, "phone")).toEqual({ status: "expired" });
+    await id.deviceApprove(r.account.id, 3, app.user_code, true);
+    const got = await id.appPoll(app.device_code, "phone");
+    if (got.status !== "approved") throw new Error(got.status);
+    expect(await id.verify(got.session.access)).toMatchObject({ sub: r.account.id, lvl: 3, amr: ["app"] });
+    // Refreshing keeps it going, like any session (30 days from now).
+    const next = await id.refresh(got.session.refresh);
+    expect(new Date(next.session.expires_at).getTime() - Date.now()).toBeGreaterThan(29 * 86400_000);
+    expect(await id.appPoll(app.device_code, "phone")).toEqual({ status: "expired" });
+  });
+});
+
+describe("a space's rules and sessions approved from another sign-in", () => {
+  it("judges the app's, a scan's and a device's sessions by their level", () => {
+    const now = 1_800_000_000;
+    const any = { methods: ["passkey", "oidc", "recovery"] as ("passkey" | "oidc" | "recovery")[], staff_passkeys: false, session_hours: 720 };
+    const passkeyOnly = { ...any, methods: ["passkey"] as ("passkey" | "oidc" | "recovery")[] };
+    const app2 = { amr: ["app"], lvl: 2, iat: now, auth_time: now };
+    expect(policyAllows(any, app2, { roles: [] }, now)).toEqual({ ok: true });
+    expect(policyAllows(passkeyOnly, app2, { roles: [] }, now)).toMatchObject({ ok: false, why: "method" });
+    expect(policyAllows(passkeyOnly, { ...app2, amr: ["handoff"], lvl: 3 }, { roles: [] }, now)).toEqual({ ok: true });
+    expect(policyAllows(passkeyOnly, { ...app2, amr: ["device"], lvl: 2 }, { roles: [] }, now)).toMatchObject({ ok: false });
+  });
+});

@@ -49,7 +49,7 @@ export type Session = {
   refresh_hash: string;
   prev_hash: string | null;
   /** How it began: a sign-in method, or "handoff" (a kiosk signed in by scanning with a phone, IDN-19). */
-  method: MethodKind | "handoff";
+  method: MethodKind | "handoff" | "app";
   /** The assurance level reached (IDN-30): 2 a verified contact, 3 a strong sign-in. */
   level: number;
   device: string | null;
@@ -221,10 +221,10 @@ export type TokenClaims = { iss: string; sub: string; sid: string; lvl: number; 
 // ---- devices signed in with a code (IDN-17, 18, 41) -----------------------------------------------------
 
 /** What a device signs in as: the CLI, a box, a kiosk, a voice device. */
-export const DEVICE_CLIENTS = ["cli", "box", "kiosk", "voice", "handoff"] as const;
+export const DEVICE_CLIENTS = ["cli", "box", "kiosk", "voice", "handoff", "app"] as const;
 export type DeviceClient = (typeof DEVICE_CLIENTS)[number];
 /** What each kind of device may do with its credential. */
-export const DEVICE_SCOPES: Record<DeviceClient, readonly string[]> = { cli: ["chat"], box: ["box"], kiosk: ["chat"], voice: ["chat"], handoff: [] };
+export const DEVICE_SCOPES: Record<DeviceClient, readonly string[]> = { cli: ["chat"], box: ["box"], kiosk: ["chat"], voice: ["chat"], handoff: [], app: [] };
 /** A kiosk signed in by scanning (IDN-19) gets a short session, never renewed past its end. */
 export const HANDOFF_MINUTES = 30;
 /** A code to type lasts ten minutes; a device's credential a year (sign in again after). */
@@ -251,6 +251,8 @@ export const orgProviderId = (edition: Edition, tenant: string) => `org:${editio
 
 /** Methods a space may accept. */
 export const POLICY_METHODS = ["passkey", "oidc", "recovery"] as const;
+/** The level each method signs in at (IDN-30). */
+const METHOD_LEVEL: Record<string, number> = { passkey: 3, oidc: 2, recovery: 1 };
 export type PolicyMethod = (typeof POLICY_METHODS)[number];
 /** How long a sign-in lasts in a space before signing in again: a shift, a day, a week, a month. */
 export const SESSION_HOURS = [8, 24, 168, 720] as const;
@@ -264,7 +266,12 @@ export const DEFAULT_POLICY = { methods: [...POLICY_METHODS], staff_passkeys: fa
  */
 export function policyAllows(policy: Pick<SpacePolicy, "methods" | "staff_passkeys" | "session_hours">, claims: Pick<TokenClaims, "amr" | "lvl" | "auth_time" | "iat">, membership: Pick<Membership, "roles">, nowSeconds = Math.floor(Date.now() / 1000)): { ok: true } | { ok: false; why: "method" | "passkey" | "expired"; message: string } {
   const method = claims.amr[0] ?? "";
-  if (!(policy.methods as readonly string[]).includes(method)) return { ok: false, why: "method", message: `This space asks you to sign in with ${policy.methods.map(methodWords).join(" or ")}.` };
+  // A session the person approved from another sign-in (the app, a kiosk's scan, a device) is as
+  // strong as its level: it passes when that is as strong as the weakest method the space accepts.
+  const derived = !(POLICY_METHODS as readonly string[]).includes(method);
+  const weakest = Math.min(...policy.methods.map((m) => METHOD_LEVEL[m] ?? 3));
+  const methodOk = derived ? claims.lvl >= weakest : (policy.methods as readonly string[]).includes(method);
+  if (!methodOk) return { ok: false, why: "method", message: `This space asks you to sign in with ${policy.methods.map(methodWords).join(" or ")}.` };
   if (policy.staff_passkeys && membership.roles.length && claims.lvl < 3) return { ok: false, why: "passkey", message: "This space asks staff to sign in with a passkey." };
   const began = claims.auth_time ?? claims.iat;
   if (nowSeconds - began > policy.session_hours * 3600) return { ok: false, why: "expired", message: "Your sign-in for this space has ended. Sign in again." };
@@ -317,7 +324,7 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
     };
   }
 
-  async function newSession(account: Account, method: MethodKind | "handoff", level: number, device: string | null, { minutes }: { minutes?: number } = {}): Promise<SignedIn> {
+  async function newSession(account: Account, method: MethodKind | "handoff" | "app", level: number, device: string | null, { minutes }: { minutes?: number } = {}): Promise<SignedIn> {
     // Keep the newest sessions; a person with too many loses the oldest.
     const open = (await store.sessions(account.id)).filter((s) => !s.revoked_at && s.expires_at > iso(now())).sort((a, b) => a.last_used_at.localeCompare(b.last_used_at));
     for (const s of open.slice(0, Math.max(0, open.length - MAX_SESSIONS + 1))) await store.putSession({ ...s, revoked_at: iso(now()) });
@@ -350,6 +357,21 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
     const a = await store.account(id);
     return a && !a.deleted_at ? a : null;
   };
+
+  /**
+   * A grant the person approved becomes a session of the device's own (IDN-19, IDN-43): a kiosk's
+   * scan for HANDOFF_MINUTES, the native app's like any other. At the approver's level.
+   */
+  async function grantSession(g: DeviceGrant, method: "handoff" | "app", device: string | null, minutes?: number): Promise<{ status: "pending" | "denied" | "expired" } | ({ status: "approved" } & SignedIn)> {
+    if (g.status === "denied") return { status: "denied" };
+    if (g.status === "pending") return g.expires_at <= iso(now()) ? { status: "expired" } : { status: "pending" };
+    await store.putDeviceGrant({ ...g, status: "used" });
+    const account = await liveAccount(g.account_id!);
+    const level = Math.min(g.level ?? 2, 3);
+    const out = await newSession(account, method, level, device, minutes ? { minutes } : {});
+    await audit(account.id, "signed_in", { method, level });
+    return { status: "approved", ...out };
+  }
 
   const api = {
     store,
@@ -633,8 +655,8 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
      */
     async devicePoll(deviceCode: string): Promise<{ status: "pending" | "denied" | "expired" } | { status: "approved"; token: string; credential: DeviceCredentialView }> {
       const g = await store.deviceGrantBy("device_code_hash", await h("device-grant", deviceCode));
-      // A kiosk's scan gets a session (handoffPoll), never a credential.
-      if (!g || g.status === "used" || g.client === "handoff") return { status: "expired" };
+      // A kiosk's scan and the native app get a session (handoffPoll, appPoll), never a credential.
+      if (!g || g.status === "used" || g.client === "handoff" || g.client === "app") return { status: "expired" };
       if (g.status === "denied") return { status: "denied" };
       if (g.status === "pending") return g.expires_at <= iso(now()) ? { status: "expired" } : { status: "pending" };
       const id = crypto.randomUUID();
@@ -664,15 +686,18 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
     async handoffPoll(deviceCode: string, device: string | null): Promise<{ status: "pending" | "denied" | "expired" } | ({ status: "approved" } & SignedIn)> {
       const g = await store.deviceGrantBy("device_code_hash", await h("device-grant", deviceCode));
       if (!g || g.client !== "handoff" || g.status === "used") return { status: "expired" };
-      if (g.status === "denied") return { status: "denied" };
-      if (g.status === "pending") return g.expires_at <= iso(now()) ? { status: "expired" } : { status: "pending" };
-      await store.putDeviceGrant({ ...g, status: "used" });
-      const account = await liveAccount(g.account_id!);
-      const out = await newSession(account, "handoff", Math.min(g.level ?? 2, 3), device, { minutes: HANDOFF_MINUTES });
-      await audit(account.id, "signed_in", { method: "handoff", level: Math.min(g.level ?? 2, 3) });
-      return { status: "approved", ...out };
+      return grantSession(g, "handoff", device, HANDOFF_MINUTES);
     },
-
+    /**
+     * The native app polls after opening the site in the system browser (IDN-43): once the person
+     * signs in there and approves, the app gets its own session (refreshable, as on the web) at the
+     * level they signed in at. Its tokens go in the app's storage, sent as a bearer token.
+     */
+    async appPoll(deviceCode: string, device: string | null): Promise<{ status: "pending" | "denied" | "expired" } | ({ status: "approved" } & SignedIn)> {
+      const g = await store.deviceGrantBy("device_code_hash", await h("device-grant", deviceCode));
+      if (!g || g.client !== "app" || g.status === "used") return { status: "expired" };
+      return grantSession(g, "app", device);
+    },
     /** The credential a device presents, while it holds (seen at most once an hour). */
     async deviceCredentialOf(token: string | null | undefined): Promise<DeviceCredentialView | null> {
       const m = new RegExp(`^${DEVICE_TOKEN_PREFIX}([0-9a-f-]{36})\\.([A-Za-z0-9_-]{20,100})$`).exec(token ?? "");

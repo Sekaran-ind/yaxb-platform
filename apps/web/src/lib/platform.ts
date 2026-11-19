@@ -43,7 +43,15 @@ export function installNativeFetch() {
     const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
     headers.set(SESSION_HEADER, nativeSessionId());
     const base = input instanceof Request ? new Request(API_BASE + url, input) : API_BASE + url;
-    return original(base, { ...init, headers, credentials: "omit", mode: "cors" });
+    // Signed in (IDN-43): the app's access token and its open space; never on the sign-in calls themselves.
+    if (url.startsWith("/api/identity/app/")) return original(base, { ...init, headers, credentials: "omit", mode: "cors" });
+    return import("./native-auth").then(async ({ nativeAccess, nativeSpace }) => {
+      const access = await nativeAccess(original);
+      if (access && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${access}`);
+      const space = nativeSpace();
+      if (space) headers.set("X-Yaxb-Space", space);
+      return original(base, { ...init, headers, credentials: "omit", mode: "cors" });
+    });
   };
 }
 

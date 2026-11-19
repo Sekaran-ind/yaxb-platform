@@ -45,6 +45,8 @@ import type { AppEnv } from "./index";
 export const ACCESS_COOKIE = "anj_at";
 export const REFRESH_COOKIE = "anj_rt";
 export const SPACE_COOKIE = "anj_space";
+/** The native app's open space (IDN-43): it has no cookies, so it says which space in a header. */
+export const SPACE_HEADER = "X-Yaxb-Space";
 /** A device kept for one space (SPC-5): `<id>.<secret>`, host-only. */
 export const LOCK_COOKIE = "anj_lock";
 const OIDC_COOKIE = "anj_oidc";
@@ -65,7 +67,7 @@ export function relyingParty(c: Context): RelyingParty | null {
 }
 
 /** The open space a cookie names: its edition and tenant (a plain tenant is the address's edition). */
-export function spaceCookie(c: Context, value = getCookie(c, SPACE_COOKIE)): { edition: Edition; tenant: string } | null {
+export function spaceCookie(c: Context, value = getCookie(c, SPACE_COOKIE) ?? c.req.header(SPACE_HEADER)): { edition: Edition; tenant: string } | null {
   if (!value) return null;
   const at = value.indexOf(":");
   const named = at > 0 ? value.slice(0, at) : null;
@@ -173,7 +175,9 @@ export async function accountContext(c: Context<AppEnv>, next: Next) {
   // A device kept for one space (SPC-5) acts in that space whoever uses it; its visitors stay anonymous.
   const lock = svc ? await lockOf(c, svc) : null;
   if (lock) c.set("lock", lock);
-  const token = getCookie(c, ACCESS_COOKIE);
+  // The native app (IDN-43) sends its access token as a bearer token; the web keeps it in a cookie.
+  const appToken = /^Bearer\s+([\w-]+\.[\w-]+\.[\w-]+)$/.exec(c.req.header("authorization") ?? "")?.[1];
+  const token = appToken ?? getCookie(c, ACCESS_COOKIE);
   if (svc && token) {
     const claims = await svc.verify(token).catch(() => null);
     if (claims) {
@@ -627,6 +631,44 @@ export function identityRoutes(deps: Deps) {
       return c.redirect(`${back}${back.includes("?") ? "&" : "?"}signin=${encodeURIComponent(why)}`, 302);
     }
   });
+
+  // ---- the native app signs in through the system browser (IDN-43) ----
+  // The app opens the approval page in the system browser (never an embedded web view), the person
+  // signs in there and approves, and the app polls for its own tokens, kept on the device and sent
+  // as a bearer token. Refreshing rotates the refresh token as on the web.
+  r.post("/app/start", (c) =>
+    call(c, async () => {
+      await limit(c, "app");
+      const b = await body(c, z.object({ name: z.string().max(60).optional() }));
+      const s = await svc(c).deviceStart({ client: "app", name: b?.name ?? "Anjal on a phone" });
+      const page = `${new URL(c.req.url).origin}/kiosk?prefs=account&back=app&device=`;
+      return { ...s, verification_uri: page, verification_uri_complete: `${page}${encodeURIComponent(s.user_code)}` };
+    }),
+  );
+  const tokensOf = (s: SignedIn["session"]) => ({ access: s.access, refresh: s.refresh, access_expires_at: s.access_expires_at, expires_at: s.expires_at });
+  r.post("/app/token", (c) =>
+    call(c, async () => {
+      if (!(await deps.polled(c, `app-poll:${deps.ip(c)}`))) throw new IdentityError("Too many tries. Please wait a minute.", 429);
+      const b = await body(c, z.object({ device_code: z.string().max(100) }));
+      if (!b) throw new IdentityError("Which code?");
+      const out = await svc(c).appPoll(b.device_code, device(c));
+      return out.status === "approved" ? { status: "approved", account: out.account, tokens: tokensOf(out.session) } : out;
+    }),
+  );
+  r.post("/app/refresh", (c) =>
+    call(c, async () => {
+      const b = await body(c, z.object({ refresh: z.string().max(200) }));
+      if (!b) throw new IdentityError("Sign in again.", 401);
+      return { tokens: tokensOf((await svc(c).refresh(b.refresh)).session) };
+    }),
+  );
+  r.post("/app/signout", (c) =>
+    call(c, async () => {
+      const a = c.get("account");
+      if (a) await svc(c).signOut(a.sub, { session: a.sid });
+      return { signedOut: true };
+    }),
+  );
 
   // ---- the box's offline check (IDN-42) ----
   /** A box token for the person's box, for a week: the box verifies it offline. */

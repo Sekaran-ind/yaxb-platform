@@ -11,6 +11,8 @@ import { browserSupportsWebAuthn, startAuthentication, startRegistration } from 
 import { computed, ref, shallowRef } from "vue";
 import { api } from "@/lib/api";
 import { rememberSpaceKind } from "@/lib/surface";
+import { NATIVE } from "@/lib/platform";
+import { nativeSignIn, nativeSignOut, setNativeSpace } from "@/lib/native-auth";
 import { childSpacesOf, useChildMode } from "./child";
 
 export type IdentityMethod = { id: string; kind: "passkey" | "oidc" | "recovery" | "phone" | "email" | "member_key"; display: string; created_at: string; last_used_at: string | null };
@@ -39,6 +41,11 @@ export type DeviceRow = { id: string; client: string; name: string; scopes: stri
 export type SessionRow = { id: string; method: string; level: number; device: string | null; created_at: string; last_used_at: string };
 
 const me = shallowRef<Me>({ signedIn: false });
+/** A space opened (or closed): remembered for the sections, and in the app for its requests (IDN-43). */
+function opened(space: Membership | null) {
+  rememberSpaceKind(space?.kind ?? null);
+  if (NATIVE) setNativeSpace(space ? `${space.edition}:${space.tenant_id}` : null);
+}
 /** How sure the kiosk is of who this is (IDN-30): the account session's level, 0 when nobody is signed in. */
 export const accountLevel = computed(() => (me.value.signedIn ? me.value.level : 0));
 
@@ -126,7 +133,8 @@ export function useIdentity() {
     void load();
   }
   const signedIn = computed(() => me.value.signedIn);
-  const passkeys = computed(() => Boolean(config.value?.passkeys) && browserSupportsWebAuthn());
+  // In the app, passkeys and Google happen in the system browser (IDN-43), never in its web view.
+  const passkeys = computed(() => !NATIVE && Boolean(config.value?.passkeys) && browserSupportsWebAuthn());
   const child = useChildMode();
   /** The spaces offered here: in child mode only the family spaces a guardian chose (SPC-9). */
   const spacesHere = computed(() => (me.value.signedIn ? (child.on.value ? childSpacesOf(me.value.spaces) : me.value.spaces) : []));
@@ -144,6 +152,12 @@ export function useIdentity() {
     /** Child mode: no starting or joining spaces (SPC-9). */
     childMode: child.on,
     reload: load,
+    /** The native app (IDN-43): sign in through the system browser. */
+    native: NATIVE,
+    async appSignIn() {
+      await nativeSignIn();
+      await load();
+    },
 
     // ---- a device kept for one space (SPC-5): its administrator only ----
     /** Keep this device for the space it is in now; the app starts again in it. */
@@ -208,12 +222,14 @@ export function useIdentity() {
       await load();
     },
     async signOut(everywhere = false) {
-      await api("/api/identity/signout", { everywhere });
+      if (NATIVE) await nativeSignOut();
+      else await api("/api/identity/signout", { everywhere });
       rememberSpaceKind(null);
       await load();
     },
     async deleteAccount() {
       await api("/api/identity/account", undefined, "DELETE");
+      if (NATIVE) await nativeSignOut();
       rememberSpaceKind(null);
       await load();
     },
@@ -222,7 +238,7 @@ export function useIdentity() {
     /** Open a space (or none), of any edition, and start the app again in it on this address (SUR-14). */
     async openSpace(tenant: string | null, edition?: string, { after }: { after?: number } = {}) {
       const r = await api<{ space: Membership | null }>("/api/identity/space", { tenant, ...(tenant && edition ? { edition } : {}) });
-      rememberSpaceKind(r.space?.kind ?? null);
+      opened(r.space);
       markOpened();
       restart(after);
       return r.space;
@@ -230,7 +246,7 @@ export function useIdentity() {
     /** Start a family, business or community (SPC-8): you are its administrator, and it opens. */
     async startSpace(kind: string, name: string, { after }: { after?: number } = {}) {
       const r = await api<{ space: Membership }>("/api/identity/spaces/start", { kind, name });
-      rememberSpaceKind(r.space.kind);
+      opened(r.space);
       markOpened();
       restart(after);
       return r.space;
@@ -239,7 +255,7 @@ export function useIdentity() {
     async joinSpace(code: string, { after }: { after?: number } = {}) {
       const r = await api<{ space: Membership | null; pending: boolean; space_name?: string }>("/api/identity/spaces/join", { code });
       if (r.space) {
-        rememberSpaceKind(r.space.kind);
+        opened(r.space);
         markOpened();
         restart(after);
       } else await load();
@@ -248,7 +264,7 @@ export function useIdentity() {
     /** Add the space this site is in now to the account (as its signed-in member, or the administrator). */
     async linkSpace() {
       const r = await api<{ space: Membership }>("/api/identity/spaces/link", {});
-      rememberSpaceKind(r.space.kind);
+      opened(r.space);
       markOpened();
       restart();
     },
