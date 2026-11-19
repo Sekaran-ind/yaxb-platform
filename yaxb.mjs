@@ -215,6 +215,8 @@ function ensureSetup() {
   buildCore();
   ensureDevVars();
   node(WRANGLER, ["d1", "migrations", "apply", "yaxb", "--local"], WEB_DIR, "Applying local D1 migrations", { quiet: true });
+  // The shared platform database beside the edition's (PLA-5).
+  node(WRANGLER, ["d1", "migrations", "apply", "anjal-platform", "--local"], WEB_DIR, "Applying local platform D1 migrations", { quiet: true });
 }
 
 // ---------- process control ----------
@@ -403,12 +405,13 @@ function test() {
 
 function deploy() {
   const config = readFileSync(join(WEB_DIR, "wrangler.jsonc"), "utf8");
-  if (config.includes('"database_id": "00000000-0000-0000-0000-000000000000"')) {
-    fail("Set the D1 database id first: run `npx wrangler d1 create yaxb` in apps/web and put the id in wrangler.jsonc.");
+  if (/"database_id": "00000000-0000-0000-0000-0000000000\d\d"/.test(config)) {
+    fail("Set the D1 database ids first: run `npx wrangler d1 create yaxb` (and `npx wrangler d1 create anjal-platform`) in apps/web and put the ids in wrangler.jsonc.");
   }
   ensureSetup();
   info("Applying D1 migrations (remote)...");
   node(WRANGLER, ["d1", "migrations", "apply", "yaxb", "--remote"], WEB_DIR, "Remote D1 migrations");
+  node(WRANGLER, ["d1", "migrations", "apply", "anjal-platform", "--remote"], WEB_DIR, "Remote platform D1 migrations");
   info("Building and deploying the Worker...");
   node(VITE, ["build"], WEB_DIR, "Build");
   node(WRANGLER, ["deploy"], WEB_DIR, "Worker deploy");

@@ -13,10 +13,11 @@ export const SITE_BRAND = SURFACE === "all" ? "Yaxb.ai" : "Anjal.ai";
 
 /**
  * The platforms the Yaxb.ai portal leads to (SUR-7..9). Each address is set when the portal is built
- * (VITE_FAMILY_URL, VITE_BUSINESS_URL, VITE_ENTERPRISE_URL), so subdomains can change without code.
+ * (VITE_FAMILY_URL, VITE_BUSINESS_URL, VITE_COMMUNITY_URL, VITE_ENTERPRISE_URL; DOM-1: the anjalai.cc domains by default), so subdomains can change without code.
  */
 export const PLATFORM_URLS = {
-  family: import.meta.env.VITE_FAMILY_URL || "https://anjal-family.tsekaran1949.workers.dev/",
-  business: import.meta.env.VITE_BUSINESS_URL || "https://anjal-business.tsekaran1949.workers.dev/",
+  family: import.meta.env.VITE_FAMILY_URL || "https://family.anjalai.cc/",
+  business: import.meta.env.VITE_BUSINESS_URL || "https://business.anjalai.cc/",
+  community: import.meta.env.VITE_COMMUNITY_URL || "https://community.anjalai.cc/",
   enterprise: import.meta.env.VITE_ENTERPRISE_URL || "https://clinux.yaxb.ai/",
 } as const;

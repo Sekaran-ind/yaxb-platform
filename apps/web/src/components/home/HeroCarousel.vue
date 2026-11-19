@@ -1,11 +1,11 @@
 <script setup lang="ts">
-// The home page's first panel: a carousel of four slides, each a short write-up with a picture of
-// the kiosk on the right. Anjal itself, a family, a small business, and the kiosk's key features
+// The home page's first panel: a carousel of slides, each a short write-up with a picture of the
+// kiosk on the right. Anjal itself, a family, a small business, a community, and the kiosk's key features
 // (with "See all features" opening the details in a dialog).
 // It moves on by itself only while nobody is pointing at it or focused in it, and never for people
 // who prefer reduced motion; it can be paused, stepped with the arrows or the dots, and swiped.
 // Every slide sits in the same grid cell, so the panel keeps the tallest slide's height.
-import { ArrowLeft, ArrowRight, ArrowRightLeft, Baby, Bike, BookOpen, CalendarHeart, HardDrive, Languages, LayoutGrid, MessagesSquare, Pause, Play, ShieldCheck, Smartphone, Sparkles, UserRound, WifiOff, Workflow, type LucideIcon } from "@lucide/vue";
+import { ArrowLeft, ArrowRight, ArrowRightLeft, Baby, Bike, BookOpen, Building2, CalendarHeart, HardDrive, Languages, LayoutGrid, MessagesSquare, Pause, Play, ShieldCheck, Smartphone, Sparkles, UserRound, WifiOff, Workflow, type LucideIcon } from "@lucide/vue";
 import { SURFACE } from "@/lib/surface";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import BaseModal from "@/components/site/BaseModal.vue";
@@ -13,23 +13,24 @@ import { cn } from "@/lib/cn";
 import { BRAND } from "@/lib/legal";
 import { SITE_WIDTH } from "@/lib/site-width";
 
-const SLIDES = ["Anjal.ai", "Family and personal", "Small business", "What's in the kiosk"] as const;
-/** The slides this surface shows (SUR-2): its own story, then what's in the kiosk. */
-const SHOWN: number[] = SURFACE === "family" ? [1, 3] : SURFACE === "business" ? [2, 3] : [0, 1, 2, 3];
+const SLIDES = ["Anjal.ai", "Family and personal", "Small business", "What's in the kiosk", "Community"] as const;
+/** The slides this surface shows (SUR-2, EDN-4): its own story, then what's in the kiosk. */
+const SHOWN: number[] = SURFACE === "family" ? [1, 3] : SURFACE === "business" ? [2, 3] : SURFACE === "community" ? [4, 3] : [0, 1, 2, 4, 3];
 const INTERVAL = 9000;
 
 /** Each feature names the surfaces it belongs to (SUR-2); the combined site shows them all. */
-const ALL_FEATURES: { icon: LucideIcon; title: string; short: string; body: string; surfaces: ("family" | "business")[] }[] = [
-  { icon: MessagesSquare, title: "Ask Me", short: "Cited answers in 14 languages", body: "Ask by voice or text in 14 languages. Every answer names its source, says so when nothing covers the question, and passes emergencies straight to a person." , surfaces: ["family", "business"] },
-  { icon: BookOpen, title: "My notebook", short: "Your documents and websites", body: "Add documents, PDFs and whole websites. The kiosk answers from them, remembers what matters, and keeps them on your device." , surfaces: ["family", "business"] },
-  { icon: Workflow, title: "Quick tools and journeys", short: "Forms that fill from your words", body: "Guided services, one screen at a time. Say it in your own words and the form fills itself; you check it before it goes." , surfaces: ["family", "business"] },
-  { icon: ArrowRightLeft, title: "Requests between people", short: "Handed to the right person", body: "A customer starts, staff finish. Each request gets a reference and moves to the right person's device, with its status in the conversation." , surfaces: ["business"] },
-  { icon: Sparkles, title: "Service Catalogue and AI designer", short: "Services from a description", body: "Describe a service in plain words. The designer drafts its journeys, screens and roles; a reviewer publishes it for any kiosk." , surfaces: ["business"] },
-  { icon: CalendarHeart, title: "Scheduler", short: "Birthdays and key dates", body: "Birthdays, anniversaries, to-dos and every service's key dates in one place. \"Next Friday at 4\" is understood on the device." , surfaces: ["family", "business"] },
-  { icon: Baby, title: "Child safety lock", short: "Safe for children", body: "A parent turns it on with a PIN, or a profile is set as under 18. Answers are written for a child, nothing for adults, no web search, and worrying questions go to a trusted adult and the moderators. Settings and staff areas stay locked." , surfaces: ["family"] },
-  { icon: UserRound, title: "Profiles", short: "Private profiles", body: "\"Who's using Anjal?\" keeps each person's notebook and Scheduler apart, encrypted on the device.", surfaces: ["family"] },
-  { icon: UserRound, title: "The front desk", short: "A locked public kiosk", body: "Restricted Mode turns the kiosk into a front desk for chosen services, behind a staff PIN. Nothing about a visitor stays on it.", surfaces: ["business"] },
-  { icon: ShieldCheck, title: "Quality you can measure", short: "Moderated and measured", body: "Moderators check flagged answers and rate them. Each notebook gets an F1 score week by week, with the weakest answers listed first." , surfaces: ["business"] },
+const ALL_FEATURES: { icon: LucideIcon; title: string; short: string; body: string; surfaces: ("family" | "business" | "community")[] }[] = [
+  { icon: MessagesSquare, title: "Ask Me", short: "Cited answers in 14 languages", body: "Ask by voice or text in 14 languages. Every answer names its source, says so when nothing covers the question, and passes emergencies straight to a person." , surfaces: ["family", "business", "community"] },
+  { icon: BookOpen, title: "My notebook", short: "Your documents and websites", body: "Add documents, PDFs and whole websites. The kiosk answers from them, remembers what matters, and keeps them on your device." , surfaces: ["family", "business", "community"] },
+  { icon: Workflow, title: "Quick tools and journeys", short: "Forms that fill from your words", body: "Guided services, one screen at a time. Say it in your own words and the form fills itself; you check it before it goes." , surfaces: ["family", "business", "community"] },
+  { icon: ArrowRightLeft, title: "Requests between people", short: "Handed to the right person", body: "A customer starts, staff finish. Each request gets a reference and moves to the right person's device, with its status in the conversation." , surfaces: ["business", "community"] },
+  { icon: Sparkles, title: "Service Catalogue and AI designer", short: "Services from a description", body: "Describe a service in plain words, in a conversation like Ask Me. The designer drafts its journeys, screens and roles; an ethics check flags anyone treated differently, and a reviewer publishes it for any kiosk." , surfaces: ["business", "community"] },
+  { icon: ArrowRightLeft, title: "Requests at home", short: "A child asks, a parent decides", body: "From At home in Quick tools: a child asks for something, anyone reports a repair, or plans an outing. A child's request goes only to their own parents; repairs go to whoever handles them. It all stays on the family's device.", surfaces: ["family"] },
+  { icon: CalendarHeart, title: "Scheduler", short: "Birthdays and key dates", body: "Birthdays, anniversaries, to-dos and every service's key dates in one place. \"Next Friday at 4\" is understood on the device." , surfaces: ["family", "business", "community"] },
+  { icon: Baby, title: "Child safety lock", short: "Safe for children", body: "A parent turns it on with a PIN, or a profile is set as under 18. Answers are written for a child, nothing for adults, no web search, and worrying questions go to a trusted adult and the moderators. Settings and staff areas stay locked." , surfaces: ["family", "community"] },
+  { icon: UserRound, title: "Profiles", short: "Private profiles", body: "\"Who's using Anjal?\" keeps each person's notebook and Scheduler apart, encrypted on the device.", surfaces: ["family", "community"] },
+  { icon: UserRound, title: "The front desk", short: "A locked public kiosk", body: "Restricted Mode turns the kiosk into a front desk for chosen services, behind a staff PIN. Nothing about a visitor stays on it.", surfaces: ["business", "community"] },
+  { icon: ShieldCheck, title: "Quality you can measure", short: "Moderated and measured", body: "Moderators check flagged answers and rate them. Each notebook gets an F1 score week by week, with the weakest answers listed first." , surfaces: ["business", "community"] },
 ];
 
 const FEATURES = SURFACE === "all" ? ALL_FEATURES : ALL_FEATURES.filter((f) => (f.surfaces as string[]).includes(SURFACE));
@@ -179,6 +180,40 @@ const place = (i: number) => `${SHOWN.indexOf(i) + 1} of ${SHOWN.length}`;
                 <span class="rounded-full bg-white/10 px-2 py-0.5 font-mono text-[11px] text-white/70">REQ-4F2K</span>
               </div>
               <p class="mt-3 text-xs text-white/60">Accepted by the showroom manager · delivery Sat 28 Nov</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. Community (EDN-4) -->
+        <div v-if="SHOWN.includes(4)" :class="slideClass(4)" role="group" aria-roledescription="slide" :aria-label="`${place(4)}: ${SLIDES[4]}`" :inert="SHOWN[current] !== 4">
+          <div>
+            <p class="eyebrow">Community</p>
+            <component :is="SHOWN[0] === 4 ? 'h1' : 'h2'" class="mt-4 text-4xl font-semibold tracking-[-0.035em] text-balance text-ink md:text-5xl">Your association, in every resident's language.</component>
+            <p class="mt-6 max-w-xl text-lg text-pretty text-gray-600">For apartment associations, clubs and committees. The bylaws and notices answer residents' questions, with the clause cited. Residents raise complaints and book the hall; the committee answers each with a reference. The committee never sees anyone's own notebook or conversations.</p>
+            <div class="mt-9 flex flex-wrap items-center gap-3">
+              <a
+                href="#ideas"
+                class="group inline-flex h-11 items-center gap-2 rounded-full bg-[linear-gradient(100deg,#6a1bd1,#c026d3_55%,#f97316)] px-6 text-[15px] font-bold text-white shadow-[0_8px_24px_-8px_#c026d3] transition hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c026d3]"
+              >
+                <Sparkles class="size-4" aria-hidden="true" /> Ideas for your community
+                <ArrowRight class="size-4 transition group-hover:translate-x-0.5" aria-hidden="true" />
+              </a>
+              <RouterLink to="/kiosk" class="btn-light h-11 px-5">Try the kiosk</RouterLink>
+            </div>
+          </div>
+          <div class="console mx-auto w-full max-w-md lg:mr-0 px-6 py-7" aria-hidden="true">
+            <p class="text-[10px] font-semibold tracking-[0.22em] text-white/50 uppercase">Anjal · Lotus Apartments</p>
+            <p class="mt-6 ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-white/10 px-4 py-2.5 text-[15px] text-white">Can I park a second car in the visitors' bay?</p>
+            <div class="mt-4 rounded-2xl bg-white/5 p-4 text-sm leading-relaxed text-white/80 ring-1 ring-white/10">
+              Only between 10 pm and 7 am, and for no more than two nights a week.
+              <span class="mt-3 flex flex-wrap gap-1.5"><span class="rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-white/70">Bylaws · clause 14.3</span></span>
+            </div>
+            <div class="mt-4 rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
+              <div class="flex items-center justify-between gap-3">
+                <p class="flex items-center gap-2 text-sm font-medium text-white"><Building2 class="size-4 text-white/70" /> Hall booking · Sun 6 Dec</p>
+                <span class="rounded-full bg-white/10 px-2 py-0.5 font-mono text-[11px] text-white/70">R-7KQ3MD</span>
+              </div>
+              <p class="mt-3 text-xs text-white/60">Approved by the secretary · 40 guests</p>
             </div>
           </div>
         </div>

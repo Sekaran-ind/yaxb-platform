@@ -23,7 +23,7 @@ export const router = createRouter({
     // Each surface has its own home page (SUR-2); the combined site is the Yaxb.ai portal (SUR-7).
     {
       path: "/",
-      component: SURFACE === "family" ? () => import("./pages/FamilyHomePage.vue") : SURFACE === "business" ? () => import("./pages/BusinessHomePage.vue") : () => import("./pages/PortalPage.vue"),
+      component: SURFACE === "family" ? () => import("./pages/FamilyHomePage.vue") : SURFACE === "business" ? () => import("./pages/BusinessHomePage.vue") : SURFACE === "community" ? () => import("./pages/CommunityHomePage.vue") : () => import("./pages/PortalPage.vue"),
       meta: { title: SURFACE_NAME },
     },
     { path: "/kiosk", component: () => import("./pages/KioskPage.vue"), meta: { title: "AI Kiosk" } },

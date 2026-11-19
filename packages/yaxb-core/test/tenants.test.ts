@@ -30,6 +30,9 @@ describe("join tokens", () => {
   it("runs the whole flow: link, preview, request, accept, collect once", async () => {
     const { svc, issued } = setup();
     const shop = await svc.createTenant({ name: "Velan Two Wheelers", slug: "velan" });
+    // A third kind (EDN-1): an association, club or committee.
+    expect((await svc.createTenant({ name: "Lotus Apartments Residents", slug: "lotus", kind: "community" })).kind).toBe("community");
+    expect((await svc.createTenant({ name: "Other", slug: "other", kind: "shop" as never })).kind).toBe("business");
     const { token, joinToken } = await svc.issueToken(shop.id, { role: "sales", label: "Showroom staff" }, { name: "Asha" });
     expect(token).toMatch(/^yaxb_join_/);
     expect(JSON.stringify(await svc.tokens(shop.id))).not.toContain(token); // only the hash is kept

@@ -6,6 +6,10 @@ describe("context", () => {
   it("resolves a surface and what it offers", () => {
     const family = resolveContext({ surface: "family" });
     expect(family.features).toEqual(["child-lock", "profiles", "household"]);
+    // Community (EDN-2): Business's features, with profiles and the child lock; no household.
+    const community = resolveContext({ surface: "community" });
+    expect(community.features).toEqual(["catalogue", "requests", "staff", "front-desk", "join", "directory", "child-lock", "profiles"]);
+    expect(surfaceName(community)).toBe("Anjal Community");
     expect(offers(family, "catalogue")).toBe(false);
     const business = resolveContext({ surface: "Business", tenant: "velan", jurisdiction: "in-tn" });
     expect(business).toMatchObject({ surface: "business", tenant: "velan", jurisdiction: "IN-TN" });

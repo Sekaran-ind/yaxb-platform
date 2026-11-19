@@ -15,7 +15,7 @@
 import type { D1Like } from "../stores/d1.js";
 import type { ModeratorRole } from "../moderators/index.js";
 
-export type Tenant = { id: string; slug: string; name: string; kind: "business" | "family"; status: "active" | "suspended"; created_at: string };
+export type Tenant = { id: string; slug: string; name: string; kind: "business" | "family" | "community"; status: "active" | "suspended"; created_at: string };
 export type JoinToken = { id: string; tenant_id: string; role: string; label: string | null; uses_left: number; expires_at: string; created_by: string | null; created_at: string; revoked: boolean; /** Accepted without a decision: only a new business's first administrator (TEN-8). */ auto_accept?: boolean };
 export type JoinRequest = {
   id: string;
@@ -95,7 +95,7 @@ export function createTenantService(store: TenantStore, { issueMember, now = () 
       if (!name || name.length > 80) throw new TenantError("Give the business a name (up to 80 characters).");
       if (!SLUG.test(slug)) throw new TenantError("The short name is lower-case letters, digits and '-' (up to 48).");
       if (await store.tenant(slug)) throw new TenantError("That short name is taken.", 409);
-      const t: Tenant = { id: crypto.randomUUID(), slug, name, kind: input.kind === "family" ? "family" : "business", status: "active", created_at: iso() };
+      const t: Tenant = { id: crypto.randomUUID(), slug, name, kind: input.kind === "family" || input.kind === "community" ? input.kind : "business", status: "active", created_at: iso() };
       await store.putTenant(t);
       return t;
     },

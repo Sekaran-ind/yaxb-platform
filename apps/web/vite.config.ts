@@ -35,6 +35,7 @@ const HEADS: Record<string, { title: string; description: string }> = {
   all: { title: "Yaxb.ai", description: "Yaxb.ai: AI kiosks that answer with facts and sources, in your own language, for families and communities (Anjal.ai Family), small businesses (Anjal.ai for Business) and enterprises in regulated care (ClinüxFlow)." },
   family: { title: "Anjal Family", description: "Anjal Family: one shared notebook the whole family can ask in its own language, key dates that come up by themselves, and a protected space." },
   business: { title: "Anjal for Business", description: "Anjal for Business: connect with your customers, design your services with the AI designer, and get found on Anjal.ai." },
+  community: { title: "Anjal Community", description: "Anjal Community: for apartment associations, clubs and committees. Residents raise complaints and book the hall, the committee answers, and notices reach everyone in their own language." },
   native: { title: "Anjal.ai", description: "Anjal.ai, the kiosk." },
 };
 function pageHead(mode: string): Plugin {
@@ -53,11 +54,11 @@ function pageHead(mode: string): Plugin {
 // `--mode native` builds the Vue app alone for the Capacitor app (apps/native, PLT-10): the kiosk
 // only, with API calls to VITE_API_BASE (set it in .env.native.local or the environment).
 //
-// `--mode family` and `--mode business` (SUR-1..6) build the app as that surface's own Worker:
-// wrangler.family.jsonc (anjal-family) or wrangler.business.jsonc (anjal-business), into
-// dist/family or dist/business, with VITE_SURFACE set so each shows only what is its own (what a
+// `--mode family`, `--mode business` and `--mode community` (SUR-1..6, EDN-3) build the app as that
+// surface's own Worker: wrangler.<surface>.jsonc (anjal-family, anjal-business, anjal-community), into
+// dist/<surface>, with VITE_SURFACE set so each shows only what is its own (what a
 // surface offers is yaxb-core's context).
-const SURFACES = ["family", "business"] as const;
+const SURFACES = ["family", "business", "community"] as const;
 export default defineConfig(({ mode }) => {
   const surface = (SURFACES as readonly string[]).includes(mode) ? mode : null;
   return {

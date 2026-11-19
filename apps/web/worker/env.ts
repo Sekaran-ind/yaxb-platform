@@ -1,6 +1,7 @@
 // The Worker's settings, secrets and bindings. Secrets are set with `wrangler secret put` (locally
 // in .dev.vars). String settings are validated with zod once per isolate.
 import { z } from "zod";
+import { SURFACES } from "@sekaran-ind/yaxb-core/context";
 
 export type Bindings = CloudflareEnv & {
   VECTORIZE?: Vectorize;
@@ -23,7 +24,7 @@ const schema = z.object({
   MAILCHIMP_AUDIENCE_ID: z.string().optional(),
   KIOSK_BOX_ORIGINS: z.string().optional(),
   /** The surface this Worker is (SUR-4, yaxb-core context): routes for features it lacks answer 404; unset: all. */
-  SURFACE: z.enum(["family", "business", "all"]).optional(),
+  SURFACE: z.enum(SURFACES).optional(),
   /**
    * Origins of the native app's pages (PLT-14), comma-separated. The app sends its session id in
    * X-Yaxb-Session instead of a cookie. Default: Capacitor's iOS and Android origins.

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // The Yaxb.ai portal (SUR-7..9): the combined site's home page. It leads to the platforms Yaxb.ai
-// provides, each on its own site: Anjal.ai Family (personal and community), Anjal.ai for Business (small
-// businesses) and ClinüxFlow (enterprises in regulated care). "Which fits you?" highlights one; each
+// provides, each on its own site: Anjal.ai Family (personal and family), Anjal.ai Community
+// (associations, clubs, committees; EDN-5), Anjal.ai for Business (small businesses) and ClinüxFlow
+// (enterprises in regulated care). "Which fits you?" highlights one; each
 // card opens its platform. Below: the one core they share, what every platform does, and how data
 // is kept. Every claim here is something the platforms actually do.
 import {
@@ -18,6 +19,7 @@ import {
   ShieldCheck,
   Smartphone,
   Store,
+  UsersRound,
   type LucideIcon,
 } from "@lucide/vue";
 import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
@@ -46,13 +48,13 @@ const PLATFORMS: Platform[] = [
   {
     id: "family",
     icon: HeartHandshake,
-    audience: "Personal & Community",
-    pick: "Me, my family or community",
+    audience: "Personal & Family",
+    pick: "Me or my family",
     name: "Anjal.ai Family",
     tagline: "Stay connected, in a space that's yours.",
     points: [
       "One shared notebook of manuals, circulars and recipes that everyone can ask in their own language",
-      "Birthdays, bills and key dates come up by themselves",
+      "Requests at home: a child asks, their own parent decides; repairs reach whoever handles them",
       "Profiles sealed on the device, and a PIN-protected child safety lock",
     ],
     cta: "Open Anjal.ai Family",
@@ -69,9 +71,25 @@ const PLATFORMS: Platform[] = [
       "Describe a service and the AI designer drafts its journeys, screens and consent forms",
       "Join links for your team, and every request routed to the right person with a reference",
       "A kiosk front desk, and a dashboard per service with completion, waits and outcomes",
+      "An ethics check on every service, and an audit log that shows if anything was changed",
     ],
     cta: "Open Anjal.ai for Business",
     accent: "#c026d3",
+  },
+  {
+    id: "community",
+    icon: UsersRound,
+    audience: "Community",
+    pick: "My association, club or committee",
+    name: "Anjal.ai Community",
+    tagline: "Your association, in every resident's language.",
+    points: [
+      "The bylaws, minutes and notices answer residents' questions, with the clause cited",
+      "Complaints and hall bookings reach the right committee member, each with a reference",
+      "The committee sees only what comes to it: never a resident's own notebook or conversations",
+    ],
+    cta: "Open Anjal.ai Community",
+    accent: "#0d9488",
   },
   {
     id: "enterprise",
@@ -158,7 +176,7 @@ onBeforeUnmount(() => observer?.disconnect());
           </p>
           <h1 class="mt-6 text-4xl font-semibold tracking-[-0.04em] text-balance text-ink sm:text-5xl md:text-6xl">
             One intelligence.<br />
-            <span class="portal-gradient-text">Three ways to serve.</span>
+            <span class="portal-gradient-text">Four ways to serve.</span>
           </h1>
           <p class="mt-6 max-w-xl text-lg text-pretty text-gray-600">
             Kiosks that answer with facts and sources, in your own language, and run your services one screen at a time: for families and communities, small businesses, and enterprises in regulated care.
@@ -207,7 +225,7 @@ onBeforeUnmount(() => observer?.disconnect());
         </button>
       </div>
 
-      <div class="grid gap-6 lg:grid-cols-3">
+      <div class="grid gap-6 md:grid-cols-2 2xl:grid-cols-4">
         <article
           v-for="(p, i) in PLATFORMS"
           :id="`platform-${p.id}`"
