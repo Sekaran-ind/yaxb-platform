@@ -400,6 +400,8 @@ function test() {
   info("Worker tests");
   node(bin("vitest", "vitest.mjs"), ["run", "-c", "vitest.worker.config.ts"], WEB_DIR, "Worker tests");
   info("Web typecheck and lint");
+  // vue-tsc -b keeps an incremental cache that can miss a change in the core's built types: start clean.
+  rmSync(join(WEB_DIR, "node_modules", ".tmp"), { recursive: true, force: true });
   node(VUE_TSC, ["-b"], WEB_DIR, "Web typecheck");
   node(bin("eslint", "bin", "eslint.js"), ["."], WEB_DIR, "Web lint");
   console.log(green("\n  All checks passed.\n"));

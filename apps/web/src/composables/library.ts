@@ -34,7 +34,9 @@ export type CatalogueService = {
 /** Whether the team has someone for a role: signed in, invited (not yet signed in), or nobody (LIB-37). */
 export type Staffing = "ready" | "invited" | "nobody";
 type Viewer = { roles: string[]; member: boolean; admin: boolean; id?: string; name?: string };
-type Published = { roles: Role[]; services: CatalogueService[]; organisation?: Organisation | null; staffing?: Record<string, Staffing>; viewer?: Viewer };
+/** A published connector (CNX-2): what it does and the secrets it needs (never their values). */
+export type PublishedConnector = { entry_id: string; id: string; title: string; summary: string | null; host: string; operations: { id: string; label: string; method: string; handler: string }[]; secrets: string[] };
+type Published = { roles: Role[]; services: CatalogueService[]; organisation?: Organisation | null; connectors?: PublishedConnector[]; staffing?: Record<string, Staffing>; viewer?: Viewer };
 
 const KEY = "yaxb.kiosk.catalogue";
 function readLoaded(): string[] {
@@ -59,6 +61,10 @@ const staffing = shallowRef<Record<string, Staffing>>({});
 /** The published organisation (ORG-1): units, roles, reporting lines; null until one is published. */
 const organisation = shallowRef<Organisation | null>(null);
 export const publishedOrganisation = computed(() => organisation.value);
+const connectors = shallowRef<PublishedConnector[]>([]);
+export const publishedConnectors = computed(() => connectors.value);
+/** Handler names journeys may use: the built-in ones and the published connectors' (CNX-6). */
+export const journeyServiceNames = computed(() => [...JOURNEY_SERVICES, ...connectors.value.flatMap((c) => c.operations.map((o) => o.handler))]);
 const viewer = shallowRef<Viewer>({ roles: [], member: false, admin: false });
 const loadedIds = ref<string[]>(readLoaded());
 const ready = ref(false);
@@ -73,6 +79,7 @@ export function loadCatalogue(): Promise<void> {
       roles.value = p.roles;
       staffing.value = p.staffing ?? {};
       organisation.value = p.organisation ?? null;
+      connectors.value = p.connectors ?? [];
       if (p.viewer) viewer.value = p.viewer;
     } catch {
       /* no network or no Worker: built-in content only */

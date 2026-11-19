@@ -5,7 +5,17 @@ import { afterTasks, isMediaRef, journeyRolesNeeded, journeyTasks, progressOf, t
 
 /** Where a service's work happens, for the visitor. */
 /** `account`: Anjal's account service (sign-in and spaces, 15-identity.md), never the AI assistant. */
-export type ServiceWhere = "device" | "assistant" | "notebook" | "account";
+/** outside: a connector (CNX-7), an API the business uses, called by the server with its secret. */
+export type ServiceWhere = "device" | "assistant" | "notebook" | "account" | "outside";
+
+/** What a handler is: a built-in one, or a connector's operation (an outside service). */
+export function serviceInfo(name: string): ServiceInfo {
+  const known = SERVICE_INFO[name];
+  if (known) return known;
+  const m = /^connector\.([a-z][a-z0-9-]*)\.([a-z][a-z0-9-]*)$/.exec(name);
+  if (m) return { label: `${m[1]!.replace(/-/g, " ")} (an outside service)`, where: "outside" };
+  return { label: name, where: "assistant" };
+}
 export type ServiceInfo = { label: string; where: ServiceWhere };
 
 /** Every service a journey may use (content JOURNEY_SERVICES), described for visitors. */
@@ -89,7 +99,7 @@ export function summarizeJourney(journey: Journey): JourneySummary {
     const s = journey.steps[id]!;
     const fields = s.fields ?? [];
     const asks = [...fields.filter((f) => f.required), ...fields.filter((f) => !f.required)].map((f) => f.label);
-    const info = s.service ? (SERVICE_INFO[s.service] ?? { label: s.service, where: "assistant" as const }) : null;
+    const info = s.service ? serviceInfo(s.service) : null;
     return { id, label: labelOf(id, s), kind: kindOf(s), asks, service: info && s.service ? { name: s.service, ...info } : null };
   });
   const asks = [...new Set(steps.flatMap((s) => s.asks))];
@@ -98,12 +108,14 @@ export function summarizeJourney(journey: Journey): JourneySummary {
   // A journey other people answer or finish is handed over: its answers are kept as a request (a case).
   const handedTo = [...new Set(journeyRolesNeeded(journey).filter((n) => n.for.includes("answer") || n.for.includes("finish")).map((n) => n.role))];
   const toAccount = uses.some((u) => u.where === "account");
-  const leavesDevice = toAssistant || toAccount || handedTo.length > 0;
+  const outside = uses.filter((u) => u.where === "outside");
+  const leavesDevice = toAssistant || toAccount || outside.length > 0 || handedTo.length > 0;
   const parts = [asks.length ? `Asks for ${list(asks.map((a) => a.toLowerCase()))}` : "Asks for nothing", uses.length ? `uses ${list(uses.map((u) => u.label))}` : null].filter(Boolean);
   const where = [
     toAssistant ? "What you give it is sent to the AI assistant." : null,
     toAccount ? "Signing in goes to Anjal's account service; only your passkey's public key, a hidden form of your Google id and your spaces are kept there." : null,
     handedTo.length ? "Your answers go, as a request with a reference, to whoever takes it from you." : null,
+    outside.length ? `Some answers are sent to ${list(outside.map((u) => u.label.replace(" (an outside service)", "")))}, an outside service this business uses.` : null,
   ].filter(Boolean);
   const privacy = `${parts.join(", ")}. ${where.length ? where.join(" ") : "Nothing leaves this device."}`;
   return { id: journey.id, title: journey.title, summary: journey.summary ?? null, icon: journey.icon ?? null, category: journey.category ?? null, steps, asks, uses, leavesDevice, privacy };

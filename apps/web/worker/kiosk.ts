@@ -7,7 +7,7 @@ import { createLibraryService, type LibraryService } from "@sekaran-ind/yaxb-cor
 import { createVectorizeRetriever } from "@sekaran-ind/yaxb-core/knowledge";
 import { createModeratorService, statusOf, type ModeratorService } from "@sekaran-ind/yaxb-core/moderators";
 import { createReviewService, type ReviewService } from "@sekaran-ind/yaxb-core/reviews";
-import { createD1CaseStore, createD1EventStore, createD1FeedbackStore, createD1Relay, createD1DesignerStore, createD1Kv, createD1LibraryStore, createD1ModerationStore, createD1ModeratorStore, createD1ReviewStore, createD1ThreadStore } from "@sekaran-ind/yaxb-core/stores/d1";
+import { createD1CaseStore, createD1ConnectorSecretStore, createD1EventStore, createD1FeedbackStore, createD1Relay, createD1DesignerStore, createD1Kv, createD1LibraryStore, createD1ModerationStore, createD1ModeratorStore, createD1ReviewStore, createD1ThreadStore } from "@sekaran-ind/yaxb-core/stores/d1";
 import { KvStore } from "@sekaran-ind/yaxb-core/stores/kv";
 import { stringEnv, type Bindings } from "./env";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -89,6 +89,9 @@ export function cases(env: Bindings): CaseService {
     }),
   );
 }
+
+/** Connector secrets (CNX-3), sealed, per tenant, in the edition's D1. */
+export const connectorSecrets = (env: Bindings) => createD1ConnectorSecretStore(db(env));
 
 /** Services' events kept on the server (MET-2): the paid plan's storage. */
 export const serviceEvents = (env: Bindings) => createD1EventStore(db(env));

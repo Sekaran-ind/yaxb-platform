@@ -18,7 +18,7 @@
 // the service. Nothing here stores anything.
 import { DEFAULT_ROLES, expandService, roleLabel, VISITOR_ROLE, type ConsentForm, type Role, type ServiceConsent } from "@sekaran-ind/yaxb-journeys";
 import type { Field } from "../journeys/index.js";
-import { SERVICE_INFO } from "../journeys/summary.js";
+import { serviceInfo } from "../journeys/summary.js";
 
 export type Sensitivity = "identity" | "health" | "money" | "birth" | "password" | "contact" | "location" | "free-text" | "photo" | "voice";
 export type AskedField = { label: string; journey: string; sensitivity: Sensitivity[] };
@@ -37,6 +37,8 @@ export type RoleFacts = {
   seenBy: string[];
   /** Screens that send answers to the AI assistant, in the journeys they start. */
   toAssistant: boolean;
+  /** Outside services (connectors, CNX-7) its journeys send answers to. */
+  toOutside: string[];
 };
 export type ServiceStorage = "none" | "box" | "server";
 export type ConsentFacts = { service: string; title: string; storage: ServiceStorage; relayHours: number; roles: RoleFacts[] };
@@ -97,9 +99,10 @@ export function consentFacts(doc: Record<string, unknown>, opts: { storage?: Ser
     const handled = journeys.filter((j) => !isVisitor && handlers(j).includes(role));
     const sees = handled.flatMap((j) => (j.screens ?? []).filter((s) => s.role !== role).flatMap((s) => fieldsOf(s).map((f) => ask(j, f))));
     const seenBy = [...new Set(starts.flatMap(handlers))].filter((r) => r !== role).map(label);
-    const toAssistant = starts.some((j) => (j.screens ?? []).some((s) => typeof s.service === "string" && (SERVICE_INFO[s.service]?.where ?? "assistant") === "assistant"));
+    const toAssistant = starts.some((j) => (j.screens ?? []).some((s) => typeof s.service === "string" && serviceInfo(s.service).where === "assistant"));
+    const toOutside = [...new Set(starts.flatMap((j) => (j.screens ?? []).flatMap((s) => (typeof s.service === "string" && serviceInfo(s.service).where === "outside" ? [s.service.split(".")[1]!.replace(/-/g, " ")] : []))))];
     const title = (j: JourneyDoc) => j.title ?? j.id;
-    return { role, label: label(role), starts: starts.map(title), completes: completes.map(title), answers: answers.map(title), gives: dedupe(gives), sees: dedupe(sees), seenBy, toAssistant };
+    return { role, label: label(role), starts: starts.map(title), completes: completes.map(title), answers: answers.map(title), gives: dedupe(gives), sees: dedupe(sees), seenBy, toAssistant, toOutside };
   });
   return { service: String(doc.id ?? ""), title: String(doc.title ?? doc.id ?? "This service"), storage: opts.storage ?? "none", relayHours: opts.relayHours ?? 48, roles: roles.filter((r) => r.role === VISITOR_ROLE ? r.starts.length > 0 : r.starts.length + r.completes.length + r.answers.length > 0) };
 }
@@ -159,6 +162,7 @@ function visitorForm(facts: ConsentFacts, r: RoleFacts): ConsentForm {
   const special = [...has(r.gives, "health"), ...has(r.gives, "identity")];
   if (special.length) points.push(`Some of it is sensitive (${names(special, 4)}). It is used only for this service, and only the people above see it.`);
   if (r.toAssistant) points.push("Some answers go to the AI assistant to prepare a reply. It doesn't keep them.");
+  if (r.toOutside.length) points.push(`Some answers are sent to ${r.toOutside.join(" and ")}, an outside service this business uses, which keeps them under its own terms.`);
   if (r.seenBy.length) {
     points.push(
       facts.storage === "none"
