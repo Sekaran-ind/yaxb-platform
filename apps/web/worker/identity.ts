@@ -24,6 +24,7 @@ import {
   oidcStart,
   seal,
   unseal,
+  type DeviceLockView,
   type Edition,
   type IdentityService,
   type Membership,
@@ -41,6 +42,8 @@ import type { AppEnv } from "./index";
 export const ACCESS_COOKIE = "anj_at";
 export const REFRESH_COOKIE = "anj_rt";
 export const SPACE_COOKIE = "anj_space";
+/** A device kept for one space (SPC-5): `<id>.<secret>`, host-only. */
+export const LOCK_COOKIE = "anj_lock";
 const OIDC_COOKIE = "anj_oidc";
 const SHARED_DOMAIN = "anjalai.cc";
 const EDITION_ORIGINS = ["", "family.", "business.", "community."].map((s) => `https://${s}${SHARED_DOMAIN}`);
@@ -95,6 +98,24 @@ function setSpace(c: Context, m: { edition: Edition; tenant_id: string } | null)
   setCookie(c, SPACE_COOKIE, m ? `${m.edition}:${m.tenant_id}` : "", { httpOnly: true, secure: !local(c), sameSite: "Lax", path: "/", maxAge: m ? 365 * 86400 : 0 });
 }
 
+function setLock(c: Context, token: string | null) {
+  // Kept for as long as browsers allow (400 days); a device in use is seen again long before that.
+  setCookie(c, LOCK_COOKIE, token ?? "", { httpOnly: true, secure: !local(c), sameSite: "Lax", path: "/", maxAge: token ? 400 * 86400 : 0 });
+}
+
+/** A device's lock, checked at most once a minute per isolate (releasing it ends it within a minute everywhere). */
+const lockChecks = new Map<string, { lock: DeviceLockView | null; until: number }>();
+async function lockOf(c: Context<AppEnv>, svc: IdentityService): Promise<DeviceLockView | null> {
+  const token = getCookie(c, LOCK_COOKIE);
+  if (!token) return null;
+  const hit = lockChecks.get(token);
+  if (hit && hit.until > Date.now()) return hit.lock;
+  const lock = await svc.deviceLockOf(token).catch(() => null);
+  if (lockChecks.size > 1000) lockChecks.clear();
+  lockChecks.set(token, { lock, until: Date.now() + 60_000 });
+  return lock;
+}
+
 // ---- every request: who is signed in, and in which space (SPC-7) ----------------------------------------
 
 /**
@@ -103,12 +124,16 @@ function setSpace(c: Context, m: { edition: Edition; tenant_id: string } | null)
  */
 export async function accountContext(c: Context<AppEnv>, next: Next) {
   const svc = identity(c);
+  // A device kept for one space (SPC-5) acts in that space whoever uses it; its visitors stay anonymous.
+  const lock = svc ? await lockOf(c, svc) : null;
+  if (lock) c.set("lock", lock);
   const token = getCookie(c, ACCESS_COOKIE);
   if (svc && token) {
     const claims = await svc.verify(token).catch(() => null);
     if (claims) {
       c.set("account", claims);
-      const open = spaceCookie(c);
+      // On a kept device only the account's membership in that space counts (staff at the desk).
+      const open = lock ? { edition: lock.edition, tenant: lock.tenant_id } : spaceCookie(c);
       if (open) {
         const m = await svc.spaceOf(claims.sub, open.edition, open.tenant).catch(() => null);
         if (m) c.set("space", m);
@@ -131,6 +156,8 @@ type Deps = {
   /** The signed-in member (their key) and whether the administrator token is signed in, for linking. */
   signedInMember: (c: Context<AppEnv>) => Promise<{ id: string; roles: string[] } | null>;
   isAdmin: (c: Context<AppEnv>) => Promise<boolean>;
+  /** Whether the person is this space's administrator (their member key, the open space's membership, or ADMIN_TOKEN). */
+  spaceAdministrator: (c: Context<AppEnv>) => Promise<boolean>;
   /** The tenant this request acts in (the tenant context). */
   tenant: () => string;
   /** Start a space (SPC-8): a new tenant, with the person as its administrator. Runs in the space's own edition. */
@@ -163,8 +190,16 @@ export function identityRoutes(deps: Deps) {
   r.use("*", async (c, next) => {
     if (c.req.method !== "GET" && !deps.sameOrigin(c)) return json(c, 403, "Forbidden");
     if (!identity(c) && !c.req.path.endsWith("/config")) return json(c, 503, "Accounts aren't set up on this site yet (IDENTITY_SECRET).");
+    // A kept device opens no other space (SPC-5).
+    const lock = c.get("lock");
+    if (lock && c.req.method !== "GET" && /\/(space|spaces\/(start|join|link))$/.test(c.req.path)) return json(c, 409, `This device is kept for ${lock.space_name}.`);
     await next();
   });
+  /** What a screen shows of the device's lock. */
+  const lockedView = (c: Context<AppEnv>) => {
+    const l = c.get("lock");
+    return l ? { space_name: l.space_name, label: l.label, edition: l.edition, created_at: l.created_at } : null;
+  };
 
   const svc = (c: Context<AppEnv>) => identity(c)!;
   /** Run a call, turning the service's refusals into JSON errors. */
@@ -198,6 +233,7 @@ export function identityRoutes(deps: Deps) {
       passkeys: Boolean(relyingParty(c)),
       google: Boolean(s.GOOGLE_CLIENT_ID && s.GOOGLE_CLIENT_SECRET),
       edition: currentEdition(),
+      locked: lockedView(c),
       notice: "Anjal keeps only what it needs to know it's you: your passkey's public key, or your Google account's id with your email shown partly hidden, and the spaces you belong to. Your profile's contents stay on your devices. You can delete your account at any time.",
     });
   });
@@ -318,7 +354,7 @@ export function identityRoutes(deps: Deps) {
       const waiting = (await svc(c).pendingJoins(account.sub, "all")).map((p) => ({ space_name: p.space_name, kind: p.kind }));
       const spaces = me.memberships;
       const open = spaceCookie(c);
-      return c.json({ signedIn: true, level: account.lvl, account: me.account, methods: me.methods, spaces, space: spaces.find((m) => sameSpace(m, open)) ?? null, waiting, edition: currentEdition() });
+      return c.json({ signedIn: true, level: account.lvl, account: me.account, methods: me.methods, spaces, space: c.get("space") ?? spaces.find((m) => sameSpace(m, open)) ?? null, waiting, edition: currentEdition(), locked: lockedView(c) });
     } catch {
       setSession(c, null);
       return c.json({ signedIn: false });
@@ -434,6 +470,55 @@ export function identityRoutes(deps: Deps) {
       return { space: null, pending: true, space_name: j.space_name };
     }),
   );
+  // ---- a device kept for one space (SPC-5) ----
+  const mustAdminister = async (c: Context<AppEnv>) => {
+    if (!(await deps.spaceAdministrator(c))) throw new IdentityError("Only this space's administrator can do that.", 403);
+  };
+  /** Keep this device for the space it is in now: its administrator only. */
+  r.post("/device-lock", (c) =>
+    call(c, async () => {
+      if (c.get("lock")) throw new IdentityError("This device is already kept for a space.", 409);
+      await mustAdminister(c);
+      const b = await body(c, z.object({ label: z.string().max(60).optional() }));
+      const tenant = deps.tenant();
+      const info = await deps.spaceInfo(c.env, tenant);
+      const { lock, token } = await svc(c).lockDevice({ edition: currentEdition(), tenant_id: tenant, space_name: info.name, label: b?.label, by: c.get("account")?.sub ?? null });
+      setLock(c, token);
+      return { locked: { space_name: lock.space_name, label: lock.label, edition: lock.edition, created_at: lock.created_at } };
+    }),
+  );
+  /** Release this device: its space's administrator only. */
+  r.delete("/device-lock", (c) =>
+    call(c, async () => {
+      const lock = c.get("lock");
+      if (!lock) {
+        setLock(c, null);
+        return { locked: null };
+      }
+      await mustAdminister(c);
+      await svc(c).unlockDevice(lock.id, { edition: lock.edition, tenant_id: lock.tenant_id }, c.get("account")?.sub ?? null);
+      lockChecks.clear();
+      setLock(c, null);
+      return { locked: null };
+    }),
+  );
+  /** The space's kept devices, for its administrator; any of them may be released from here. */
+  r.get("/device-locks", (c) =>
+    call(c, async () => {
+      await mustAdminister(c);
+      return { devices: await svc(c).deviceLocks(currentEdition(), deps.tenant()), here: c.get("lock")?.id ?? null };
+    }),
+  );
+  r.delete("/device-locks/:id", (c) =>
+    call(c, async () => {
+      await mustAdminister(c);
+      const done = await svc(c).unlockDevice(c.req.param("id"), { edition: currentEdition(), tenant_id: deps.tenant() }, c.get("account")?.sub ?? null);
+      lockChecks.clear();
+      if (c.get("lock")?.id === done.id) setLock(c, null);
+      return { released: done.id };
+    }),
+  );
+
   /** Leave a space: `/spaces/<edition>:<tenant>` (a plain tenant is this request's edition). */
   r.delete("/spaces/:space", (c) =>
     call(c, async () => {

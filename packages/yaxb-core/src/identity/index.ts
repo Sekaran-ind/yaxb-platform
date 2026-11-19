@@ -60,6 +60,10 @@ export type Session = {
 export type Challenge = { id: string; channel: "sms" | "whatsapp" | "email" | "passkey"; subject_hash: string; code_hash: string; attempts: number; created_at: string; expires_at: string; consumed_at: string | null };
 /** A join request waiting for a space's administrator (SPC-8); the claim is sealed. */
 export type PendingJoin = { id: string; account_id: string; edition: Edition; tenant_id: string; space_name: string; kind: SpaceKind; request_id: string; sealed_claim: string; created_at: string };
+/** A device kept for one space (SPC-5). The device holds `<id>.<secret>`; only the secret's keyed hash is kept. */
+export type DeviceLock = { id: string; edition: Edition; tenant_id: string; space_name: string; label: string; secret_hash: string; locked_by: string | null; created_at: string; unlocked_at: string | null };
+/** What a screen may show of a lock: never its secret's hash. */
+export type DeviceLockView = Omit<DeviceLock, "secret_hash">;
 export type SigningKey = { kid: string; public_jwk: string; sealed_private: string; created_at: string; retired_at: string | null };
 
 export const IDENTITY_ACTIONS = [
@@ -74,6 +78,8 @@ export const IDENTITY_ACTIONS = [
   "space.created",
   "membership.added",
   "membership.removed",
+  "device.locked",
+  "device.unlocked",
 ] as const;
 export type IdentityAction = (typeof IDENTITY_ACTIONS)[number];
 export type IdentityAuditEvent = { id: string; at: string; account_id: string | null; action: IdentityAction; details: Record<string, string | number | boolean> | null };
@@ -105,6 +111,10 @@ export interface IdentityStore {
   pendingJoins(accountId: string): Promise<PendingJoin[]>;
   putPendingJoin(p: PendingJoin): Promise<void>;
   removePendingJoin(id: string): Promise<void>;
+  deviceLock(id: string): Promise<DeviceLock | null>;
+  /** A space's locks, released ones too, newest first. */
+  deviceLocks(edition: Edition, tenantId: string): Promise<DeviceLock[]>;
+  putDeviceLock(l: DeviceLock): Promise<void>;
   /** Erase an account's methods, sessions and memberships (IDN-52), keeping the account row as a tombstone. */
   eraseAccount(accountId: string): Promise<void>;
 }
@@ -187,6 +197,7 @@ export type TokenClaims = { iss: string; sub: string; sid: string; lvl: number; 
 export type SignedIn = { account: Account; session: { id: string; access: string; refresh: string; access_expires_at: string; expires_at: string }; memberships: Membership[] };
 
 const iso = (d: Date) => d.toISOString();
+const viewOf = ({ secret_hash: _, ...view }: DeviceLock): DeviceLockView => view;
 const hourOf = (d: Date) => iso(d).slice(0, 13);
 const dayOf = (d: Date) => iso(d).slice(0, 10);
 
@@ -469,6 +480,54 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
     async auditLog(accountId: string, limit = 50) {
       return store.auditLog(accountId, Math.min(limit, 200));
     },
+
+    // ---- devices kept for one space (SPC-5) ---------------------------------------------------------
+
+    /**
+     * Keep this device for a space: a front desk, a lobby kiosk. The caller has checked that `by` is
+     * that space's administrator. Returns the device's token (`<id>.<secret>`), shown to nobody: the
+     * Worker keeps it in an HttpOnly cookie.
+     */
+    async lockDevice(input: { edition: Edition; tenant_id: string; space_name: string; label?: string; by: string | null }) {
+      const id = crypto.randomUUID();
+      const secret = randomToken(32);
+      const lock: DeviceLock = {
+        id,
+        edition: input.edition,
+        tenant_id: input.tenant_id,
+        space_name: input.space_name.trim().slice(0, 80) || input.tenant_id,
+        label: (input.label ?? "").trim().slice(0, 60) || "Front desk",
+        secret_hash: await h("device", `${id}:${secret}`),
+        locked_by: input.by,
+        created_at: iso(now()),
+        unlocked_at: null,
+      };
+      await store.putDeviceLock(lock);
+      await audit(input.by, "device.locked", { edition: lock.edition });
+      return { lock: viewOf(lock), token: `${id}.${secret}` };
+    },
+    /** The lock a device's token names, while it holds; null for a released, unknown or forged one. */
+    async deviceLockOf(token: string | null | undefined): Promise<DeviceLockView | null> {
+      const m = /^([0-9a-f-]{36})\.([A-Za-z0-9_-]{20,100})$/.exec(token ?? "");
+      if (!m) return null;
+      const lock = await store.deviceLock(m[1]!);
+      if (!lock || lock.unlocked_at) return null;
+      return sameText(await h("device", `${m[1]}:${m[2]}`), lock.secret_hash) ? viewOf(lock) : null;
+    },
+    /** A space's devices that are kept for it now (for its administrator). */
+    async deviceLocks(edition: Edition, tenantId: string): Promise<DeviceLockView[]> {
+      return (await store.deviceLocks(edition, tenantId)).filter((l) => !l.unlocked_at).map(viewOf);
+    },
+    /** Release a device: only a lock of this space (the caller has checked its administrator). */
+    async unlockDevice(id: string, space: { edition: Edition; tenant_id: string }, by: string | null) {
+      const lock = await store.deviceLock(id);
+      if (!lock || lock.edition !== space.edition || lock.tenant_id !== space.tenant_id) throw new IdentityError("That device isn't kept for this space.", 404);
+      if (lock.unlocked_at) return viewOf(lock);
+      const done = { ...lock, unlocked_at: iso(now()) };
+      await store.putDeviceLock(done);
+      await audit(by, "device.unlocked", { edition: lock.edition });
+      return viewOf(done);
+    },
   };
   return api;
 }
@@ -503,6 +562,7 @@ export function createMemoryIdentityStore(): IdentityStore {
   const counters = new Map<string, number>();
   const events: IdentityAuditEvent[] = [];
   const pending = new Map<string, PendingJoin>();
+  const locks = new Map<string, DeviceLock>();
   const copy = <T>(x: T): T => structuredClone(x);
   const mkey = (a: string, e: string, t: string) => `${a}|${e}|${t}`;
   return {
@@ -539,6 +599,9 @@ export function createMemoryIdentityStore(): IdentityStore {
     pendingJoins: async (id) => [...pending.values()].filter((p) => p.account_id === id).map(copy),
     putPendingJoin: async (p) => void pending.set(p.id, copy(p)),
     removePendingJoin: async (id) => void pending.delete(id),
+    deviceLock: async (id) => copy(locks.get(id) ?? null),
+    deviceLocks: async (e, t) => [...locks.values()].filter((l) => l.edition === e && l.tenant_id === t).sort((a, b) => b.created_at.localeCompare(a.created_at)).map(copy),
+    putDeviceLock: async (l) => void locks.set(l.id, copy(l)),
     eraseAccount: async (id) => {
       for (const [k, p] of pending) if (p.account_id === id) pending.delete(k);
       for (const [k, m] of methods) if (m.account_id === id) methods.delete(k);

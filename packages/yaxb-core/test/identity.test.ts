@@ -294,3 +294,32 @@ describe("starting and joining spaces (SPC-8)", () => {
       expect(await id.pendingJoins(r.account.id, "business")).toEqual([]);
     });
 });
+
+describe("devices kept for one space (SPC-5)", () => {
+  for (const [name, make] of [
+    ["memory", (): IdentityStore => createMemoryIdentityStore()],
+    ["D1", (): IdentityStore => createD1IdentityStore(sqliteD1({ folder: "migrations-platform" }))],
+  ] as const)
+    it(`locks, checks and releases a device on ${name}`, async () => {
+      const store = make();
+      const id = createIdentityService(store, { secret: "test-secret-0123456789", issuer: "https://anjalai.cc" });
+      const { lock, token } = await id.lockDevice({ edition: "business", tenant_id: "t1", space_name: "Sri Ram Hardware", label: "Counter", by: null });
+      expect(lock).toMatchObject({ edition: "business", tenant_id: "t1", label: "Counter", unlocked_at: null });
+      expect(lock).not.toHaveProperty("secret_hash");
+      // Only the secret's keyed hash is kept.
+      const secret = token.split(".")[1]!;
+      expect(JSON.stringify(await store.deviceLock(lock.id))).not.toContain(secret);
+      expect(await id.deviceLockOf(token)).toMatchObject({ id: lock.id, space_name: "Sri Ram Hardware" });
+      // A forged or malformed token holds nothing.
+      expect(await id.deviceLockOf(`${lock.id}.${"A".repeat(43)}`)).toBeNull();
+      expect(await id.deviceLockOf("nonsense")).toBeNull();
+      expect(await id.deviceLockOf(null)).toBeNull();
+      expect((await id.deviceLocks("business", "t1")).map((l) => l.id)).toEqual([lock.id]);
+      expect(await id.deviceLocks("family", "t1")).toEqual([]);
+      // Released only by its own space.
+      await expect(id.unlockDevice(lock.id, { edition: "family", tenant_id: "t1" }, null)).rejects.toThrow(/isn't kept for this space/);
+      expect((await id.unlockDevice(lock.id, { edition: "business", tenant_id: "t1" }, null)).unlocked_at).toBeTruthy();
+      expect(await id.deviceLockOf(token)).toBeNull();
+      expect(await id.deviceLocks("business", "t1")).toEqual([]);
+    });
+});

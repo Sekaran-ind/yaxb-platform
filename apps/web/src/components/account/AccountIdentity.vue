@@ -129,6 +129,7 @@ async function copyCodes() {
       <!-- Spaces (SPC-1..4). -->
       <section class="space-y-2" aria-label="Your spaces">
         <h4 class="text-sm font-semibold text-ink">Your spaces</h4>
+        <p v-if="id.locked.value" class="caution rounded-lg px-3 py-2 text-sm">This device is kept for {{ id.locked.value.space_name }} ({{ id.locked.value.label }}): no other space opens here. Its administrator releases it in Preferences → Front desk.</p>
         <p v-if="!me.spaces.length" class="text-sm text-gray-600">No spaces on this site yet.</p>
         <ul v-else class="divide-y divide-gray-100 rounded-xl bg-surface ring-1 ring-gray-100">
           <li v-for="s in me.spaces" :key="`${s.edition}:${s.tenant_id}`" class="flex flex-wrap items-center gap-2 px-3 py-2.5">
@@ -137,7 +138,7 @@ async function copyCodes() {
               <span v-if="s.roles.length" class="block text-xs text-gray-500">{{ s.roles.join(", ") }}</span>
             </span>
             <span v-if="me.space?.tenant_id === s.tenant_id && s.edition === (me.space?.edition ?? '')" class="inline-flex items-center gap-1 text-sm text-success"><Check class="size-4" aria-hidden="true" /> Open</span>
-            <button v-else type="button" class="btn-light h-9 px-3 text-sm" :disabled="busy !== null" @click="run('space', () => id.openSpace(s.tenant_id, s.edition))">Open</button>
+            <button v-else-if="!id.locked.value" type="button" class="btn-light h-9 px-3 text-sm" :disabled="busy !== null" @click="run('space', () => id.openSpace(s.tenant_id, s.edition))">Open</button>
             <ConfirmAction label="Leave" :message="`Take “${s.space_name}” off your account? You can add it again as its member.`" trigger-class="btn-ghost h-9 px-2 text-sm" @confirm="run('leave', () => id.leaveSpace(s.tenant_id, s.edition))" />
           </li>
         </ul>
@@ -146,7 +147,7 @@ async function copyCodes() {
         </ul>
         <div class="flex flex-wrap gap-2">
           <button type="button" class="btn-light h-9 px-3 text-sm" @click="guide"><Plus class="size-4" aria-hidden="true" /> Start or join a space</button>
-          <button v-if="me.space" type="button" class="btn-ghost h-9 px-3 text-sm" @click="run('space', () => id.openSpace(null))">Close the space</button>
+          <button v-if="me.space && !id.locked.value" type="button" class="btn-ghost h-9 px-3 text-sm" @click="run('space', () => id.openSpace(null))">Close the space</button>
         </div>
         <details class="rounded-lg bg-mist px-3 py-2 text-sm text-gray-700">
           <summary class="cursor-pointer text-ink">I already have a member key for this space</summary>

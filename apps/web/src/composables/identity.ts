@@ -25,8 +25,12 @@ export type Me =
       /** Join requests waiting for a space's administrator (SPC-8). */
       waiting?: { space_name: string; kind: string }[];
       edition: string;
+      locked?: DeviceLocked | null;
     };
-export type IdentityConfig = { enabled: boolean; passkeys: boolean; google: boolean; edition: string; notice: string };
+/** This device is kept for one space (SPC-5): no other space opens here. */
+export type DeviceLocked = { space_name: string; label: string; edition: string; created_at: string };
+export type KeptDevice = DeviceLocked & { id: string; tenant_id: string; locked_by: string | null; unlocked_at: string | null };
+export type IdentityConfig = { enabled: boolean; passkeys: boolean; google: boolean; edition: string; locked?: DeviceLocked | null; notice: string };
 export type SessionRow = { id: string; method: string; level: number; device: string | null; created_at: string; last_used_at: string };
 
 const me = shallowRef<Me>({ signedIn: false });
@@ -103,6 +107,8 @@ export function useIdentity() {
   }
   const signedIn = computed(() => me.value.signedIn);
   const passkeys = computed(() => Boolean(config.value?.passkeys) && browserSupportsWebAuthn());
+  /** The space this device is kept for (SPC-5), or null. */
+  const locked = computed(() => (me.value.signedIn ? me.value.locked : null) ?? config.value?.locked ?? null);
 
   return {
     me,
@@ -110,7 +116,25 @@ export function useIdentity() {
     loading,
     signedIn,
     passkeys,
+    locked,
     reload: load,
+
+    // ---- a device kept for one space (SPC-5): its administrator only ----
+    /** Keep this device for the space it is in now; the app starts again in it. */
+    async lockDevice(label?: string) {
+      await api("/api/identity/device-lock", { label });
+      config.value = null;
+      restart();
+    },
+    /** Release this device; the app starts again. */
+    async releaseDevice() {
+      await api("/api/identity/device-lock", undefined, "DELETE");
+      config.value = null;
+      restart();
+    },
+    /** The space's kept devices. */
+    keptDevices: () => api<{ devices: KeptDevice[]; here: string | null }>("/api/identity/device-locks"),
+    releaseKept: (id: string) => api(`/api/identity/device-locks/${encodeURIComponent(id)}`, undefined, "DELETE"),
 
     /** Sign in with a passkey this device (or a nearby phone) holds. */
     async passkeySignIn() {
