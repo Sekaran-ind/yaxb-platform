@@ -3,6 +3,7 @@
 import { createInterface } from 'node:readline/promises';
 import { parseArgs } from 'node:util';
 import { randomUUID } from 'node:crypto';
+import { renderUnicodeCompact } from 'uqr';
 
 export const HELP = `yaxb: talk to the YAXB kiosk agent from a terminal.
 
@@ -163,7 +164,9 @@ export async function run(argv, { createKiosk, account, version = '0.0.0', stdou
         const who = await account.login({
           site: values.site,
           show: (s) => {
-            stderr.write(`\nTo sign this terminal in, open\n\n  ${s.verification_uri_complete}\n\non a phone or computer where you are signed in, check the code\n\n  ${s.user_code}\n\nand approve it. Waiting…\n`);
+            // A QR code to scan with a phone that is signed in, then the link and code to type (IDN-41).
+            const qr = renderUnicodeCompact(s.verification_uri_complete, { border: 1 });
+            stderr.write(`\nTo sign this terminal in, scan this with a phone where you are signed in:\n\n${qr}\n\nor open\n\n  ${s.verification_uri_complete}\n\nCheck that it shows the code\n\n  ${s.user_code}\n\nand approve it. Waiting…\n`);
           },
           signal,
         });
