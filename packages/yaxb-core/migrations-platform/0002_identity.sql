@@ -11,12 +11,13 @@ CREATE TABLE IF NOT EXISTS accounts (
   deleted_at TEXT
 );
 
--- How a person signs in: kind phone (OTP), email, passkey, oidc, member_key. `subject_hash` is an HMAC
--- of the phone number, email address or provider subject, so a lookup works without keeping it.
+-- How a person signs in: kind passkey, oidc (Google, later others), recovery (a one-time recovery code),
+-- phone and email (codes, a later release), member_key. `subject_hash` is an HMAC of the credential id,
+-- provider subject, recovery code, number or address, so a lookup works without keeping it.
 CREATE TABLE IF NOT EXISTS account_methods (
   id TEXT PRIMARY KEY,
   account_id TEXT NOT NULL REFERENCES accounts (id),
-  kind TEXT NOT NULL CHECK (kind IN ('phone', 'email', 'passkey', 'oidc', 'member_key')),
+  kind TEXT NOT NULL CHECK (kind IN ('passkey', 'oidc', 'recovery', 'phone', 'email', 'member_key')),
   subject_hash TEXT NOT NULL,
   display TEXT NOT NULL,
   public_key TEXT,

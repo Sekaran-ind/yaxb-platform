@@ -198,10 +198,12 @@
     "@langchain/langgraph-sdk": "1.15.0",
     "@langchain/openai": "1.8.2",
     "@sekaran-ind/yaxb-journeys": "0.1.0",
+    "@simplewebauthn/server": "14.0.3",
     "deepagents": "1.16.3",
     "js-yaml": "5.5.0",
     "langchain": "1.6.3",
     "langsmith": "0.9.0",
+    "oauth4webapi": "3.8.8",
     "zod": "4.6.7"
   },
   "devDependencies": {

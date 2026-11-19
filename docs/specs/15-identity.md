@@ -39,7 +39,7 @@ A **space** is one place a person belongs to: their family, a business they work
 | ID | Requirement | Status |
 |---|---|---|
 | IDN-10 | Passkeys (WebAuthn, relying party `anjalai.cc`) are the recommended default. The box can check a passkey offline against the stored public key. | Planned |
-| IDN-11 | Phone OTP (SMS or WhatsApp) through a provider connector, with attempts capped per number. It is never the only factor for high-value actions, because of SIM swaps. Commercial SMS in India requires DLT registration of the sender and templates. | Planned |
+| IDN-11 | Phone OTP (SMS or WhatsApp) through a provider connector, with attempts capped per number. It is never the only factor for high-value actions, because of SIM swaps. Commercial SMS in India requires DLT registration of the sender and templates. Moved to a later release (decided 2026-11-19): the first release signs in with passkeys and Google, and needs no SMS provider. | Partly built: the core's phone sign-in (codes as keyed hashes, masked numbers, attempt and send caps) waits for a provider; it is not offered. |
 | IDN-12 | Email OTP or a magic link. | Planned |
 | IDN-13 | Passwords only where a business insists: always with a second factor for staff, a slow hash, and a check against known-breached passwords. | Planned |
 | IDN-14 | Google, Microsoft and Apple through OIDC with PKCE, state and nonce. Anjal keeps only the provider's subject id and verified email. | Planned |
@@ -47,6 +47,7 @@ A **space** is one place a person belongs to: their family, a business they work
 | IDN-16 | Member keys become a sign-in method of an account, for machines, routines and integrations, with scopes and an expiry. Existing members keep working. | Planned |
 | IDN-17 | Personal access tokens for the CLI and scripts: scoped, expiring, revocable, issued through device sign-in (IDN-41). | Planned |
 | IDN-18 | Device credentials, one per device, each revocable on its own, for box clients, kiosks and the voice device. | Planned |
+| IDN-21 | Recovery codes: ten one-time codes, shown once when the account is made (and again on request, replacing the old ones), kept only as hashes. Each signs in once at level 1, enough to add a new method. | Planned |
 | IDN-19 | QR hand-off: someone signs in on a kiosk or shared tablet by scanning with a phone that is already signed in, and the kiosk gets a short session. A password is never typed on a public screen. | Planned |
 | IDN-20 | Aadhaar authentication is never used. Document providers such as DigiLocker may be added later through the OIDC slot for level 4 (IDN-30). | Planned (as a rule) |
 
@@ -78,14 +79,14 @@ A **space** is one place a person belongs to: their family, a business they work
 | IDN-51 | Rate limits and lockout on every method. The existing same-origin, CSRF and "never log content" rules apply unchanged. | Planned |
 | IDN-52 | Keep the least: a provider's subject id, a verified email or phone, passkey public keys. Phone numbers are masked on screen. Sign-up shows a consent notice. Deleting an account erases what the law allows. | Planned |
 | IDN-53 | Audit, facts only: `account.created`, `signed_in` (method and level), `sign_in.failed` (counts), `step_up`, `method.linked`, `method.removed`, `session.revoked`, `token.issued`, `token.revoked`, `recovery.used`, `account.deleted`. | Planned |
-| IDN-54 | A proven library does the protocol work (PKCE, WebAuthn verification, token rotation). Anjal's own code is the service, the profile link, assurance levels and the surfaces. The library is chosen after a short trial on Workers with D1 (candidates: Better Auth, OpenAuth, or SimpleWebAuthn with oauth4webapi). | Planned |
+| IDN-54 | A proven library does the protocol work (PKCE, WebAuthn verification, token rotation). Anjal's own code is the service, the profile link, assurance levels and the surfaces. Chosen (2026-11-19): SimpleWebAuthn for passkeys and oauth4webapi for OIDC; sessions and keys on Web Crypto in yaxb-core `./identity`. | Planned |
 | IDN-55 | Clinux's sign-in journeys become clients of this service. ABHA and HPR sign-in plug in as Clinux realm methods at level 4. | Proposed |
 
 ## Order of work
 
-1. IDN-1..6, 10, 11 and 50..54, with SPC-1..4, 6, 7 and 10. Gate: one person uses the same account on two editions, the web and a second phone, with a family and a business membership, switching between the two spaces without signing in again, and neither space's data shows in the other.
+1. IDN-1..6, 10, 14 (Google), 21 and 50..54, with SPC-1..4, 6, 7 and 10. No SMS provider is needed. Gate: one person uses the same account on two editions, the web and a second phone, with a family and a business membership, switching between the two spaces without signing in again, and neither space's data shows in the other.
 2. IDN-16, 40 and 44, with SPC-5, 8 and 9. Gate: every member signs in with a passkey or OTP, and keys remain only for machines; a front-desk kiosk locked to its space offers no switching.
 3. IDN-30..34. Gate: a hall booking starts at level 2 and its approval step steps up to level 3, resuming where it paused.
 4. IDN-17, 18, 41 and 42. Gate: `yaxb login` works with no secrets in `~/.yaxb/.env`, and one lost phone is revoked without touching any other device.
-5. IDN-12..15, 43. Gate: a business's staff sign in with their company accounts.
+5. IDN-11..13, 15 (Microsoft, Apple and a business's own provider), 43. Gate: a business's staff sign in with their company accounts, and a number gets a code by SMS or WhatsApp.
 6. IDN-19. Gate: a visitor signs in on a front-desk kiosk by scanning, with nothing typed on the kiosk.

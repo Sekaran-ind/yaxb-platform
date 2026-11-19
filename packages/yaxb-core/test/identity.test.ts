@@ -175,3 +175,100 @@ for (const [name, make] of [
     });
   });
 }
+
+// ---- the first release's methods: passkeys, Google, recovery codes ---------------------------------------
+import { softAuthenticator } from "./soft-authenticator.js";
+
+const RP = { id: "anjalai.cc", name: "Anjal", origins: ["https://family.anjalai.cc", "https://business.anjalai.cc"] };
+
+for (const [name, make] of [
+  ["memory", (): IdentityStore => createMemoryIdentityStore()],
+  ["D1", (): IdentityStore => createD1IdentityStore(sqliteD1({ folder: "migrations-platform" }))],
+] as const) {
+  describe(`sign-in methods on ${name}`, () => {
+    const setup = () => createIdentityService(make(), { secret: "test-secret-0123456789", issuer: "https://anjalai.cc", rp: RP });
+
+    it("makes an account with a passkey on one edition and signs in on another (IDN-10, DOM-3)", async () => {
+      const id = setup();
+      const key = await softAuthenticator("anjalai.cc", "https://family.anjalai.cc");
+      const reg = await id.passkeyRegisterStart({ name: "Asha" });
+      const response = await key.register(reg.options);
+      expect(await id.passkeyRegisterFinish({ challenge: reg.challenge, response })).toMatchObject({ consent_required: true });
+      // The challenge survives asking for consent, and is used once.
+      const made = await id.passkeyRegisterFinish({ challenge: reg.challenge, response, consent: true, name: "Asha" });
+      if (!("session" in made)) throw new Error();
+      expect(await id.verify(made.session.access)).toMatchObject({ lvl: 3, amr: ["passkey"] });
+      await fails(id.passkeyRegisterFinish({ challenge: reg.challenge, response, consent: true }), 410);
+
+      // Business's site, the same passkey (one relying party for every edition).
+      const keyOnBusiness = { ...key };
+      const start = await id.passkeySignInStart();
+      const auth = await keyOnBusiness.authenticate(start.options);
+      const signed = await id.passkeySignInFinish({ challenge: start.challenge, response: auth, device: "second phone" });
+      expect(signed.account.id).toBe(made.account.id);
+      // A replayed response fails: its challenge is used up.
+      await fails(id.passkeySignInFinish({ challenge: start.challenge, response: auth }), 410);
+    });
+
+    it("refuses an unknown passkey and one from another site", async () => {
+      const id = setup();
+      const stranger = await softAuthenticator("anjalai.cc", "https://family.anjalai.cc");
+      const start = await id.passkeySignInStart();
+      await fails(id.passkeySignInFinish({ challenge: start.challenge, response: await stranger.authenticate(start.options) }), 401);
+      const phishing = await softAuthenticator("anjalai.cc", "https://anjalai-login.example");
+      const reg = await id.passkeyRegisterStart({});
+      await fails(id.passkeyRegisterFinish({ challenge: reg.challenge, response: await phishing.register(reg.options), consent: true }), 401);
+    });
+
+    it("signs in with Google's verified email, keeping only a hash and a masked address (IDN-14)", async () => {
+      const id = setup();
+      const google = { provider: "google" as const, subject: "1093847561", email: "asha.r@gmail.com", emailVerified: true };
+      expect(await id.oidcSignIn(google)).toMatchObject({ consent_required: true });
+      const made = await id.oidcSignIn({ ...google, consent: true, name: "Asha" });
+      if (!("session" in made)) throw new Error();
+      expect(await id.verify(made.session.access)).toMatchObject({ lvl: 2, amr: ["oidc"] });
+      const again = await id.oidcSignIn(google);
+      expect("session" in again && again.account.id).toBe(made.account.id);
+      const me = await id.me(made.account.id);
+      expect(me.methods).toEqual([expect.objectContaining({ kind: "oidc", display: "Google · a•••••@gmail.com" })]);
+      expect(JSON.stringify(await id.store.methods(made.account.id))).not.toContain("1093847561");
+      await fails(id.oidcSignIn({ ...google, subject: "other", emailVerified: false, consent: true }), 403);
+    });
+
+    it("adds a passkey to a Google account, and keeps at least one way in (IDN-40)", async () => {
+      const id = setup();
+      const made = await id.oidcSignIn({ provider: "google", subject: "s1", email: "a@b.in", emailVerified: true, consent: true });
+      if (!("session" in made)) throw new Error();
+      const key = await softAuthenticator("anjalai.cc", "https://business.anjalai.cc");
+      const reg = await id.passkeyRegisterStart({ account: made.account.id });
+      expect(await id.passkeyRegisterFinish({ challenge: reg.challenge, response: await key.register(reg.options), account: made.account.id })).toEqual({ added: true });
+      const methods = (await id.me(made.account.id)).methods;
+      expect(methods.map((m) => m.kind).sort()).toEqual(["oidc", "passkey"]);
+      await id.removeMethod(made.account.id, methods.find((m) => m.kind === "oidc")!.id);
+      await fails(id.removeMethod(made.account.id, methods.find((m) => m.kind === "passkey")!.id), 409);
+    });
+
+    it("gives ten recovery codes, each signing in once at level 1 (IDN-21)", async () => {
+      const id = setup();
+      const made = await id.oidcSignIn({ provider: "google", subject: "s2", email: "a@b.in", emailVerified: true, consent: true });
+      if (!("session" in made)) throw new Error();
+      const codes = await id.newRecoveryCodes(made.account.id);
+      expect(codes).toHaveLength(10);
+      expect(codes[0]).toMatch(/^[0-9A-Z]{5}-[0-9A-Z]{5}$/);
+      const r = await id.recoverySignIn({ code: codes[3]!.toLowerCase(), client: "c" });
+      expect(r.account.id).toBe(made.account.id);
+      expect(await id.verify(r.session.access)).toMatchObject({ lvl: 1, amr: ["recovery"] });
+      await fails(id.recoverySignIn({ code: codes[3]!, client: "c" }), 401);
+      // New codes replace the old ones.
+      await id.newRecoveryCodes(made.account.id);
+      await fails(id.recoverySignIn({ code: codes[4]!, client: "c" }), 401);
+      expect((await id.auditLog(made.account.id)).map((e) => e.action)).toContain("recovery.used");
+    });
+
+    it("refuses passkeys without a relying party (DOM-5), and phone codes without a provider (IDN-11)", async () => {
+      const id = createIdentityService(make(), { secret: "s".repeat(24), issuer: "https://anjalai.cc" });
+      await fails(id.passkeySignInStart(), 501);
+      await fails(id.startPhone({ phone: PHONE, client: "c" }), 501);
+    });
+  });
+}

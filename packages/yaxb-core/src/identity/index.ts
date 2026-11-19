@@ -13,13 +13,14 @@
 //                session (IDN-50)
 //
 // Rate limits and lockout on every method (IDN-51); facts-only audit (IDN-53, SPC-10).
+import { methodsApi, type RelyingParty } from "./methods.js";
 import { keyedHash, newSigningKey, randomCode, randomToken, sameText, seal, signJwt, unseal, verifyJwt, type Jwk, type PublicJwk } from "./crypto.js";
 
 export { b64url, fromB64url, keyedHash, randomToken, verifyJwt, type PublicJwk } from "./crypto.js";
 
 // ---- records -------------------------------------------------------------------------------------
 
-export const METHOD_KINDS = ["phone", "email", "passkey", "oidc", "member_key"] as const;
+export const METHOD_KINDS = ["passkey", "oidc", "recovery", "phone", "email", "member_key"] as const;
 export type MethodKind = (typeof METHOD_KINDS)[number];
 export const SPACE_KINDS = ["family", "business", "community"] as const;
 export type SpaceKind = (typeof SPACE_KINDS)[number];
@@ -56,7 +57,7 @@ export type Session = {
   expires_at: string;
   revoked_at: string | null;
 };
-export type Challenge = { id: string; channel: "sms" | "whatsapp" | "email"; subject_hash: string; code_hash: string; attempts: number; created_at: string; expires_at: string; consumed_at: string | null };
+export type Challenge = { id: string; channel: "sms" | "whatsapp" | "email" | "passkey"; subject_hash: string; code_hash: string; attempts: number; created_at: string; expires_at: string; consumed_at: string | null };
 export type SigningKey = { kid: string; public_jwk: string; sealed_private: string; created_at: string; retired_at: string | null };
 
 export const IDENTITY_ACTIONS = [
@@ -67,6 +68,7 @@ export const IDENTITY_ACTIONS = [
   "method.linked",
   "method.removed",
   "account.deleted",
+  "recovery.used",
   "space.created",
   "membership.added",
   "membership.removed",
@@ -130,7 +132,7 @@ export const MAX_MEMBERSHIPS = 50;
 
 /** What the person reads before an account is made (IDN-52). */
 export const CONSENT_NOTICE =
-  "Anjal keeps your phone number only as a code it can check, with its last digits to show you, and the spaces you belong to. Your profile's contents stay on your devices. You can delete your account at any time.";
+  "Anjal keeps only what it needs to know it's you: your passkey's public key, or your Google account's id with your email shown partly hidden, and the spaces you belong to. Your profile's contents stay on your devices. You can delete your account at any time.";
 
 // ---- phone numbers ---------------------------------------------------------------------------------
 
@@ -162,7 +164,10 @@ export function maskPhone(e164: string): string {
 export type OtpSender = { send(to: { channel: Challenge["channel"]; address: string }, code: string): Promise<void> };
 
 export type IdentityOptions = {
-  sender: OtpSender;
+  /** Phone and email codes: a later release (IDN-11, IDN-12). Without one, those methods are refused. */
+  sender?: OtpSender;
+  /** Passkeys' relying party (DOM-3); without it (a workers.dev address, DOM-5) passkeys are refused. */
+  rp?: RelyingParty | null;
   /** The Worker's IDENTITY_SECRET: keys the hashes and seals the signing keys. */
   secret: string;
   /** Who signs the tokens (the `iss` claim), e.g. "https://anjalai.cc". */
@@ -249,6 +254,7 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
   const api = {
     store,
     jwks,
+    ...methodsApi({ store, secret: options.secret, rp: options.rp ?? null, now, audit: (a, action, details) => audit(a, action, details ?? null), newSession, liveAccount }, CONSENT_NOTICE),
 
     // ---- phone sign-in (IDN-11) ------------------------------------------------------------------
 
@@ -277,6 +283,7 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
       };
       c.code_hash = await h("otp", `${c.id}:${code}`);
       await store.putChallenge(c);
+      if (!options.sender) throw new IdentityError("Signing in with a phone code isn't available yet.", 501);
       await options.sender.send({ channel: c.channel, address: phone }, code);
       return { challenge: c.id, to: maskPhone(phone), expires_at: c.expires_at };
     },
@@ -509,3 +516,5 @@ export function createMemoryIdentityStore(): IdentityStore {
 }
 
 export { createD1IdentityStore } from "./d1.js";
+export { maskEmail, PASSKEY_MINUTES, RECOVERY_CODES, type RelyingParty } from "./methods.js";
+export { GOOGLE_ISSUER, OIDC_MINUTES, oidcFinish, oidcStart, type OidcPending, type OidcProvider, type OidcResult } from "./oidc.js";
