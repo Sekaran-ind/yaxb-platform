@@ -29,18 +29,30 @@ export type ChatTurn = {
   /** A request's reference: its status, looked up whenever the conversation is open. */
   /** `open`: unfold the whole request when it is added (opened from a queue or a link). */
   request?: { ref: string; open?: boolean };
+  /** A service designed in the conversation (LIB-64): the design itself, or one of the designer's replies. */
+  design?: DesignTurn;
   /**
    * Context loaded into the conversation on this device (LIB-49), on both of its turns: what the
    * person picked (a journey, a request, a file) and the kiosk's reply. It is not an answer, so it
    * has no "ask a moderator"; the person's turn shows its icon.
    */
-  via?: "journey" | "request" | "file";
+  via?: "journey" | "request" | "file" | "design";
   /**
    * The device's spell check of a person's turn (SPL-6): acted, the corrected words were used and
    * the person can search for what they typed instead; otherwise "Did you mean …" is offered.
    */
   spelling?: { corrected: string; acted: boolean };
 };
+
+/**
+ * Designing a service in Ask Me (LIB-64). The `session` turn is the design: the Service Designer's
+ * thread, the draft as it stands, and the catalogue entry once it is created. While it is open the
+ * message box's words go to the designer (like a form's, form-input.ts). Each `reply` turn is the
+ * designer's answer to one message, with the draft it made.
+ */
+export type DesignTurn =
+  | { kind: "session"; status: "designing" | "stopped" | "created"; thread: string | null; yaml: string | null; run: string | null; title: string | null; entry: string | null; idea?: string }
+  | { kind: "reply"; session: string; pending?: boolean; failed?: string; text: string; yaml: string | null; title: string | null; errors: number; run: string | null };
 
 /** A journey in the conversation: where it got to, and the request it became when it was handed over. */
 export type JourneyTurn = {

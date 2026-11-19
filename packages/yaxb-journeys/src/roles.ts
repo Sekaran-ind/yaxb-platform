@@ -17,6 +17,12 @@ export type Role = { id: string; label: string; description?: string; builtin?: 
 
 export const VISITOR_ROLE = "visitor";
 
+/**
+ * Not a member role: "the manager of whoever started the journey" (ORG-3). The organisation
+ * (organisation.ts) turns it into the lead of the requester's unit when a case starts.
+ */
+export const MANAGER_OF_REQUESTER = "manager-of-requester";
+
 /** The built-in roles. Their ids match the kiosk's member roles (administrator is shown as Admin). */
 export const DEFAULT_ROLES: readonly Role[] = [
   { id: "administrator", label: "Admin", description: "Manages the team, roles and libraries; can do everything.", builtin: true },
@@ -36,7 +42,8 @@ export function roleListProblems(at: string, value: unknown, known?: readonly st
   const seen = new Set<string>();
   for (const r of value as string[]) {
     if (!ROLE_ID.test(r)) problems.push(`${at}: '${r}' is not a role id (lower-case words joined by '-')`);
-    else if (known && r !== VISITOR_ROLE && !known.includes(r)) problems.push(`${at}: no role '${r}'`);
+    else if (r === MANAGER_OF_REQUESTER && at !== "roles.complete") problems.push(`${at}: '${r}' only answers a screen or finishes a journey`);
+    else if (known && r !== VISITOR_ROLE && r !== MANAGER_OF_REQUESTER && !known.includes(r)) problems.push(`${at}: no role '${r}'`);
     if (seen.has(r)) problems.push(`${at}: '${r}' is listed twice`);
     seen.add(r);
   }
@@ -62,5 +69,6 @@ export function canInitiate(journey: { roles?: JourneyRoles }, roles: readonly s
 /** A role's label from a catalogue, or the id made readable. */
 export function roleLabel(id: string, catalogue: readonly Role[] = DEFAULT_ROLES): string {
   if (id === VISITOR_ROLE) return "Visitor";
+  if (id === MANAGER_OF_REQUESTER) return "The requester's manager";
   return catalogue.find((r) => r.id === id)?.label ?? id.replace(/-/g, " ").replace(/^./, (c) => c.toUpperCase());
 }

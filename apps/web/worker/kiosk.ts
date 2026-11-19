@@ -5,7 +5,7 @@ import { createCaseService, type CaseService } from "@sekaran-ind/yaxb-core/case
 import { createDesignerService, type DesignerService } from "@sekaran-ind/yaxb-core/designer";
 import { createLibraryService, type LibraryService } from "@sekaran-ind/yaxb-core/library";
 import { createVectorizeRetriever } from "@sekaran-ind/yaxb-core/knowledge";
-import { createModeratorService, type ModeratorService } from "@sekaran-ind/yaxb-core/moderators";
+import { createModeratorService, statusOf, type ModeratorService } from "@sekaran-ind/yaxb-core/moderators";
 import { createReviewService, type ReviewService } from "@sekaran-ind/yaxb-core/reviews";
 import { createD1CaseStore, createD1EventStore, createD1FeedbackStore, createD1Relay, createD1DesignerStore, createD1Kv, createD1LibraryStore, createD1ModerationStore, createD1ModeratorStore, createD1ReviewStore, createD1ThreadStore } from "@sekaran-ind/yaxb-core/stores/d1";
 import { KvStore } from "@sekaran-ind/yaxb-core/stores/kv";
@@ -72,6 +72,8 @@ export function library(env: Bindings, tenant = currentTenant()): LibraryService
       auditTrail: (id) => audit.auditLog({ targetId: id, limit: 200 }),
       // The Service Designer learns from every review of a service it drafted.
       onReviewed: (entry, decision, note, reviewer) => designer(env).learn(entry, decision, note, reviewer.name),
+      // Who is staffed, for the organisation's check (ORG-5): active members' roles only.
+      memberRoles: async () => (await moderators(env, tenant).store.list()).filter((m) => statusOf(m) === "active").map((m) => [...m.roles]),
     });
   });
 }
@@ -90,6 +92,8 @@ export function cases(env: Bindings): CaseService {
         const j = s && compileBundle(s.yaml, { services: JOURNEY_SERVICES }).journeys.find((x) => x.id === journey);
         return s && j ? { journey: j, entry_id: s.entry_id, service_id: s.id, service_title: s.title, revision: s.revision } : null;
       },
+      // The published organisation: approvals for the requester's manager (ORG-3).
+      organisation: async () => (await (await catalogue(env)).published([], { all: true })).organisation,
     });
     caseServices.set(env, k);
   }

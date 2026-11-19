@@ -28,7 +28,7 @@ import { load } from "js-yaml";
 import { conditionProblem, placeholders, type Scope } from "./expressions.js";
 import { fieldListProblems, type Field } from "./fields.js";
 import { questionnaireFields, type Questionnaire } from "./questionnaires.js";
-import { journeyRoleProblems, ROLE_ID, VISITOR_ROLE, type JourneyRoles } from "./roles.js";
+import { journeyRoleProblems, MANAGER_OF_REQUESTER, ROLE_ID, VISITOR_ROLE, type JourneyRoles } from "./roles.js";
 
 export * from "./expressions.js";
 export * from "./fields.js";
@@ -206,7 +206,7 @@ export function journeyProblems(doc: unknown, { services, questionnaires = [], r
     if (s.role !== undefined) {
       if (typeof s.role !== "string" || !ROLE_ID.test(s.role)) problems.push(`${at}: role is a role id (lower-case words joined by '-')`);
       else if (s.role === VISITOR_ROLE) problems.push(`${at}: leave role out for the person who started the journey`);
-      else if (roles && !roles.includes(s.role)) problems.push(`${at}: no role '${s.role}'`);
+      else if (roles && s.role !== MANAGER_OF_REQUESTER && !roles.includes(s.role)) problems.push(`${at}: no role '${s.role}'`);
       if (s.ask === undefined && s.questionnaire === undefined) problems.push(`${at}: only a step with questions is answered by a role`);
     }
     if (s.onError !== undefined && s.onError !== "fail" && s.onError !== "continue") problems.push(`${at}: onError is fail or continue`);

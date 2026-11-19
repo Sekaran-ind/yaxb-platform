@@ -18,8 +18,9 @@ import { compileQuestionnaire, type Questionnaire } from "./questionnaires.js";
 import { expandService, isNestedService } from "./nested.js";
 import { DEFAULT_ROLES, VISITOR_ROLE, type Role } from "./roles.js";
 import { compileService, type Service } from "./services.js";
+import { compileOrganisation, isOrganisation, organisationChecks, organisationRoles, type Organisation } from "./organisation.js";
 
-export const BUNDLE_KINDS = ["service", "journey", "questionnaire"] as const;
+export const BUNDLE_KINDS = ["service", "journey", "questionnaire", "organisation"] as const;
 export type BundleKind = (typeof BUNDLE_KINDS)[number];
 
 /** Larger sources are refused before parsing, so an editor stays responsive. */
@@ -42,9 +43,11 @@ export type Bundle = {
   services: Service[];
   journeys: Journey[];
   questionnaires: Questionnaire[];
+  /** Organisation documents (organisation.ts, ORG-1): at most one is expected. */
+  organisations: Organisation[];
   documents: BundleDocument[];
   problems: BundleProblem[];
-  /** Roles the bundle's services define (nested services, nested.ts). */
+  /** Roles the bundle's services define (nested services, nested.ts), and its organisation's units. */
   roles: Role[];
   /** No errors (warnings allowed). */
   ok: boolean;
@@ -100,7 +103,7 @@ export function splitDocuments(source: string): Chunk[] {
 
 export function compileBundle(source: string | string[], options: BundleOptions = {}): Bundle {
   const text = Array.isArray(source) ? source.join("\n---\n") : source;
-  const empty = (problem: BundleProblem): Bundle => ({ services: [], journeys: [], questionnaires: [], documents: [], problems: [problem], roles: [], ok: false });
+  const empty = (problem: BundleProblem): Bundle => ({ services: [], journeys: [], questionnaires: [], organisations: [], documents: [], problems: [problem], roles: [], ok: false });
   if (new TextEncoder().encode(text).length > MAX_BUNDLE_BYTES) {
     return empty({ level: "error", line: 1, message: `The YAML is larger than ${MAX_BUNDLE_BYTES / 1024} KB. Split it into smaller files.` });
   }
@@ -109,6 +112,7 @@ export function compileBundle(source: string | string[], options: BundleOptions 
   // `known`: for documents from a nested service, the role ids its journeys may use.
   const parsed: { doc: Record<string, unknown>; line: number; chunk: Chunk; meta: BundleDocument; known?: string[]; nested?: boolean }[] = [];
   const roles: Role[] = [];
+  const organisations: { org: Organisation; chunk: Chunk; meta: BundleDocument }[] = [];
   const documents: BundleDocument[] = [];
   for (const chunk of splitDocuments(text)) {
     let doc: unknown;
@@ -122,7 +126,7 @@ export function compileBundle(source: string | string[], options: BundleOptions 
       continue;
     }
     if (!doc || typeof doc !== "object" || Array.isArray(doc)) {
-      problems.push({ level: "error", line: chunk.line, message: "Each document is a mapping with a kind (service, journey or questionnaire)." });
+      problems.push({ level: "error", line: chunk.line, message: "Each document is a mapping with a kind (service, journey, questionnaire or organisation)." });
       documents.push({ line: chunk.line, ok: false });
       continue;
     }
@@ -132,6 +136,17 @@ export function compileBundle(source: string | string[], options: BundleOptions 
     if (!(BUNDLE_KINDS as readonly string[]).includes(String(d.kind))) {
       problems.push({ level: "error", line: chunk.line, id: meta.id, message: `kind must be one of ${BUNDLE_KINDS.join(", ")}` });
       meta.ok = false;
+      continue;
+    }
+    if (isOrganisation(d)) {
+      const r = compileOrganisation(d);
+      if (r.ok) {
+        organisations.push({ org: r.organisation, chunk, meta });
+        roles.push(...organisationRoles(r.organisation).filter((x) => !roles.some((o) => o.id === x.id)));
+      } else {
+        meta.ok = false;
+        for (const message of r.problems) problems.push({ level: "error", line: problemLine(chunk, message), kind: "organisation", id: meta.id, message });
+      }
       continue;
     }
     if (isNestedService(d)) {
@@ -237,8 +252,21 @@ export function compileBundle(source: string | string[], options: BundleOptions 
     }
   }
 
+  // The organisation against the services beside it (ORG-5): roles nobody holds, services nobody runs.
+  if (organisations.length > 1)
+    for (const o of organisations.slice(1)) problems.push({ level: "error", line: o.chunk.line, kind: "organisation", id: o.meta.id, message: "one organisation per catalogue" });
+  if (organisations.length && services.length) {
+    const o = organisations[0]!;
+    const named = services.map((s) => {
+      const js = journeys.filter((j) => s.items.some((i) => i.journey === j.id));
+      const ids = new Set<string>([...(s.roles ?? []), ...js.flatMap((j) => [...(j.roles?.initiate ?? []), ...(j.roles?.complete ?? []), ...Object.values(j.steps).flatMap((x) => (x.role ? [x.role] : []))])]);
+      return { id: s.id, title: s.title, roles: [...ids] };
+    });
+    for (const c of organisationChecks(o.org, named)) problems.push({ level: "warning", line: problemLine(o.chunk, c.message), kind: "organisation", id: o.meta.id, message: c.message });
+  }
+
   problems.sort((a, b) => a.line - b.line || (a.level === b.level ? 0 : a.level === "error" ? -1 : 1));
-  return { services, journeys, questionnaires, documents, problems, roles, ok: !problems.some((p) => p.level === "error") };
+  return { services, journeys, questionnaires, organisations: organisations.map((o) => o.org), documents, problems, roles, ok: !problems.some((p) => p.level === "error") };
 }
 
 /** Every handler name the bundle's journeys call. */
