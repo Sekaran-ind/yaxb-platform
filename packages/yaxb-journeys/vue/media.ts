@@ -12,6 +12,8 @@ export type MediaHost = {
   url(ref: MediaRef): Promise<string | null>;
   /** Read it on the device (OCR or a caption, MED-5); null when it can't be read here. */
   read?(ref: MediaRef, mode: "ocr" | "caption"): Promise<string | null>;
+  /** Turn a voice note into text on the device (MED-9); null when it can't here. */
+  transcribe?(ref: MediaRef): Promise<string | null>;
   /** False while cameras are off (the child lock, MED-10). */
   allowed?(): boolean;
 };

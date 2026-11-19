@@ -4,7 +4,7 @@
  * photo (OCR) or a description of it (a caption). The photo never leaves the device for this. The
  * model is fetched once from the Hugging Face Hub and kept by the browser.
  */
-import { AutoProcessor, AutoTokenizer, env, Florence2ForConditionalGeneration, RawImage } from "@huggingface/transformers";
+import { AutoProcessor, AutoTokenizer, env, Florence2ForConditionalGeneration, pipeline, RawImage } from "@huggingface/transformers";
 
 env.allowLocalModels = false;
 const MODEL = "onnx-community/Florence-2-base-ft";
@@ -28,8 +28,28 @@ function load(): Promise<Loaded> {
   return loading;
 }
 
-self.addEventListener("message", async (event: MessageEvent<{ reqId: string; blob: Blob; mode: "ocr" | "caption" }>) => {
+// Voice notes (MED-9): Whisper (MIT), multilingual, on 16 kHz mono samples decoded by the page.
+const WHISPER = "onnx-community/whisper-base";
+type Transcriber = (audio: Float32Array, o: Record<string, unknown>) => Promise<{ text: string } | { text: string }[]>;
+let hearing: Promise<Transcriber> | null = null;
+const transcriber = () =>
+  (hearing ??= (pipeline("automatic-speech-recognition", WHISPER, { dtype: "q8", progress_callback: (p: unknown) => self.postMessage({ type: "progress", data: p }) }) as unknown as Promise<Transcriber>).catch((e) => {
+    hearing = null;
+    throw e;
+  }));
+
+self.addEventListener("message", async (event: MessageEvent<{ reqId: string; blob: Blob; mode: "ocr" | "caption" | "transcribe"; samples?: Float32Array }>) => {
   const { reqId, blob, mode } = event.data;
+  if (mode === "transcribe") {
+    try {
+      const out = await (await transcriber())(event.data.samples!, { chunk_length_s: 30, stride_length_s: 5, task: "transcribe" });
+      const text = (Array.isArray(out) ? out.map((o) => o.text).join(" ") : out.text).replace(/\s+/g, " ").trim();
+      self.postMessage({ type: "result", reqId, text });
+    } catch (e) {
+      self.postMessage({ type: "error", reqId, message: (e as Error).message });
+    }
+    return;
+  }
   try {
     const { model, processor, tokenizer } = await load();
     const task = TASKS[mode];

@@ -73,7 +73,7 @@ const systemText = (calls: BaseMessage[][]) =>
 describe("few-shot examples", () => {
   it("ships built-in examples that compile, in several industries", () => {
     expect(kioskContent.problems).toEqual([]);
-    expect(kioskContent.designer.map((d) => d.id).sort()).toEqual(["bank-complaints", "housing-repairs", "library-renewals"]);
+    expect(kioskContent.designer.map((d) => d.id).sort()).toEqual(["bank-complaints", "housing-repairs", "library-renewals", "lost-property"]);
   });
 
   const VISITS = () => kioskContent.catalogue.find((c) => c.yaml.includes("id: visits"))!.yaml;

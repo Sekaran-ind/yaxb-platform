@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { mediaHost } from "@/composables/media";
+import { isMediaRef } from "@sekaran-ind/yaxb-core/journeys";
 // The kiosk. Three layouts from one config (yaxb-core content/screens.yaml):
 //   full  the console column and the screens side by side (the original kiosk)
 //   pod   the "pod player": the console as a strip, screens below
@@ -785,6 +787,21 @@ const services: Record<string, ServiceHandler> = {
     await identity.reload();
     const m = identity.me.value;
     return m.signedIn ? { signedIn: true, name: m.account.display_name ?? "", spaces: mySpaces.value.length, open: m.space?.space_name ?? null } : { signedIn: false };
+  },
+  // Media (MED-6): read a photo or write down a voice note, on this device. Input: the field's answer.
+  "media.read": async (input) => {
+    const i = input as { photo?: unknown; mode?: unknown };
+    const refs = (Array.isArray(i.photo) ? i.photo : [i.photo]).filter(isMediaRef);
+    if (!refs.length) throw new Error("There's no photo to read.");
+    const mode = i.mode === "caption" ? "caption" : "ocr";
+    const texts = await Promise.all(refs.map((r) => mediaHost.read!(r, mode).catch(() => null)));
+    return { text: texts.filter(Boolean).join("\n") };
+  },
+  "media.transcribe": async (input) => {
+    const i = input as { audio?: unknown };
+    const ref = (Array.isArray(i.audio) ? i.audio : [i.audio]).find(isMediaRef);
+    if (!ref) throw new Error("There's no voice note to write down.");
+    return { text: (await mediaHost.transcribe!(ref)) ?? "" };
   },
   // Who is here (IDN-31): the name others see, how surely they signed in, and their roles in the open
   // space. Never an email or a phone.

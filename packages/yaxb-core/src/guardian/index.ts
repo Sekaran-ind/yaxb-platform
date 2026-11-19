@@ -20,7 +20,7 @@ import { DEFAULT_ROLES, expandService, roleLabel, VISITOR_ROLE, type ConsentForm
 import type { Field } from "../journeys/index.js";
 import { SERVICE_INFO } from "../journeys/summary.js";
 
-export type Sensitivity = "identity" | "health" | "money" | "birth" | "password" | "contact" | "location" | "free-text" | "photo";
+export type Sensitivity = "identity" | "health" | "money" | "birth" | "password" | "contact" | "location" | "free-text" | "photo" | "voice";
 export type AskedField = { label: string; journey: string; sensitivity: Sensitivity[] };
 export type RoleFacts = {
   role: string;
@@ -59,6 +59,8 @@ export function sensitivityOf(f: Pick<Field, "type" | "label" | "description" | 
   if (f.type === "textarea") out.add("free-text");
   // A photo may show a person, a document or a home (MED-8).
   if (f.type === "photo") out.add("photo");
+  // Any voice recording raises the sensitivity (MED-8).
+  if (f.type === "audio") out.add("voice");
   if (f.entity === "email" || f.entity === "phone") out.add("contact");
   if (f.entity === "location") out.add("location");
   if (f.entity === "money") out.add("money");
@@ -165,6 +167,7 @@ function visitorForm(facts: ConsentFacts, r: RoleFacts): ConsentForm {
     );
   } else points.push("What you give stays on this device.");
   if (has(r.gives, "password").length) points.push("A password you type is never stored or sent on.");
+  if (has(r.gives, "voice").length) points.push("A voice note you record is kept apart from your answers and written down on this device; the request carries only a reference to it.");
   if (has(r.gives, "photo").length) points.push("Photos you take are kept apart from your answers and read on this device; the request carries only a reference to them.");
   if (facts.storage !== "none") points.push("The service counts how its journeys are used (steps and times, never your answers or who you are).");
   points.push(r.seenBy.length ? "You can stop at any time before you send it. To withdraw afterwards, give your reference to the staff." : "You can stop at any time.");

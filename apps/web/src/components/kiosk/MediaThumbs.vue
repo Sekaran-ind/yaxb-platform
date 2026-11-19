@@ -16,7 +16,8 @@ onMounted(async () => {
 <template>
   <ul class="mt-1 flex flex-wrap gap-2">
     <li v-for="r in media" :key="r.hash">
-      <a v-if="urls[r.hash]" :href="urls[r.hash]!" target="_blank" rel="noreferrer" class="block">
+      <audio v-if="urls[r.hash] && r.type.startsWith('audio/')" :src="urls[r.hash]!" controls class="max-w-full" :aria-label="label" />
+      <a v-else-if="urls[r.hash]" :href="urls[r.hash]!" target="_blank" rel="noreferrer" class="block">
         <img :src="urls[r.hash]!" :alt="r.text ? `${label}: ${r.text.slice(0, 80)}` : label" class="size-24 rounded-lg object-cover ring-1 ring-gray-200" />
       </a>
       <span v-else-if="r.hash in urls" class="grid size-24 place-items-center rounded-lg bg-surface text-center text-xs text-gray-500 ring-1 ring-gray-200">Not on this device or the box</span>

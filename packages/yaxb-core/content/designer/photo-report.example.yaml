@@ -1,0 +1,43 @@
+# A few-shot example for the Service Designer agent (MED-7): a photo question read on the kiosk, a
+# voice note written down on the kiosk, both kept on the box, and a hand-over to staff who see them.
+narrative: |
+  A school wants parents to report a lost item. The parent takes a photo of a similar item or the
+  name label, says where it was last seen, and can leave a short voice message instead of typing.
+  The office team looks at the photo and message, and tells the parent whether it was found.
+service: |
+  kind: service
+  id: lost-property
+  title: Lost property
+  summary: Report something lost; the office looks for it.
+  icon: search
+  roles:
+    - { id: office, label: Office, description: Looks for lost items and answers parents }
+  journeys:
+    - id: report-lost
+      title: Report a lost item
+      summary: A photo and where it was last seen; the office lets you know.
+      icon: search
+      roles: { initiate: [visitor], complete: [office] }
+      screens:
+        - id: item
+          title: The item
+          ask: Take a photo of the item (or one like it, or its name label) and tell us where it was last seen.
+          submitLabel: Send to the office
+          questions:
+            - { id: photo, type: photo, label: A photo of it, required: true, read: ocr, keep: box }
+            - { id: where, type: text, label: Where it was last seen, required: true }
+            - { id: message, type: audio, label: A voice message (if you'd rather speak), max_seconds: 60, transcribe: device, keep: box }
+        - id: found
+          title: Found?
+          role: office
+          questions:
+            - { id: found, type: boolean, label: We found it }
+            - { id: note, type: text, label: A note for the parent }
+        - id: decision
+          decide:
+            - { if: "answers.found.found == true", to: yes }
+            - { to: no }
+        - id: yes
+          result: { title: "We found it", text: "{{answers.found.note}}", outcome: item-found }
+        - id: no
+          result: { title: "Not found yet", text: "{{answers.found.note}}", ok: false, outcome: item-not-found }

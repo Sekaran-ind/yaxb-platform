@@ -29,6 +29,9 @@ export const EVENT_KINDS = [
   "consent.declined",
   // What a journey achieved (OUT-1): its result screen's `outcome`, in the event's `outcome`.
   "journey.outcome",
+  // Media (MED-11): a photo or voice note kept, and read on the device. Never the media itself.
+  "media.captured",
+  "media.read",
 ] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 

@@ -18,11 +18,19 @@
 // to read each photo on the device (ocr or caption) and keep the text beside it (MED-3, MED-5);
 // `keep` says where the photo itself is kept (device, box or server), apart from the record (MED-1).
 //
+// An `audio` field (MED-4, MED-9) records one voice note of up to `max_seconds` (60 by default, at
+// most 300); `transcribe: device` turns it into text on the device, kept beside it (MED-3). Its answer
+// is a list of one MediaRef, like a photo's.
+//
 // A `password` field is a masked input. Slot filling never fills it (from speech or the model), and
 // run summaries show it masked; it is still in `answers`, so a result template could show it.
 import { conditionPaths, conditionProblem, holds, type Scope } from "./expressions.js";
 
-export const FIELD_TYPES = ["text", "textarea", "password", "select", "boolean", "number", "date", "source", "language", "photo"] as const;
+export const FIELD_TYPES = ["text", "textarea", "password", "select", "boolean", "number", "date", "source", "language", "photo", "audio"] as const;
+/** Media fields keep their media apart from the record (MED-1). */
+export const MEDIA_FIELD_TYPES = ["photo", "audio"] as const;
+export const MEDIA_TRANSCRIBES = ["device", "none"] as const;
+export const MAX_AUDIO_SECONDS = 300;
 /** Media fields (MED-4): the photo itself is kept apart from the record, referenced by its hash. */
 export const MEDIA_READS = ["ocr", "caption", "none"] as const;
 export const MEDIA_KEEPS = ["device", "box", "server"] as const;
@@ -56,10 +64,13 @@ export type Field = {
   /** photo: how many (1..MAX_PHOTOS), whether the kiosk reads them, and where they are kept. */
   max?: number;
   read?: (typeof MEDIA_READS)[number];
+  /** audio: the longest note in seconds (5..MAX_AUDIO_SECONDS), and whether it is turned into text on the device. */
+  max_seconds?: number;
+  transcribe?: (typeof MEDIA_TRANSCRIBES)[number];
   keep?: (typeof MEDIA_KEEPS)[number];
 };
 
-const FIELD_KEYS = new Set(["id", "type", "label", "required", "options", "placeholder", "default", "description", "keywords", "entity", "when", "max", "read", "keep"]);
+const FIELD_KEYS = new Set(["id", "type", "label", "required", "options", "placeholder", "default", "description", "keywords", "entity", "when", "max", "read", "keep", "max_seconds", "transcribe"]);
 const FIELD_ID = /^[a-z][a-z0-9_-]{0,63}$/;
 const WHEN_ROOTS = new Set(["values", "answers", "context"]);
 
@@ -91,7 +102,10 @@ export function fieldListProblems(at: string, fields: unknown): string[] {
     const media = fd.type === "photo";
     if (fd.max !== undefined && (!media || !Number.isInteger(fd.max) || (fd.max as number) < 1 || (fd.max as number) > MAX_PHOTOS)) problems.push(`${fa}: max is for photos, a whole number from 1 to ${MAX_PHOTOS}`);
     if (fd.read !== undefined && (!media || !MEDIA_READS.includes(fd.read as never))) problems.push(`${fa}: read is for photos: ${MEDIA_READS.join(", ")}`);
-    if (fd.keep !== undefined && (!media || !MEDIA_KEEPS.includes(fd.keep as never))) problems.push(`${fa}: keep is for photos: ${MEDIA_KEEPS.join(", ")}`);
+    const audio = fd.type === "audio";
+    if (fd.keep !== undefined && (!(media || audio) || !MEDIA_KEEPS.includes(fd.keep as never))) problems.push(`${fa}: keep is for photos and voice notes: ${MEDIA_KEEPS.join(", ")}`);
+    if (fd.max_seconds !== undefined && (!audio || !Number.isInteger(fd.max_seconds) || (fd.max_seconds as number) < 5 || (fd.max_seconds as number) > MAX_AUDIO_SECONDS)) problems.push(`${fa}: max_seconds is for voice notes, from 5 to ${MAX_AUDIO_SECONDS}`);
+    if (fd.transcribe !== undefined && (!audio || !MEDIA_TRANSCRIBES.includes(fd.transcribe as never))) problems.push(`${fa}: transcribe is for voice notes: ${MEDIA_TRANSCRIBES.join(", ")}`);
     if (fd.entity !== undefined && !FIELD_ENTITIES.includes(fd.entity as FieldEntity)) problems.push(`${fa}: entity must be one of ${FIELD_ENTITIES.join(", ")}`);
     if (fd.keywords !== undefined && (!Array.isArray(fd.keywords) || fd.keywords.some((k) => typeof k !== "string"))) problems.push(`${fa}: keywords must be a list of words`);
     if (fd.description !== undefined && typeof fd.description !== "string") problems.push(`${fa}: description must be text`);
@@ -125,6 +139,10 @@ export function fieldProblem(field: Field, value: unknown): string | null {
   if (field.type === "boolean" && typeof value !== "boolean") return `${field.label} must be yes or no.`;
   if (field.type === "number" && !Number.isFinite(typeof value === "string" ? Number(value) : value)) return `${field.label} must be a number.`;
   if (field.type === "date" && !(typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value))) return `${field.label} must be a date.`;
+  if (field.type === "audio") {
+    if (!Array.isArray(value) || !value.every(isMediaRef)) return `${field.label} must be a voice note recorded here.`;
+    if (value.length > 1) return `${field.label}: one voice note.`;
+  }
   if (field.type === "photo") {
     if (!Array.isArray(value) || !value.every(isMediaRef)) return `${field.label} must be photos taken here.`;
     if (value.length > (field.max ?? 1)) return `${field.label}: at most ${field.max ?? 1} photo${(field.max ?? 1) === 1 ? "" : "s"}.`;

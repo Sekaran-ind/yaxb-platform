@@ -7,7 +7,7 @@
 import type { MediaHost } from "@sekaran-ind/yaxb-journeys/vue";
 import type { MediaRef } from "@sekaran-ind/yaxb-core/journeys";
 import { getMediaRow, pullFromBox, pushToBox, putMedia, setMediaText } from "@/lib/browser/media";
-import { readImage } from "@/lib/browser/offline";
+import { readImage, transcribeAudio } from "@/lib/browser/offline";
 import { settings } from "./settings";
 import { useChildMode } from "./child";
 
@@ -54,6 +54,16 @@ export function kioskMediaHost(): MediaHost {
       if (text) await setMediaText(ref.hash, text);
       return text || null;
     },
+    async transcribe(ref) {
+      const row = await getMediaRow(ref.hash);
+      if (!row) return null;
+      const text = await transcribeAudio(row.blob);
+      if (text) await setMediaText(ref.hash, text);
+      return text || null;
+    },
     allowed: () => !(child ??= useChildMode()).on.value,
   };
 }
+
+/** One host for the app: photo fields, handlers (media.read, media.transcribe) and thumbnails share it. */
+export const mediaHost = kioskMediaHost();

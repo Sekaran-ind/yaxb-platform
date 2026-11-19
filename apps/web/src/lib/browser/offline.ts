@@ -192,6 +192,25 @@ function mediaWorker() {
   return reader;
 }
 
+/** A voice note written down on this device (Whisper, MED-9): decoded to 16 kHz mono here, heard in a worker. */
+export async function transcribeAudio(blob: Blob): Promise<string> {
+  const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+  const ctx = new Ctx();
+  const decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
+  await ctx.close();
+  const offline = new OfflineAudioContext(1, Math.ceil(decoded.duration * 16000), 16000);
+  const src = offline.createBufferSource();
+  src.buffer = decoded;
+  src.connect(offline.destination);
+  src.start();
+  const samples = (await offline.startRendering()).getChannelData(0);
+  const id = reqId();
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
+    mediaWorker().postMessage({ reqId: id, mode: "transcribe", samples }, [samples.buffer]);
+  });
+}
+
 /** The text in a photo (ocr) or a description of it (caption), read on this device; it never leaves it. */
 export function readImage(blob: Blob, mode: "ocr" | "caption"): Promise<string> {
   const id = reqId();
