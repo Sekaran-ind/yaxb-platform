@@ -10,6 +10,9 @@
 //   Libraries      how members organise services
 //   Designer       what the Service Designer agent has learnt (administrators)
 // Place in the page is in the address: ?view=…&service=<id>|new.
+// The player holds the controls (New service, Open the kiosk, staff sign-in, Preferences), as the
+// kiosk's does. New service opens Ask Me with a design in the conversation (ChatDesign, LIB-64);
+// "Open in the designer" there, or ?service=new, opens the full designer (ServiceWorkspace).
 import type { Library, LibraryEntry, LibraryPermissions } from "@sekaran-ind/yaxb-core/library";
 import { roleLabel, type Role } from "@sekaran-ind/yaxb-journeys";
 import { AdaptiveNav, ConfirmAction, type NavScreen } from "@sekaran-ind/yaxb-journeys/vue";
@@ -19,7 +22,6 @@ import { useRoute, useRouter } from "vue-router";
 import { resolveLayout } from "@sekaran-ind/yaxb-core/screens";
 import { settings } from "@/composables/settings";
 import CataloguePlayer from "@/components/catalogue/CataloguePlayer.vue";
-import CataloguePills from "@/components/catalogue/CataloguePills.vue";
 import KioskFrame from "@/components/site/KioskFrame.vue";
 import KioskPreferences from "@/components/kiosk/KioskPreferences.vue";
 import KioskShell from "@/components/kiosk/KioskShell.vue";
@@ -74,6 +76,11 @@ async function load() {
 }
 void load();
 const changed = () => void load();
+/** Open the kiosk, with the open published service loaded into it. */
+function openKiosk() {
+  const entry = service.value && !prefs.value ? (published(service.value)?.entry_id ?? null) : null;
+  void router.push(entry ? { path: "/kiosk", query: { screen: "services", load: entry } } : "/kiosk");
+}
 
 const me = computed(() => overview.value?.me);
 const can = computed(() => me.value?.can);
@@ -175,6 +182,8 @@ const current = computed(() => {
   return p ? { title: p.title, status: "Published · read-only" } : null;
 });
 
+// A service created from Ask Me's design shows in the lists the next time they are opened.
+watch(view, (v) => v !== "ask" && v !== "catalogue" && void load());
 // After signing in, the overview changes (who you are, what you see).
 watch(signingIn, (v) => !v && void load());
 </script>
@@ -184,11 +193,24 @@ watch(signingIn, (v) => !v && void load());
   <div ref="root" class="w-full">
     <KioskFrame :layout="layout" :narrow-panel="Boolean(service)" :mini-height="MINI_HEIGHT" :pod-height="POD_HEIGHT" scroll>
       <template #panel>
-        <CataloguePlayer :variant="infoVariant" :who="who" :counts="counts" :current="current" :step="service ? designStep : null" :loading="!overview && !error" />
+        <CataloguePlayer
+          :variant="infoVariant"
+          :who="who"
+          :counts="counts"
+          :current="current"
+          :step="service ? designStep : null"
+          :loading="!overview && !error"
+          :load-entry="service && !prefs ? (published(service)?.entry_id ?? null) : null"
+          :signing-in="signingIn"
+          :prefs-open="Boolean(prefs)"
+          @new-service="go({ view: 'ask', service: null, prefs: null, design: 'new' })"
+          @kiosk="openKiosk"
+          @sign-in="signingIn = !signingIn"
+          @sign-out="signOut"
+          @prefs="go({ prefs: prefs ? null : 'model' })"
+        />
       </template>
       <template #default="{ width: paneWidth }">
-        <!-- With a service or the preferences open there is no tab row: the pills sit above them. -->
-        <div v-if="service || prefs" class="mb-3 flex justify-end"><CataloguePills :load-entry="service && !prefs ? (published(service)?.entry_id ?? null) : null" :who="who" :signing-in="signingIn" @new-service="go({ service: 'new', prefs: null })" @sign-in="signingIn = !signingIn" @sign-out="signOut" @prefs="go({ prefs: 'model' })" /></div>
         <ModeratorSignIn v-if="signingIn" class="mb-4" why="Sign in with your moderator key to see every service, review and manage roles." @signed-in="signingIn = false" />
         <p v-if="error" role="alert" class="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-red-800">{{ error }}</p>
 
@@ -208,7 +230,8 @@ watch(signingIn, (v) => !v && void load());
             @step="(st) => (designStep = st)"
           />
           <AdaptiveNav v-else :screens="navScreens" storage-key="catalogue" label="Catalogue screens" :active="view" :width="paneWidth" fill @update:active="(v) => go({ view: v === 'catalogue' ? null : v })">
-            <template #trail><CataloguePills trail :who="who" :signing-in="signingIn" @new-service="go({ service: 'new', prefs: null })" @sign-in="signingIn = !signingIn" @sign-out="signOut" @prefs="go({ prefs: 'model' })" /></template>
+            <!-- On Ask Me, its New and Conversations (teleported from KioskShell), as on the kiosk's tab row. -->
+            <template v-if="view === 'ask'" #trail><div class="yj-trail rounded-full bg-mist p-1" role="group" aria-label="Conversation"><span id="catalogue-ask-pills" class="contents" /></div></template>
             <template #ask>
               <div class="h-full min-h-[22rem]"><KioskShell embedded /></div>
             </template>

@@ -6,7 +6,7 @@
 // references stay in the conversation, so opening it later shows where they are.
 import { MAX_MESSAGE_CHARS } from "@sekaran-ind/yaxb-core/schemas";
 import { offers } from "@/lib/surface";
-import { ArrowUp, Bot, CalendarDays, CheckCircle2, Circle, CircleDot, HardDrive, Inbox, LayoutGrid, ListChecks, Loader2, Mic, MicOff, Paperclip, Pause, Play, Plus, Square, ShieldCheck, UserRoundCog, Wrench } from "@lucide/vue";
+import { ArrowUp, Bot, CalendarDays, CheckCircle2, Circle, CircleDot, HardDrive, Inbox, LayoutGrid, ListChecks, Loader2, Mic, MicOff, Paperclip, Pause, Play, Plus, Square, ShieldCheck, Sparkles, UserRoundCog, Wrench } from "@lucide/vue";
 import type { ServiceHandler } from "@sekaran-ind/yaxb-core/journeys";
 import { CASE_REF } from "@sekaran-ind/yaxb-core/cases";
 import { ACCEPTED_FILES } from "@/lib/browser/documents";
@@ -14,6 +14,7 @@ import type { NotebookRecord, ThreadRecord } from "@/lib/browser/store";
 import ThreadDrawer from "./ThreadDrawer.vue";
 import { askInstead, formInput, openForm } from "@/composables/form-input";
 import ChatJourney from "./ChatJourney.vue";
+import ChatDesign from "./ChatDesign.vue";
 import ContextSheet from "./ContextSheet.vue";
 import RequestCard from "./RequestCard.vue";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
@@ -21,10 +22,10 @@ import { sessionEnds } from "@/composables/restricted";
 import { cn } from "@/lib/cn";
 import AnswerText from "./AnswerText.vue";
 import CommandCard from "./CommandCard.vue";
-import type { ChatTurn, ContextPick, JourneyTurn, ProvidersResponse, ToolActivity } from "@/lib/types";
+import type { ChatTurn, ContextPick, DesignTurn, JourneyTurn, ProvidersResponse, ToolActivity } from "@/lib/types";
 
 /** The person's turn for context they loaded: its icon, and words for a screen reader. */
-const VIA = { journey: { icon: ListChecks, said: "Started a journey:" }, request: { icon: Inbox, said: "Checked a request:" }, file: { icon: Paperclip, said: "Attached:" } } as const;
+const VIA = { journey: { icon: ListChecks, said: "Started a journey:" }, request: { icon: Inbox, said: "Checked a request:" }, file: { icon: Paperclip, said: "Attached:" }, design: { icon: Sparkles, said: "To the Service Designer:" } } as const;
 
 const props = defineProps<{
   turns: ChatTurn[];
@@ -78,6 +79,9 @@ const emit = defineEmits<{
   attach: [files: File[]];
   journeyUpdate: [turnId: string, patch: Partial<JourneyTurn>];
   journeyDone: [journeyId: string];
+  /** Designing a service in the conversation (LIB-64): words for the designer, and changes to a design turn. */
+  designSay: [sessionId: string, text: string];
+  designUpdate: [turnId: string, patch: Partial<DesignTurn>];
   speak: [text: string];
   openThread: [id: string];
   /** The Scheduler, with words for it to read (or none). */
@@ -92,6 +96,11 @@ const emit = defineEmits<{
 }>();
 /** The conversations drawer: opened from the Conversations pill in the tab row (the shell). */
 const drawer = defineModel<boolean>("drawer", { default: false });
+/** A design's session turn, for its replies (LIB-64). */
+const designSession = (id: string) => {
+  const d = props.turns.find((x) => x.id === id)?.design;
+  return d?.kind === "session" ? d : null;
+};
 
 const TOOL_LABELS: Record<string, string> = {
   search_knowledge_base: "Searching the knowledge base",
@@ -312,9 +321,19 @@ function submit() {
       </div>
       <template v-for="(t, i) in turns" :key="t.id">
         <!-- A journey or a request loaded into the conversation, kept with it. -->
-        <div v-if="t.role === 'assistant' && (t.journey || t.request)" class="min-w-0">
+        <div v-if="t.role === 'assistant' && (t.journey || t.request || t.design)" class="min-w-0">
+          <ChatDesign
+            v-if="t.design"
+            :turn-id="t.id"
+            :design="t.design"
+            :session="t.design.kind === 'reply' ? designSession(t.design.session) : null"
+            :order="i"
+            @say="(id, text) => emit('designSay', id, text)"
+            @update="(id, patch) => emit('designUpdate', id, patch)"
+            @session-update="(patch) => t.design?.kind === 'reply' && emit('designUpdate', t.design.session, patch)"
+          />
           <ChatJourney
-            v-if="t.journey"
+            v-else-if="t.journey"
             :turn="t.journey"
             :order="i"
             :services="services"
@@ -347,7 +366,9 @@ function submit() {
             >?
           </template>
         </p>
-        <div v-else class="flex gap-3">
+        <!-- An answer. Its own condition: the spelling notice above starts a new v-if chain, so a v-else
+             here would also render under every person's message (repeating their words). -->
+        <div v-if="t.role === 'assistant' && !(t.journey || t.request || t.design)" class="flex gap-3">
           <span class="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-mist text-ink ring-1 ring-gray-200">
             <Paperclip v-if="t.via === 'file'" class="size-3.5" aria-hidden="true" />
             <HardDrive v-else-if="t.local" class="size-3.5" aria-label="Answered on this device from the knowledge base" />

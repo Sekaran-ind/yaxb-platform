@@ -28,7 +28,8 @@ import { recognizeCommand, yesOrNo } from "@/lib/browser/commands";
 import { modelFor, searchLocal, semanticReady, warmUp, type LocalSearch } from "@/lib/browser/semantic";
 import { extractWithModel, matchOnDevice } from "@/lib/browser/slots";
 import { languageLabel, speechLangFor } from "@/lib/languages";
-import type { CommandCard, JourneyTurn, KioskStatus } from "@/lib/types";
+import type { CommandCard, DesignTurn, JourneyTurn, KioskStatus } from "@/lib/types";
+import { api } from "@/lib/api";
 import { catalogue, entryOfJourney, kioskJourneys, kioskViewer, loadCatalogue, loadIntoKiosk } from "@/composables/library";
 import { startCaseNetwork } from "@/composables/cases";
 import { readDocument } from "@/lib/browser/documents";
@@ -419,6 +420,61 @@ async function startJourney(id: string) {
   const turn: JourneyTurn = { id: j.id, entry: entryOfJourney(j.id), title: j.title, run: null, status: "running" };
   await chat.addTurns(j.title, { journey: turn, via: "journey" }, turnCtx());
 }
+// ---- designing a service in the conversation (LIB-64) ------------------------------------------------
+
+type DesignSession = Extract<DesignTurn, { kind: "session" }>;
+/** Start designing a new service here: the design takes the message box's words until it is stopped. */
+async function startDesign(idea?: string) {
+  screen.value = "transcript";
+  journey.value = null;
+  const design: DesignSession = { kind: "session", status: "designing", thread: null, yaml: null, run: null, title: null, entry: null, ...(idea ? { idea: idea.slice(0, 4000) } : {}) };
+  await chat.addTurns("Design a new service", { design, via: "design" }, turnCtx());
+}
+async function onDesignUpdate(turnId: string, patch: Partial<DesignTurn>) {
+  const turn = chat.turns.value.find((t) => t.id === turnId);
+  if (!turn?.design) return;
+  await chat.patchTurn(turnId, { design: { ...turn.design, ...patch } as DesignTurn }, turnCtx());
+}
+/** The first description needs a sentence or two (the designer's input is 20 to 4000 characters). */
+const MIN_DESCRIPTION = 20;
+/** Words for the Service Designer: its reply, with its draft, becomes a turn; the design keeps the draft. */
+async function designSay(sessionId: string, text: string) {
+  const session = chat.turns.value.find((t) => t.id === sessionId)?.design;
+  if (session?.kind !== "session") return;
+  const reply: DesignTurn = { kind: "reply", session: sessionId, pending: true, text: "", yaml: null, title: null, errors: 0, run: null };
+  const replyId = await chat.addTurns(text, { design: reply, via: "design" }, turnCtx());
+  const fail = (failed: string) => onDesignUpdate(replyId, { pending: false, failed });
+  const first = !session.thread && !session.yaml;
+  if (first && text.trim().length < MIN_DESCRIPTION) return fail("Describe the service in a sentence or two: who uses it, what they do, and who answers.");
+  const sel = selection.value;
+  if (!sel) return fail("The Service Designer needs an AI model: choose one in Preferences → Model.");
+  try {
+    const r = await api<{ yaml: string; title: string; problems: { level: string }[]; run: string; thread: string; messages: { role: string; text: string }[] }>("/api/library/design", {
+      narrative: text,
+      provider: sel.provider,
+      model: sel.model,
+      ...(session.thread ? { thread: session.thread } : {}),
+      ...(session.yaml ? { current: session.yaml } : {}),
+    });
+    const said = r.messages.filter((m) => m.role === "assistant").at(-1)?.text ?? "Drafted the service.";
+    await onDesignUpdate(replyId, { pending: false, text: said, yaml: r.yaml, title: r.title, errors: r.problems.filter((p) => p.level === "error").length, run: r.run });
+    await onDesignUpdate(sessionId, { thread: r.thread, yaml: r.yaml, run: r.run, title: r.title });
+  } catch (e) {
+    await fail((e as Error).message);
+  }
+}
+// The catalogue's New service opens Ask Me with a design (`?design=new`).
+watch(
+  () => route.query.design,
+  (d) => {
+    if (d !== "new") return;
+    const { design: _, idea, ...rest } = route.query;
+    void router.replace({ query: rest });
+    void startDesign(typeof idea === "string" ? idea : undefined);
+  },
+  { immediate: true },
+);
+
 /** A request's reference, kept in the conversation: its status shows whenever the conversation is open. */
 async function showRequest(ref: string, open = false) {
   screen.value = "transcript";
@@ -779,6 +835,8 @@ const fixedHeight = computed(() => true);
       @request="(ref, open) => showRequest(ref, open)"
       @attach="attachFiles"
       @journey-update="onJourneyUpdate"
+      @design-say="designSay"
+      @design-update="onDesignUpdate"
       @journey-done="(id) => void logActivity('journey.completed', { journey: id })"
       @speak="(t) => voiceOut.speak(t)"
       :threads="nb.threads.value"
@@ -891,6 +949,8 @@ const fixedHeight = computed(() => true);
                 @request="(ref, open) => showRequest(ref, open)"
                 @attach="attachFiles"
                 @journey-update="onJourneyUpdate"
+      @design-say="designSay"
+      @design-update="onDesignUpdate"
                 @journey-done="(id) => void logActivity('journey.completed', { journey: id })"
                 @speak="(t) => voiceOut.speak(t)"
                 :threads="nb.threads.value"

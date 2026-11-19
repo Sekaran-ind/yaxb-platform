@@ -68,6 +68,6 @@ From `apps/web`: `npm run deploy:family`, `npm run deploy:business` and `npm run
 - **PowerShell 5.1** writes files with a byte-order mark. Strip it from JSON files.
 - **Vite in dev** may load a module twice, under a `?t=` URL, after a hot update.
 
-## Known issue, not fixed
+## Known issue, fixed in Wave 2
 
-With Workers AI gpt-oss-120b, an extra assistant bubble sometimes repeats the question before the answer. It isn't caused by spell check.
+An extra assistant bubble repeated the person's question before the answer. It was the transcript's markup: the spelling notice's `v-if` started a new chain, so the answer row's `v-else` also rendered under every message without a spelling notice. The answer row now has its own condition (`TranscriptPane.vue`).
