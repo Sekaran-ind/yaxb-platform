@@ -177,15 +177,22 @@ export function methodsApi(ctx: MethodsContext, notice: string) {
      * Sign in with a provider's verified identity. Only the provider's subject id is kept (as a keyed
      * hash) and the email masked for the screen; an unverified email is refused (IDN-14, IDN-52).
      */
-    async oidcSignIn(input: { provider: "google"; subject: string; email: string | null; emailVerified: boolean; consent?: boolean; name?: string; device?: string; account?: string }): Promise<SignedIn | ConsentNeeded | { added: true }> {
-      if (!input.emailVerified || !input.email) throw new IdentityError("That account's email isn't verified. Verify it with the provider first.", 403);
+    /**
+     * Sign in (or add the method) with an OpenID Connect provider: Google, or a business's own
+     * (IDN-15). Google must vouch for the email; a business's provider vouches for its own staff, so
+     * its sign-in needs no verified email (`requireEmail: false`).
+     */
+    async oidcSignIn(input: { provider: string; label?: string; requireEmail?: boolean; subject: string; email: string | null; emailVerified: boolean; consent?: boolean; name?: string; device?: string; account?: string }): Promise<SignedIn | ConsentNeeded | { added: true }> {
+      const requireEmail = input.requireEmail ?? true;
+      if (requireEmail && (!input.emailVerified || !input.email)) throw new IdentityError("That account's email isn't verified. Verify it with the provider first.", 403);
       const subject = await h("oidc", `${input.provider}:${input.subject}`);
-      const display = `Google · ${maskEmail(input.email)}`;
+      const label = input.label ?? "Google";
+      const display = `${label} · ${input.email ? maskEmail(input.email) : "your account"}`;
       const method = await store.methodBySubject("oidc", subject);
       if (input.account) {
         // Adding Google to the signed-in account.
         const account = await ctx.liveAccount(input.account);
-        if (method && method.account_id !== account.id) throw new IdentityError("That Google account is linked to another Anjal account.", 409);
+        if (method && method.account_id !== account.id) throw new IdentityError(`That ${label} account is linked to another Anjal account.`, 409);
         if (!method) await addMethod(account, "oidc", subject, display);
         return { added: true };
       }

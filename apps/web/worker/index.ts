@@ -826,6 +826,26 @@ app.route(
     polled: (c, key) => withinLimit("chat", c.env.CHAT_LIMITER, key),
     tenant: currentTenant,
     isAdmin,
+    async findSpace(_c, slug) {
+      if (!SLUG.test(slug)) return null;
+      for (const edition of ["business", "community", "all"] as const) {
+        const t = await withEdition(edition, () => tenants(_c.env).tenant(slug)).catch(() => null);
+        if (t) return { edition, tenant_id: t.id, name: t.name };
+      }
+      return null;
+    },
+    async joinAsStaff(c, edition, tenant, input) {
+      return withEdition(edition, () =>
+        tenantContext.run(tenant, async () => {
+          const svc = moderators(c.env, tenant);
+          const { moderator } = await svc.issue({ name: input.name.slice(0, 80) || "Staff", label: "Signed in with the company's sign-in", roles: [input.role] }, { name: "Company sign-in" });
+          // They sign in with their company's account; the key made for the record is never used (IDN-44).
+          await svc.linkToAccount(moderator.id);
+          const t = await tenants(c.env).tenant(tenant);
+          return { member_id: moderator.id, roles: [...moderator.roles], space_name: t?.name ?? "Our business", kind: t?.kind ?? (edition === "community" ? "community" : "business") };
+        }),
+      );
+    },
     async spaceAdministrator(c) {
       const who = await moderatorOf(c, moderators(c.env));
       return Boolean(who?.roles.includes("administrator")) || (await isAdmin(c));

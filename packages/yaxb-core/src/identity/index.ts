@@ -82,6 +82,7 @@ export const IDENTITY_ACTIONS = [
   "device.locked",
   "device.unlocked",
   "space.policy_changed",
+  "space.oidc_changed",
   "token.issued",
   "token.revoked",
 ] as const;
@@ -116,6 +117,9 @@ export interface IdentityStore {
   putPendingJoin(p: PendingJoin): Promise<void>;
   removePendingJoin(id: string): Promise<void>;
   spacePolicy(edition: Edition, tenantId: string): Promise<SpacePolicy | null>;
+  spaceOidc(edition: Edition, tenantId: string): Promise<SpaceOidc | null>;
+  putSpaceOidc(o: SpaceOidc): Promise<void>;
+  removeSpaceOidc(edition: Edition, tenantId: string): Promise<boolean>;
   deviceGrantBy(column: "device_code_hash" | "user_code_hash", hash: string): Promise<DeviceGrant | null>;
   putDeviceGrant(g: DeviceGrant): Promise<void>;
   deviceCredential(id: string): Promise<DeviceCredential | null>;
@@ -235,6 +239,14 @@ const USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ23456789";
 /** A user code as typed: upper case, without spaces or dashes. */
 export const normalizeUserCode = (code: string) => code.toUpperCase().replace(/[^A-Z0-9]/g, "");
 
+// ---- a business's own sign-in (IDN-15) ------------------------------------------------------------------
+
+export type SpaceOidc = { edition: Edition; tenant_id: string; issuer: string; client_id: string; sealed_secret: string; label: string; default_role: string; updated_at: string };
+/** What an administrator sees of it: never the secret. */
+export type SpaceOidcView = Omit<SpaceOidc, "sealed_secret"> & { has_secret: true };
+/** The provider id a business's sign-in is kept under. */
+export const orgProviderId = (edition: Edition, tenant: string) => `org:${edition}:${tenant}`;
+
 // ---- a space's sign-in rules (IDN-34) ---------------------------------------------------------------
 
 /** Methods a space may accept. */
@@ -258,7 +270,7 @@ export function policyAllows(policy: Pick<SpacePolicy, "methods" | "staff_passke
   if (nowSeconds - began > policy.session_hours * 3600) return { ok: false, why: "expired", message: "Your sign-in for this space has ended. Sign in again." };
   return { ok: true };
 }
-const methodWords = (m: string) => (m === "passkey" ? "a passkey" : m === "oidc" ? "Google" : m === "recovery" ? "a recovery code" : m);
+const methodWords = (m: string) => (m === "passkey" ? "a passkey" : m === "oidc" ? "Google or your company's sign-in" : m === "recovery" ? "a recovery code" : m);
 export type SignedIn = { account: Account; session: { id: string; access: string; refresh: string; access_expires_at: string; expires_at: string }; memberships: Membership[] };
 
 const iso = (d: Date) => d.toISOString();
@@ -688,6 +700,58 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
       return { revoked: id };
     },
 
+    // ---- a business's own sign-in (IDN-15) -------------------------------------------------------------
+
+    /** The space's own provider as its administrator sees it (no secret), or null. */
+    async spaceOidc(edition: Edition, tenantId: string): Promise<SpaceOidcView | null> {
+      const o = await store.spaceOidc(edition, tenantId);
+      if (!o) return null;
+      const { sealed_secret: _, ...view } = o;
+      return { ...view, has_secret: true };
+    },
+    /** The provider to sign in with (server only: the secret unsealed). */
+    async spaceOidcProvider(edition: Edition, tenantId: string, redirectUri: string) {
+      const o = await store.spaceOidc(edition, tenantId);
+      if (!o) return null;
+      return { id: orgProviderId(edition, tenantId), issuer: o.issuer, clientId: o.client_id, clientSecret: await unseal(options.secret, o.sealed_secret), redirectUri, label: o.label, defaultRole: o.default_role };
+    },
+    /** Set it (the caller has checked the space's administrator). A secret left out keeps the old one. */
+    async setSpaceOidc(edition: Edition, tenantId: string, input: { issuer: string; client_id: string; client_secret?: string; label: string; default_role: string }, by: string | null) {
+      let issuer: URL;
+      try {
+        issuer = new URL(input.issuer.trim());
+      } catch {
+        throw new IdentityError("The issuer is a web address, like https://login.microsoftonline.com/<tenant>/v2.0.");
+      }
+      const local = issuer.protocol === "http:" && (issuer.hostname === "localhost" || issuer.hostname === "127.0.0.1");
+      if (issuer.protocol !== "https:" && !local) throw new IdentityError("The issuer must be an https address.");
+      const clientId = input.client_id.trim();
+      if (!clientId || clientId.length > 200) throw new IdentityError("Give the client ID from your provider.");
+      const label = input.label.trim().slice(0, 40) || "your company";
+      if (!/^[a-z][a-z0-9-]{0,31}$/.test(input.default_role)) throw new IdentityError("Choose the role new staff get.");
+      const old = await store.spaceOidc(edition, tenantId);
+      if (!input.client_secret && !old) throw new IdentityError("Give the client secret from your provider.");
+      const o: SpaceOidc = {
+        edition,
+        tenant_id: tenantId,
+        issuer: input.issuer.trim(),
+        client_id: clientId,
+        sealed_secret: input.client_secret ? await seal(options.secret, input.client_secret) : old!.sealed_secret,
+        label,
+        default_role: input.default_role,
+        updated_at: iso(now()),
+      };
+      await store.putSpaceOidc(o);
+      await audit(by, "space.oidc_changed", { edition });
+      const { sealed_secret: _, ...view } = o;
+      return { ...view, has_secret: true as const };
+    },
+    async removeSpaceOidc(edition: Edition, tenantId: string, by: string | null) {
+      const ok = await store.removeSpaceOidc(edition, tenantId);
+      if (ok) await audit(by, "space.oidc_changed", { edition, removed: true });
+      return ok;
+    },
+
     // ---- a space's sign-in rules (IDN-34) -------------------------------------------------------------
 
     /** The space's rules, or the defaults (every method, no passkey rule, 30 days). */
@@ -789,6 +853,7 @@ export function createMemoryIdentityStore(): IdentityStore {
   const pending = new Map<string, PendingJoin>();
   const locks = new Map<string, DeviceLock>();
   const policies = new Map<string, SpacePolicy>();
+  const orgs = new Map<string, SpaceOidc>();
   const grants = new Map<string, DeviceGrant>();
   const creds = new Map<string, DeviceCredential>();
   const copy = <T>(x: T): T => structuredClone(x);
@@ -832,6 +897,9 @@ export function createMemoryIdentityStore(): IdentityStore {
     putDeviceLock: async (l) => void locks.set(l.id, copy(l)),
     spacePolicy: async (e, t) => copy(policies.get(`${e}|${t}`) ?? null),
     putSpacePolicy: async (p) => void policies.set(`${p.edition}|${p.tenant_id}`, copy(p)),
+    spaceOidc: async (e, t) => copy(orgs.get(`${e}|${t}`) ?? null),
+    putSpaceOidc: async (o) => void orgs.set(`${o.edition}|${o.tenant_id}`, copy(o)),
+    removeSpaceOidc: async (e, t) => orgs.delete(`${e}|${t}`),
     deviceGrantBy: async (col, hash) => copy([...grants.values()].find((g) => g[col] === hash) ?? null),
     putDeviceGrant: async (g) => void grants.set(g.id, copy(g)),
     deviceCredential: async (id) => copy(creds.get(id) ?? null),
@@ -849,4 +917,4 @@ export function createMemoryIdentityStore(): IdentityStore {
 
 export { createD1IdentityStore } from "./d1.js";
 export { maskEmail, PASSKEY_MINUTES, RECOVERY_CODES, type RelyingParty } from "./methods.js";
-export { GOOGLE_ISSUER, OIDC_MINUTES, oidcFinish, oidcStart, type OidcPending, type OidcProvider, type OidcResult } from "./oidc.js";
+export { GOOGLE_ISSUER, localIssuer, OIDC_MINUTES, oidcFinish, oidcStart, type OidcPending, type OidcProvider, type OidcResult } from "./oidc.js";
