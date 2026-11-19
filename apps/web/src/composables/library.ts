@@ -8,6 +8,7 @@ import { trackWrite } from "@/lib/browser/sync-hook";
 import { compileBundle, DEFAULT_ROLES, journeyRolesNeeded, MANAGER_OF_REQUESTER, roleLabel, type Journey, type Organisation, type Role, type RunActor, type Service } from "@sekaran-ind/yaxb-journeys";
 import { HOUSEHOLD_ENTRY, HOUSEHOLD_ROLE_LABELS, householdJourneys } from "@sekaran-ind/yaxb-core/household";
 import { useHousehold } from "@/composables/household";
+import { accountLevel } from "@/composables/identity";
 import { offers } from "@/lib/surface";
 import { computed, ref, shallowRef } from "vue";
 import { api } from "@/lib/api";
@@ -133,7 +134,7 @@ export const roleCatalogue = computed(() => roles.value);
 export const roleName = (id: string) => (offers("household") && id in HOUSEHOLD_ROLE_LABELS ? HOUSEHOLD_ROLE_LABELS[id as keyof typeof HOUSEHOLD_ROLE_LABELS] : roleLabel(id, roles.value));
 
 /** Who is at this kiosk, for a catalogue journey's runner: the person starting it, with their roles. */
-export const kioskActor = computed<RunActor>(() => ({ starter: true, roles: [...viewer.value.roles, ...useHousehold().roles.value] }));
+export const kioskActor = computed<RunActor>(() => ({ starter: true, roles: [...viewer.value.roles, ...useHousehold().roles.value], level: accountLevel.value }));
 export const viewerIsMember = computed(() => viewer.value.member);
 
 /** The catalogue entry a journey comes from (null for a built-in journey). */

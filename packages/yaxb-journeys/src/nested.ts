@@ -46,8 +46,8 @@ export const isNestedService = (doc: unknown): doc is Record<string, unknown> =>
   Boolean(doc && typeof doc === "object" && !Array.isArray(doc) && (doc as Record<string, unknown>).kind === "service" && (doc as Record<string, unknown>).journeys !== undefined);
 
 const SERVICE_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "order", "layouts", "hidden", "roles", "journeys", "dates", "consent"]);
-const JOURNEY_KEYS = new Set(["id", "title", "summary", "icon", "category", "version", "roles", "flow", "start", "screens"]);
-const SCREEN_KEYS = new Set(["id", "title", "ask", "questions", "submitLabel", "service", "with", "onError", "decide", "next", "result", "stage", "icon", "role", "after"]);
+const JOURNEY_KEYS = new Set(["id", "title", "summary", "icon", "category", "version", "roles", "flow", "level", "start", "screens"]);
+const SCREEN_KEYS = new Set(["id", "title", "ask", "questions", "submitLabel", "service", "with", "onError", "decide", "next", "result", "stage", "icon", "role", "after", "level"]);
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 
 export type Expanded = {
@@ -201,6 +201,7 @@ export function expandService(doc: Record<string, unknown>): Expanded {
           if (s.onError !== undefined) step.onError = s.onError;
         }
         if (s.after !== undefined) step.after = s.after;
+        if (s.level !== undefined) step.level = s.level;
         const task = j.flow === "parallel" && s.decide === undefined && (step.ask !== undefined || step.service !== undefined);
         if (s.decide !== undefined) step.decide = s.decide;
         // A parallel journey's task has no way out of its own (the journey goes on when every task is done).
@@ -224,6 +225,7 @@ export function expandService(doc: Record<string, unknown>): Expanded {
       ...(j.category !== undefined ? { category: j.category } : {}),
       ...(j.roles !== undefined ? { roles: j.roles } : {}),
       ...(j.flow !== undefined ? { flow: j.flow } : {}),
+      ...(j.level !== undefined ? { level: j.level } : {}),
       start: j.start ?? ids.find((x) => typeof x === "string") ?? "",
       steps,
     });

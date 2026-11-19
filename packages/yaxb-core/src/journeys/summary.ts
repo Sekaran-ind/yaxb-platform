@@ -19,6 +19,7 @@ export const SERVICE_INFO: Record<string, ServiceInfo> = {
   "notebook.remember": { label: "your notebook's memory", where: "notebook" },
   "speech.speak": { label: "read-aloud", where: "device" },
   "identity.status": { label: "your account (who is signed in)", where: "account" },
+  "identity.whoami": { label: "who you are here (your name, how you signed in and your roles; never your email or phone)", where: "account" },
   "identity.passkey.signin": { label: "your passkey", where: "account" },
   "identity.passkey.create": { label: "your passkey and a new account", where: "account" },
   "identity.google": { label: "Google sign-in", where: "account" },

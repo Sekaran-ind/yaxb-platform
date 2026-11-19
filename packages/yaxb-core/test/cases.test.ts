@@ -170,3 +170,47 @@ describe("staffing", () => {
     expect(staffingOf(["organiser", "marshal", "medic", "timer"], members)).toEqual({ organiser: "ready", marshal: "invited", medic: "nobody", timer: "nobody" });
   });
 });
+
+describe("assurance levels on cases (IDN-30..32)", () => {
+  // The gate: a hall booking starts at level 2, and its approval steps up to level 3.
+  const HALL = compileBundle(`kind: service
+id: hall
+title: Community hall
+roles:
+  - { id: secretary, label: Secretary }
+journeys:
+  - id: book
+    title: Book the hall
+    level: 2
+    screens:
+      - id: when
+        title: When
+        questions:
+          - { id: day, type: text, label: Day, required: true }
+      - id: approve
+        title: Approve the booking
+        role: secretary
+        level: 3
+        questions:
+          - { id: ok, type: boolean, label: Approved }
+      - id: done
+        result: { title: Booked }
+`).journeys;
+  const hallFor = async (entry: string, id: string) => {
+    const journey = HALL.find((j) => j.id === id);
+    return entry === "h1" && journey ? { journey, entry_id: "h1", service_id: "hall", service_title: "Community hall", revision: 1 } : null;
+  };
+  for (const [name, make] of stores)
+    it(`refuses answers below a screen's level, ${name}`, async () => {
+      const cases = createCaseService(make(), { journeyFor: hallFor });
+      const start = { entry: "h1", journey: "book", answers: { when: { day: "Saturday" } } };
+      await expect(cases.start({ ...visitor, level: 0 }, start)).rejects.toThrow(/needs a verified email or phone/);
+      const { case: c } = await cases.start({ ...visitor, level: 2 }, start);
+      expect(c.waiting_role).toBe("secretary");
+      const secretary: CaseActor = { id: "m-sec", name: "Sita", roles: ["secretary"], admin: false, level: 2 };
+      expect((await cases.get(secretary, c.id)).actor.level).toBe(2);
+      await expect(cases.act(secretary, c.id, { answers: { approve: { ok: true } } })).rejects.toThrow(/needs a strong sign-in/);
+      const done = await cases.act({ ...secretary, level: 3 }, c.id, { answers: { approve: { ok: true } } });
+      expect(done.case.status).toBe("done");
+    });
+});

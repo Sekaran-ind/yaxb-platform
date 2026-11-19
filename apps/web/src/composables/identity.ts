@@ -35,6 +35,8 @@ export type IdentityConfig = { enabled: boolean; passkeys: boolean; google: bool
 export type SessionRow = { id: string; method: string; level: number; device: string | null; created_at: string; last_used_at: string };
 
 const me = shallowRef<Me>({ signedIn: false });
+/** How sure the kiosk is of who this is (IDN-30): the account session's level, 0 when nobody is signed in. */
+export const accountLevel = computed(() => (me.value.signedIn ? me.value.level : 0));
 const config = shallowRef<IdentityConfig | null>(null);
 const loading = ref(false);
 let started = false;

@@ -6,12 +6,14 @@
 // A catalogue journey runs as the person at the kiosk (their roles): when it reaches a screen another
 // role answers, or ends with roles that finish it, it is handed over as a case (LIB-33..38), and the
 // visitor gets its reference. `resume` carries on a case from where it stopped, as its next person.
-import { createRunner, type Journey, type RunSnapshot, type RunState, type ServiceHandler, type SlotConfirm, type SlotVia } from "@sekaran-ind/yaxb-core/journeys";
+import { ASSURANCE_LEVELS, createRunner, type Journey, type RunSnapshot, type RunState, type ServiceHandler, type SlotConfirm, type SlotVia } from "@sekaran-ind/yaxb-core/journeys";
 import { progressOf, summarizeJourney, summarizeRun } from "@sekaran-ind/yaxb-core/journeys";
 import { HOUSEHOLD_ENTRY } from "@sekaran-ind/yaxb-core/household";
 import { useAccount } from "@/composables/account";
 import { householdRecipients } from "@/composables/household";
-import { ArrowLeft, CheckCircle2, Circle, Copy, Loader2, Mic, MicOff, NotebookPen, RotateCcw, Sparkles, Square, Volume2, Wand2, XCircle } from "@lucide/vue";
+import { ArrowLeft, CheckCircle2, Circle, Copy, KeyRound, Loader2, Mic, MicOff, NotebookPen, RotateCcw, ShieldCheck, Sparkles, Square, Volume2, Wand2, XCircle } from "@lucide/vue";
+import { useRoute, useRouter } from "vue-router";
+import { accountLevel, useIdentity } from "@/composables/identity";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, useId, watch } from "vue";
 import { effectiveSelection, settings, useProviders } from "@/composables/settings";
 import { useSpeechInput } from "@/composables/speech";
@@ -51,11 +53,41 @@ const uid = useId();
 
 const state = shallowRef<RunState | null>(null);
 const handsOver = computed(() => Boolean(props.resume || props.entry));
+// A journey that says how sure the kiosk must be of who answers (IDN-30) runs with an actor, so it
+// pauses where the person must sign in more strongly (step_up) and carries on there after.
+const levelled = Boolean(props.journey.level) || Object.values(props.journey.steps).some((s) => s.level);
+const withActor = computed(() => handsOver.value || levelled);
+const actorNow = () => (props.resume ? { ...props.resume.actor, level: Math.max(props.resume.actor.level ?? 0, accountLevel.value) } : kioskActor.value);
 const runner = createRunner(props.journey, {
   services: props.services,
   onChange: (s) => (state.value = s),
-  ...(handsOver.value ? { actor: props.resume?.actor ?? kioskActor.value } : {}),
+  ...(withActor.value ? { actor: actorNow() } : {}),
 });
+
+// ---- signing in more strongly (IDN-32) ------------------------------------------------------------
+const identity = useIdentity();
+const route = useRoute();
+const router = useRouter();
+const stepUpError = ref<string | null>(null);
+const steppingUp = ref(false);
+const needed = computed(() => (state.value?.stepUp ? ASSURANCE_LEVELS[state.value.stepUp.level] : null));
+// Signed in more strongly (here, or in Preferences): carry on where it paused.
+watch(accountLevel, (lvl) => {
+  if (state.value?.status === "step_up" && state.value.stepUp && lvl >= state.value.stepUp.level) void runner.continueAs(actorNow());
+});
+async function stepUpWithPasskey() {
+  steppingUp.value = true;
+  stepUpError.value = null;
+  try {
+    await identity.passkeySignIn();
+    if (state.value?.stepUp && accountLevel.value < state.value.stepUp.level) stepUpError.value = "That sign-in isn't strong enough for this screen.";
+  } catch (e) {
+    stepUpError.value = /NotAllowed|cancel|abort/i.test(String((e as Error).name) + (e as Error).message) ? "The passkey wasn't used. Try again." : (e as Error).message;
+  } finally {
+    steppingUp.value = false;
+  }
+}
+const openAccount = () => void router.push({ query: { ...route.query, prefs: "account" } });
 
 // ---- hand-over (LIB-33..38) ---------------------------------------------------------------------
 const finishers = computed(() => (props.journey.roles?.complete ?? []).filter((r) => r !== "visitor"));
@@ -314,7 +346,7 @@ const restart = (fresh = true) => {
   delivery.value = null;
   handError.value = null;
   if (props.resume) return void runner.resume(props.resume.case.run, props.resume.actor);
-  if (!fresh && props.initial) return void runner.resume(props.initial, handsOver.value ? kioskActor.value : undefined);
+  if (!fresh && props.initial) return void runner.resume(props.initial, withActor.value ? actorNow() : undefined);
   void runner.start();
 };
 
@@ -497,6 +529,20 @@ onBeforeUnmount(() => {
           <template v-for="(a, i) in run.answers" :key="i"><dt class="text-gray-500">{{ a.field }}</dt><dd class="text-ink">{{ a.value }}</dd></template>
         </dl>
       </details>
+    </div>
+
+    <!-- A screen that needs a stronger sign-in (IDN-32): sign in, then it carries on here. -->
+    <div v-if="state?.status === 'step_up' && state.stepUp && needed" class="card space-y-3 p-4" role="group" aria-labelledby="stepup-h">
+      <h4 id="stepup-h" class="flex items-center gap-2 font-semibold text-ink"><ShieldCheck class="size-5 text-brand" aria-hidden="true" /> Sign in to carry on</h4>
+      <p class="text-sm text-body">
+        “{{ journey.steps[state.stepUp.step]?.label ?? journey.title }}” needs {{ needed.label.toLowerCase() }}. {{ needed.detail }} Your answers so far are kept, and it carries on from here.
+      </p>
+      <div class="flex flex-wrap gap-2">
+        <button v-if="identity.passkeys.value" type="button" class="btn-primary" :disabled="steppingUp" @click="stepUpWithPasskey"><KeyRound class="size-4" aria-hidden="true" /> Sign in with a passkey</button>
+        <button v-if="state.stepUp.level <= 2 && identity.config.value?.google" type="button" class="btn-light" @click="identity.google()">Continue with Google</button>
+        <button type="button" class="btn-ghost" @click="openAccount">{{ identity.signedIn.value ? "Add a passkey to my account" : "Make an account" }}</button>
+      </div>
+      <p v-if="stepUpError" role="alert" class="text-sm text-red-800">{{ stepUpError }}</p>
     </div>
 
     <div v-if="state?.status === 'failed'" role="alert" class="space-y-2 rounded-lg bg-danger/10 px-4 py-3 text-sm text-red-800">

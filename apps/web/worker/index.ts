@@ -783,11 +783,12 @@ app.get("/api/library/published", async (c) => {
  * Run a case action as the catalogue's actor (a member with their roles, the administrator, or a
  * visitor by their session). Changes are same origin; starting one is rate limited like a form.
  */
-async function caseCall(c: Context<AppEnv>, fn: (a: LibraryActor, body: unknown) => Promise<unknown>, { limited = false } = {}) {
+async function caseCall(c: Context<AppEnv>, fn: (a: LibraryActor & { level: number }, body: unknown) => Promise<unknown>, { limited = false } = {}) {
   if (c.req.method !== "GET" && !sameOrigin(c)) return jsonError(c, 403, "Forbidden");
   // Central storage of cases is the paid plan; otherwise they live on devices and the box.
   if (settings(c.env).CASES_CENTRAL !== "on") return jsonError(c, 402, "Keeping requests in the cloud is part of the paid plan. This kiosk keeps them on its devices and box.");
-  const actor = await libraryActor(c);
+  // How sure the server is of who this is (IDN-30): the account session's level; 0 without one.
+  const actor = { ...(await libraryActor(c)), level: c.get("account")?.lvl ?? 0 };
   // Starting a case is limited like a form. A visitor opens cases by reference, so every call of
   // theirs counts too (like chat: a visit takes a few), and references (30^6) can't be guessed.
   if (limited && !(await withinLimit("form", c.env.FORM_LIMITER, `case:${actor.id}`))) return jsonError(c, 429, "Too many requests. Please wait a minute.");

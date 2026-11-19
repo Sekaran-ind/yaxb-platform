@@ -20,6 +20,8 @@
 //       final: true                     the end; `result: { title, text, ok }` (templates allowed)
 //       next: <step> | [{ if, to }, …, { to }]
 //       label / stage / icon            the step's line in the progress list
+//       level: 0..4                     how sure the kiosk must be of who answers (IDN-30); the
+//                                       journey's own `level` holds for every step
 //
 // Service names are dotted: `agent.ask`, `offline.summarize`, `notebook.remember`. The core
 // doesn't know them; the surface passes handlers to createRunner, and compileJourney can be told
@@ -59,6 +61,8 @@ export type Step = {
    * answer, it waits there: the journey is handed over (a case, which the host stores).
    */
   role?: string;
+  /** How sure the kiosk must be of who answers this step (IDN-30): more than the journey's, for an approval. */
+  level?: number;
   /**
    * flow: parallel only (JRN-46): the tasks this one waits for. Without any, a task is available
    * as soon as the journey starts.
@@ -88,12 +92,17 @@ export type Journey = {
    * when every task is done the journey carries on from its first other step (a decision or a result).
    */
   flow?: "sequence" | "parallel";
+  /**
+   * How sure the kiosk must be of who answers (IDN-30, ASSURANCE_LEVELS): every step that asks needs
+   * at least this; a step may ask for more. Absent: 0, anyone.
+   */
+  level?: number;
   start: string;
   steps: Record<string, Step>;
 };
 
-const JOURNEY_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "category", "roles", "flow", "start", "steps"]);
-const STEP_KEYS = new Set(["ask", "fields", "questionnaire", "service", "with", "onError", "decide", "final", "result", "next", "label", "stage", "icon", "submitLabel", "role", "after"]);
+const JOURNEY_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "category", "roles", "flow", "level", "start", "steps"]);
+const STEP_KEYS = new Set(["ask", "fields", "questionnaire", "service", "with", "onError", "decide", "final", "result", "next", "label", "stage", "icon", "submitLabel", "role", "after", "level"]);
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 /** An outcome id: lower-case words joined by '-', optionally dotted (registration.approved). */
 export const OUTCOME_ID = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*$/;
@@ -127,6 +136,7 @@ export function journeyProblems(doc: unknown, { services, questionnaires = [], r
   const ids = new Set(Object.keys(steps));
   if (typeof j.start === "string" && !ids.has(j.start)) problems.push(`start: no step '${j.start}'`);
   if (j.flow !== undefined && j.flow !== "sequence" && j.flow !== "parallel") problems.push("flow is sequence or parallel");
+  if (j.level !== undefined && !isLevel(j.level)) problems.push(LEVEL_PROBLEM);
   const parallel = j.flow === "parallel";
   const all = steps as Record<string, Record<string, unknown>>;
   const taskIds = new Set(Object.keys(all).filter((id) => {
@@ -210,6 +220,10 @@ export function journeyProblems(doc: unknown, { services, questionnaires = [], r
       if (s.ask === undefined && s.questionnaire === undefined) problems.push(`${at}: only a step with questions is answered by a role`);
     }
     if (s.onError !== undefined && s.onError !== "fail" && s.onError !== "continue") problems.push(`${at}: onError is fail or continue`);
+    if (s.level !== undefined) {
+      if (!isLevel(s.level)) problems.push(`${at}: ${LEVEL_PROBLEM}`);
+      else if (s.ask === undefined && s.questionnaire === undefined) problems.push(`${at}: only a step with questions needs a level`);
+    }
     if (s.after !== undefined) {
       if (!parallel) problems.push(`${at}: after is for parallel journeys (flow: parallel)`);
       else if (!taskIds.has(id)) problems.push(`${at}: only a task (a step that asks or runs a service) waits with after`);
@@ -265,14 +279,38 @@ export function compileJourney(source: string | object, options: JourneyOptions 
 
 export type ServiceHandler = (input: unknown, ctx: { journey: Journey; step: Step; scope: Scope; signal?: AbortSignal }) => Promise<unknown>;
 
-export type RunStatus = "idle" | "asking" | "waiting" | "running" | "done" | "failed";
+/** step_up (IDN-32): the person may answer the step but must sign in more strongly first. */
+export type RunStatus = "idle" | "asking" | "waiting" | "step_up" | "running" | "done" | "failed";
 
 /**
  * Who is running the journey: the person who started it (`starter`), and their roles. A runner
  * with an actor stops at a step someone else answers (status "waiting"); without one, it asks every
  * step (built-in journeys, and the designer's plain preview).
  */
-export type RunActor = { starter: boolean; roles: readonly string[] };
+export type RunActor = {
+  starter: boolean;
+  roles: readonly string[];
+  /** How sure the kiosk is of who this is (IDN-30): 0 anonymous … 3 a passkey. Absent: 0. */
+  level?: number;
+};
+
+// ---- assurance levels (IDN-30) ---------------------------------------------------------------------
+
+/** How sure the kiosk is of who someone is. A service states the level it needs, never how to check it. */
+export const ASSURANCE_LEVELS = [
+  { level: 0, label: "Anyone", detail: "No sign-in." },
+  { level: 1, label: "A returning person", detail: "Signed in, even with a recovery code." },
+  { level: 2, label: "A verified email or phone", detail: "Signed in with Google (or, later, a code by SMS or email)." },
+  { level: 3, label: "A strong sign-in", detail: "Signed in with a passkey." },
+  { level: 4, label: "A verified real-world identity", detail: "For regulated services; not offered yet." },
+] as const;
+export const MAX_LEVEL = 4;
+const LEVEL_PROBLEM = "level is a whole number from 0 (anyone) to 4";
+const isLevel = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= MAX_LEVEL;
+/** The level a step needs: the journey's, or the step's own when that is more. */
+export const levelNeeded = (journey: Pick<Journey, "level">, step: Pick<Step, "level">) => Math.max(journey.level ?? 0, step.level ?? 0);
+/** May this actor answer at that level? */
+export const sureEnough = (journey: Pick<Journey, "level">, step: Pick<Step, "level">, actor: Pick<RunActor, "level">) => (actor.level ?? 0) >= levelNeeded(journey, step);
 
 /** The part of a run that is stored and handed over: enough to resume it anywhere. */
 export type RunSnapshot = { current: string | null; answers: Record<string, Record<string, unknown>>; steps: Record<string, unknown>; trail: RunState["trail"] };
@@ -302,6 +340,8 @@ export type RunState = {
   current: string | null;
   /** The step someone else answers (status "waiting"): its role, or null for the person who started it. */
   waiting: { step: string; role: string | null } | null;
+  /** The step that needs a stronger sign-in (status "step_up"), and the level it needs (IDN-32). */
+  stepUp?: { step: string; level: number } | null;
   /** The step waiting for the visitor (status "asking"). */
   prompt: { step: string; text: string; fields: Field[]; sections?: StepSection[]; submitLabel?: string } | null;
   answers: Record<string, Record<string, unknown>>;
@@ -315,7 +355,7 @@ export type RunState = {
 };
 
 /** A parallel journey's task: waiting for others (pending), ready to work on, being asked, waiting for its role, running, or done. */
-export type TaskState = { step: string; label: string; role: string | null; status: "pending" | "ready" | "asking" | "waiting" | "running" | "done"; after: string[] };
+export type TaskState = { step: string; label: string; role: string | null; status: "pending" | "ready" | "asking" | "waiting" | "step_up" | "running" | "done"; after: string[] };
 
 /**
  * The trail as progress to show: the screens that asked something and the services that ran.
