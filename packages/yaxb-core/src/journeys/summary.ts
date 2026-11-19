@@ -88,7 +88,7 @@ export function summarizeJourney(journey: Journey): JourneySummary {
   const parts = [asks.length ? `Asks for ${list(asks.map((a) => a.toLowerCase()))}` : "Asks for nothing", uses.length ? `uses ${list(uses.map((u) => u.label))}` : null].filter(Boolean);
   const where = [
     toAssistant ? "What you give it is sent to the AI assistant." : null,
-    handedTo.length ? "Your answers go, as a request with a reference, to the staff who take it from you." : null,
+    handedTo.length ? "Your answers go, as a request with a reference, to whoever takes it from you." : null,
   ].filter(Boolean);
   const privacy = `${parts.join(", ")}. ${where.length ? where.join(" ") : "Nothing leaves this device."}`;
   return { id: journey.id, title: journey.title, summary: journey.summary ?? null, icon: journey.icon ?? null, category: journey.category ?? null, steps, asks, uses, leavesDevice, privacy };

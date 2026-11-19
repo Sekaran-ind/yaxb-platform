@@ -47,11 +47,11 @@ The Family home page promises children asking and parents approving, but the Fam
 
 | ID | Requirement | Status |
 |---|---|---|
-| EDN-20 | The Family edition must offer requests between household members: a child or an elder asks, a parent decides; a repair goes to whoever handles repairs. These are cases (LIB-33..38) kept on the household's devices (LIB-42), never on the central store. | Planned |
-| EDN-21 | A child's request must always go to one of the child's guardians. A child cannot join a community, and cannot be messaged by one directly. | Planned |
-| EDN-22 | Family must offer built-in household services: ask for something, report a repair, plan an outing. | Planned |
-| EDN-23 | Families are never listed in the directory. | Planned |
-| EDN-24 | Each adult's notebooks and conversations are private unless shared. Parents see a child's requests, not the child's conversations, by default. | Planned |
+| EDN-20 | The Family edition must offer requests between household members: a child or an elder asks, a parent decides; a repair goes to whoever handles repairs. These are cases (LIB-33..38) kept on the household's devices (LIB-42), never on the central store. | Built for one shared family device: requests are household cases on this device (`entry` household, never central); the next person sees them when they open their profile. Households across several devices wait for the box sync. |
+| EDN-21 | A child's request must always go to one of the child's guardians. A child cannot join a community, and cannot be messaged by one directly. | Partly built: a child's request reaches only that child's guardians (core `householdAllows`, the case service's `allows`). Communities don't exist yet. |
+| EDN-22 | Family must offer built-in household services: ask for something, report a repair, plan an outing. | Built: the At home service (`HOUSEHOLD_SERVICE_YAML`): Ask for something, Report a repair, Plan an outing. |
+| EDN-23 | Families are never listed in the directory. | Built: Family has no directory, and households aren't tenants. |
+| EDN-24 | Each adult's notebooks and conversations are private unless shared. Parents see a child's requests, not the child's conversations, by default. | Partly built: notebooks and conversations stay with each profile; parents see a child's requests only. Sharing a notebook or a conversation is open. |
 
 ## Children and elders
 

@@ -139,6 +139,10 @@
       "types": "./dist/cases/index.d.ts",
       "default": "./dist/cases/index.js"
     },
+    "./household": {
+      "types": "./dist/household/index.d.ts",
+      "default": "./dist/household/index.js"
+    },
     "./metrics": {
       "types": "./dist/metrics/index.d.ts",
       "default": "./dist/metrics/index.js"

@@ -295,6 +295,11 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
   - Beacons (`Beacon`: reference, titles, role, holder, copies; never answers) on the box or the relay, for moderators' board; `reassign` envelopes go to the devices with a copy. A moderator reassigns without reading the case (`service.reassign`).
   - Settings `cases`: `storage` (devices | central, central only when the server offers it), `useBox`, `useRelay`.
 
+## Household requests in Family (EDN-20..24)
+
+- Core `household/` (export `./household`): `householdSchema` (profile ids, roles `guardian`/`handler`, a child's `guardians`; nothing else), `householdRoles`, `householdProblems`, `householdAllows` (a child's request only to that child's guardians; passed to `createCaseService` as `allows`, which `load` and `list` apply), `HOUSEHOLD_SERVICE_YAML` (the At home service) with `householdBundle`, `householdJourneys`, `householdCaseJourney`, `HOUSEHOLD_ENTRY`. Context feature `household` (Family and the combined site).
+- Web: `composables/household.ts` (localStorage `yaxb.household`, `setMember`, `useHousehold`, `householdRecipients`), `components/settings/HouseholdSetup.vue` (Preferences → Household; a guardian edits). `case-network.ts` acts as the open profile (`profile:<id>`) with its household roles, finds household journeys, and keeps household cases on this device (no hand-on, no beacons); `cases.ts` never sends them central. `library.ts` adds the household journeys to `kioskJourneys`, its roles to `kioskActor`, its labels to `roleName`. ServicesScreen shows At home first and refreshes the queue when the profile changes; `startJourney` asks for a profile first.
+
 ## Service storage and events (LIB-60..62, MET-1..2)
 
 - **Core** `metrics/` (export `./metrics`): `SERVICE_STORAGE` (none, box, server), `EVENT_KINDS`, `serviceEventSchema` (strict: facts only), `newEvent`, `EventStore` (memory; D1 `createD1EventStore`, migration 0012 `service_events`), `serviceMetrics(events, journeys)` (starts, finishes, completion, hand-overs, open/closed/declined requests, weeks, and per journey a funnel, median time, waits per role, reassignments, failures, forms filled from words) and `activityLog`. Library entries carry `storage` (migration 0012), set by `setEntryStorage` (administrators); `published()` gives each service's `state` and `storage`.

@@ -8,6 +8,9 @@
 // visitor gets its reference. `resume` carries on a case from where it stopped, as its next person.
 import { createRunner, type Journey, type RunSnapshot, type RunState, type ServiceHandler, type SlotConfirm, type SlotVia } from "@sekaran-ind/yaxb-core/journeys";
 import { progressOf, summarizeJourney, summarizeRun } from "@sekaran-ind/yaxb-core/journeys";
+import { HOUSEHOLD_ENTRY } from "@sekaran-ind/yaxb-core/household";
+import { useAccount } from "@/composables/account";
+import { householdRecipients } from "@/composables/household";
 import { ArrowLeft, CheckCircle2, Circle, Copy, Loader2, Mic, MicOff, NotebookPen, RotateCcw, Sparkles, Square, Volume2, Wand2, XCircle } from "@lucide/vue";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, useId, watch } from "vue";
 import { effectiveSelection, settings, useProviders } from "@/composables/settings";
@@ -101,9 +104,14 @@ async function sendAgain() {
   }
 }
 /** Who it went to, in words. */
+const account = useAccount();
+/** A household request (Family, EDN-20). */
+const atHome = computed(() => props.entry === HOUSEHOLD_ENTRY);
 const handedTo = computed(() => {
   const c = handed.value;
   if (!c) return "";
+  // At home: the people, by name ("Amma"), not the role (EDN-21).
+  if (atHome.value && c.status === "waiting" && c.waiting_role) return householdRecipients(c.waiting_role, account.profileId.value, new Map(account.list.value.map((p) => [p.id, p.nickname])));
   if (c.status === "waiting") return c.waiting_role ? roleName(c.waiting_role) : "the person who started it";
   if (c.status === "to_finish") return c.finish_roles.map(roleName).join(" or ");
   return "";
@@ -440,6 +448,7 @@ onBeforeUnmount(() => {
         <p v-if="handed.status !== 'done'" class="text-sm text-ink">
           <template v-if="handed.status === 'waiting' && !handed.waiting_role">It goes back to the person who started it. They carry on with this reference.</template>
           <template v-else-if="handed.status === 'to_finish'">{{ handedTo }} closes it when it is done.</template>
+          <template v-else-if="atHome">{{ handedTo }} sees it on Quick tools when they open their profile on this device.</template>
           <template v-else>It is in {{ handedTo }}'s work queue. They carry on from here.</template>
         </p>
         <div class="flex flex-wrap items-center gap-3 rounded-lg bg-mist px-3 py-2">

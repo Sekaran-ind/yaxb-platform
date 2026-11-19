@@ -12,7 +12,9 @@ import type { Layout } from "@sekaran-ind/yaxb-core/screens";
 import { servicesFor, type ServiceItem } from "@sekaran-ind/yaxb-core/services";
 import { ChevronDown, ChevronRight, Inbox, Info } from "@lucide/vue";
 import { kioskContent } from "@sekaran-ind/yaxb-core/content";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { householdBundle } from "@sekaran-ind/yaxb-core/household";
+import { useHousehold } from "@/composables/household";
 import { useRoute, useRouter } from "vue-router";
 import type { NotebookRecord } from "@/lib/browser/store";
 import { cn } from "@/lib/cn";
@@ -60,7 +62,14 @@ onMounted(async () => {
 // The native app is for visitors: staff work in the web kiosk, where their sign-in is a cookie.
 // The child safety lock hides the staff sections (CHL-5).
 const childMode = useChildMode();
-const offered = computed(() => servicesFor(kioskContent.services, { layout: props.layout, journeys: kioskJourneys.value.map((j) => j.id) }).filter((s) => !((NATIVE || childMode.on.value || !offers("staff")) && s.id === "staff") && s.id !== "ask"));
+// At home (Family, EDN-22): the Household service comes first.
+const home = offers("household") ? householdBundle().services : [];
+const offered = computed(() => [
+  ...home,
+  ...servicesFor(kioskContent.services, { layout: props.layout, journeys: kioskJourneys.value.map((j) => j.id) }).filter((s) => !((NATIVE || childMode.on.value || !offers("staff")) && s.id === "staff") && s.id !== "ask"),
+]);
+// Requests follow the open profile at home: another profile, another queue.
+watch(useHousehold().profile, () => void refreshQueue());
 const journeyOf = (item: ServiceItem) => (item.journey ? kioskJourneys.value.find((j) => j.id === item.journey) : undefined);
 const about = ref<string | null>(null);
 const showAll = ref(false);
@@ -147,7 +156,7 @@ const otherGroups = computed(() =>
 
     <!-- Staff: what they started and the other open requests they may see. (Visitors check theirs by
          typing the reference in Ask Me.) -->
-    <section v-if="offers('requests') && otherGroups.length" aria-labelledby="svc-requests" class="space-y-3">
+    <section v-if="(offers('requests') || offers('household')) && otherGroups.length" aria-labelledby="svc-requests" class="space-y-3">
       <h3 id="svc-requests" class="flex items-center gap-2 text-base font-semibold text-ink"><Inbox class="size-4 text-brand" aria-hidden="true" /> Requests</h3>
       <div v-for="g in otherGroups" :key="g.id">
         <h4 class="eyebrow mb-2">{{ g.title }} ({{ g.items.length }})</h4>

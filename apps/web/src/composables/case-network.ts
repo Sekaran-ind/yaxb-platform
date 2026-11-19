@@ -9,6 +9,10 @@
 // Incoming cases arrive on the team's channel, or are collected from the box and the relay
 // (`collect`, on opening Services and every minute while the kiosk is open). Beacons (reference,
 // role, holder, time; never answers) go to the box, or the relay, so moderators see who has what.
+import { HOUSEHOLD_ENTRY, householdAllows, householdCaseJourney, householdRoles, profileActorId } from "@sekaran-ind/yaxb-core/household";
+import { useAccount } from "@/composables/account";
+import { household } from "@/composables/household";
+import { offers } from "@/lib/surface";
 import {
   beaconOf,
   BOX_TTL_HOURS,
@@ -47,16 +51,26 @@ async function capsReady() {
   }
 }
 /** Requests are kept on devices unless central storage is both offered (paid) and chosen. */
-export const onDevices = computed(() => !(casesCaps.value.central && settings.cases.storage === "central"));
+/** Requests stay on devices unless the paid central store is chosen; household requests always do (EDN-20). */
+export const onDevices = computed(() => !offers("requests") || !(casesCaps.value.central && settings.cases.storage === "central"));
 
-const service = createCaseService(localCaseStore, { journeyFor: async (entry, journey) => publishedJourney(entry, journey) });
+const service = createCaseService(localCaseStore, {
+  journeyFor: async (entry, journey) => (entry === HOUSEHOLD_ENTRY ? householdCaseJourney(journey) : publishedJourney(entry, journey)),
+  // A child's request goes only to that child's guardians (EDN-21).
+  allows: (c, a) => householdAllows(household.value)(c, a),
+});
 const team = useTeam();
+const account = useAccount();
 
 /** Who acts on this device: the signed-in member, or a visitor (known by this device). */
 export async function deviceActor(): Promise<CaseActor> {
   const v = kioskViewer.value;
   const device = (await thisDevice()).id;
   if (v.member && v.id) return { id: v.id, name: v.name ?? "A member", roles: v.roles, admin: v.admin, device };
+  // At home (Family, EDN-20): the open profile, with its household roles.
+  const me = account.profile.value;
+  if (offers("household") && me && account.profileId.value)
+    return { id: profileActorId(account.profileId.value), name: me.nickname, roles: householdRoles(household.value, account.profileId.value), admin: false, device };
   return { id: `guest:${device}`, name: "Visitor", roles: [], admin: false, guest: true, device };
 }
 
@@ -105,6 +119,9 @@ async function beacon(c: Case, to: Address | null) {
  * the case shows how far it got and can be sent again. Null when there's nothing to send.
  */
 export async function handOn(c: Case): Promise<Delivery | null> {
+  // A household request stays on this shared device: the next person signs in here (EDN-20).
+  // Households across several devices will use the box (SYN), not the team's channel or the relay.
+  if (c.entry_id === HOUSEHOLD_ENTRY) return null;
   await capsReady();
   const to = nextAddress(c);
   void beacon(c, to);
@@ -224,6 +241,7 @@ export async function noteOnDevice(key: string, text: string) {
 export async function finishOnDevice(key: string, decision: "done" | "declined", note?: string) {
   const r = await service.finish(await deviceActor(), key, { decision, ...(note?.trim() ? { note: note.trim() } : {}) });
   const c = (await localCaseStore.get(r.case.id))!;
+  if (c.entry_id === HOUSEHOLD_ENTRY) return r;
   void beacon(c, null);
   if (c.starter_device && c.starter_device !== (await thisDevice()).id) {
     const a = await deviceActor();

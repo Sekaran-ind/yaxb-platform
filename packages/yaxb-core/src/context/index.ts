@@ -14,13 +14,14 @@
 export const SURFACES = ["family", "business", "all"] as const;
 export type Surface = (typeof SURFACES)[number];
 
-export const FEATURES = ["catalogue", "requests", "staff", "front-desk", "join", "directory", "child-lock", "profiles"] as const;
+/** household: requests between the profiles at home (EDN-20..24), kept on the household's devices. */
+export const FEATURES = ["catalogue", "requests", "staff", "front-desk", "join", "directory", "child-lock", "profiles", "household"] as const;
 export type Feature = (typeof FEATURES)[number];
 
 /** What each surface leaves out. */
 const LEAVES_OUT: Record<Surface, readonly Feature[]> = {
   family: ["catalogue", "requests", "staff", "front-desk", "join", "directory"],
-  business: ["child-lock", "profiles"],
+  business: ["child-lock", "profiles", "household"],
   all: [],
 };
 

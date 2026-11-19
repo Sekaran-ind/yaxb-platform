@@ -106,6 +106,11 @@ export type CaseOptions = {
   journeyFor(entry: string, journey: string): Promise<CaseJourney | null>;
   now?: () => Date;
   id?: () => string;
+  /**
+   * A further rule on who may see and act on a case besides its starter (the household's: a child's
+   * request goes only to that child's guardians, EDN-21). Default: everyone the roles allow.
+   */
+  allows?: (c: Pick<Case, "entry_id" | "started_by">, a: CaseActor) => boolean;
 };
 
 const REF_CHARS = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -164,6 +169,7 @@ export const runActor = (c: Pick<Case, "started_by">, a: CaseActor): RunActor =>
 export function createCaseService(store: CaseStore, options: CaseOptions) {
   const now = () => (options.now?.() ?? new Date()).toISOString();
   const id = () => options.id?.() ?? crypto.randomUUID();
+  const allowed = (c: Pick<Case, "entry_id" | "started_by">, a: CaseActor) => c.started_by === a.id || (options.allows?.(c, a) ?? true);
   const event = (c: Case, a: CaseActor, kind: CaseEventKind, step: string | null = null, text: string | null = null) =>
     store.addEvent({ id: id(), case_id: c.id, at: now(), actor_id: a.id, actor_name: a.guest ? "Visitor" : a.name, kind, step, text });
 
@@ -185,7 +191,7 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
     if (c) {
       if (actor.guest) {
         if (byRef && c.started_by.startsWith("guest:")) return { c, a: { ...actor, id: c.started_by } };
-      } else if (mayView(c, actor)) return { c, a: actor };
+      } else if (mayView(c, actor) && allowed(c, actor)) return { c, a: actor };
     }
     throw new CaseError("There is no case with that reference, or it isn't yours to see.", 404);
   }
@@ -338,9 +344,9 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
       const open = await store.list({ open: true, limit: CASES_IN_LIST });
       const own = await store.list({ open: false, startedBy: a.id, limit: CASES_IN_LIST });
       const seen = new Set<string>();
-      const mine = open.filter((c) => isTurnOf(c, a) && seen.add(c.id));
+      const mine = open.filter((c) => isTurnOf(c, a) && allowed(c, a) && seen.add(c.id));
       const started = [...own, ...open.filter((c) => c.started_by === a.id)].filter((c) => !seen.has(c.id) && seen.add(c.id));
-      const others = open.filter((c) => !seen.has(c.id) && mayView(c, a) && seen.add(c.id));
+      const others = open.filter((c) => !seen.has(c.id) && mayView(c, a) && allowed(c, a) && seen.add(c.id));
       return { mine, started, others };
     },
 

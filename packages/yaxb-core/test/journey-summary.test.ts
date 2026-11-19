@@ -27,7 +27,7 @@ describe("journey summaries", () => {
     expect(s.asks).toContain("Your name");
     expect(s.uses).toEqual([]);
     expect(s.leavesDevice).toBe(true);
-    expect(s.privacy).toBe("Asks for main symptom, your name, city, how many days, how bad is it, temperature and visit date. Your answers go, as a request with a reference, to the staff who take it from you.");
+    expect(s.privacy).toBe("Asks for main symptom, your name, city, how many days, how bad is it, temperature and visit date. Your answers go, as a request with a reference, to whoever takes it from you.");
   });
 
   it("say when nothing leaves the device", () => {

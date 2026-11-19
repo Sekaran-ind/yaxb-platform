@@ -12,6 +12,7 @@ import { composeLocalAnswer, composeWebAnswer, EMBEDDING_MODELS, looksLikeEmerge
 import { resolveLayout, screensFor } from "@sekaran-ind/yaxb-core/screens";
 import { DEFAULT_LANGUAGE, type LanguageCode } from "@sekaran-ind/yaxb-core/settings";
 import { chooseSpelling } from "@sekaran-ind/yaxb-core/spell";
+import { HOUSEHOLD_ENTRY } from "@sekaran-ind/yaxb-core/household";
 import { checkSpelling, forgetSpelling } from "@/lib/browser/spell";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, toRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -411,6 +412,8 @@ async function onCard(turnId: string, action: "yes" | "no" | "start" | "sign-in"
 async function startJourney(id: string) {
   const j = kioskJourneys.value.find((x) => x.id === id);
   if (!j) return;
+  // A household request is someone's (EDN-20): open a profile first, so it can come back to them.
+  if (entryOfJourney(j.id) === HOUSEHOLD_ENTRY && !account.profileId.value) return openPrefs("profile");
   screen.value = "transcript";
   journey.value = null;
   const turn: JourneyTurn = { id: j.id, entry: entryOfJourney(j.id), title: j.title, run: null, status: "running" };
