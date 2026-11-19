@@ -1,7 +1,7 @@
 // Moderators and their keys (MOD-20..25, SEC-5), on the memory store and on the real D1 schema
 // (migrations applied to node:sqlite through a small D1-shaped adapter).
 import { describe, expect, it } from "vitest";
-import { auditEvent, createMemoryModeratorStore, createModeratorService, hashKey, KEY_PREFIX, looksLikeKey, moderatorProfileSchema, statusOf, type ModeratorStore } from "../src/moderators/index.js";
+import { AUDIT_GENESIS, auditEvent, verifyAuditChain, createMemoryModeratorStore, createModeratorService, hashKey, KEY_PREFIX, looksLikeKey, moderatorProfileSchema, statusOf, type ModeratorStore } from "../src/moderators/index.js";
 import { createD1ModeratorStore } from "../src/stores/d1.js";
 import { sqliteD1 } from "./sqlite-d1.js";
 
@@ -78,5 +78,57 @@ describe("audit entries", () => {
     const e = auditEvent({ actor_type: "admin", actor_id: null, actor_name: null, action: "moderator.updated", target_id: "m1", details: { fields: ["name", "roles"], note: "x".repeat(200), nested: { a: 1 } } });
     expect(e.details).toEqual({ fields: "name, roles", note: "x".repeat(80) });
     expect(() => auditEvent({ actor_type: "admin", actor_id: null, actor_name: null, action: "made.up" as never, target_id: null })).toThrow();
+  });
+});
+
+describe("the audit chain (AUD-2)", () => {
+  const event = (n: number) => auditEvent({ actor_type: "admin", actor_id: null, actor_name: "Administrator", action: "admin.signed_in", target_id: null, details: { n } });
+
+  it.each(stores)("links each record to the one before it, and the head moves with it: %s", async (_n, make) => {
+    const store = make();
+    for (let i = 0; i < 5; i++) await store.audit(event(i));
+    const chain = await store.auditChain();
+    expect(chain).toHaveLength(5);
+    expect(chain[0]!.prev_hash).toBe(AUDIT_GENESIS);
+    for (let i = 1; i < 5; i++) expect(chain[i]!.prev_hash).toBe(chain[i - 1]!.hash);
+    expect(await verifyAuditChain(chain)).toMatchObject({ ok: true, checked: 5 });
+    expect(await store.auditHead()).toEqual({ hash: chain[4]!.hash, count: 5 });
+    expect((await store.auditLog({ limit: 1 }))[0]!.hash).toBe(chain[4]!.hash);
+  });
+
+  it.each(stores)("stays one chain when records are written at the same time: %s", async (_n, make) => {
+    const store = make();
+    await Promise.all(Array.from({ length: 12 }, (_, i) => store.audit(event(i))));
+    const chain = await store.auditChain();
+    expect(chain).toHaveLength(12);
+    expect(await verifyAuditChain(chain)).toMatchObject({ ok: true, checked: 12 });
+  });
+
+  it("refuses, in the database, a second record after the same one (no fork across instances)", async () => {
+    const db = sqliteD1();
+    const store = createD1ModeratorStore(db);
+    await store.audit(event(0));
+    const [first] = await store.auditChain();
+    const fork = () =>
+      db
+        .prepare("INSERT INTO audit (id, at, actor_type, action, tenant_id, prev_hash, hash) VALUES (?1, ?2, 'admin', 'admin.signed_in', 'default', ?3, ?4)")
+        .bind(crypto.randomUUID(), new Date().toISOString(), first!.prev_hash, "f".repeat(64))
+        .run();
+    await expect(fork()).rejects.toThrow(/UNIQUE/);
+    // A write that lost a race (its head moved) is not inserted: the store reads the new head and retries.
+    await store.audit(event(1));
+    expect(await verifyAuditChain(await store.auditChain())).toMatchObject({ ok: true, checked: 2 });
+  });
+
+  it("finds a record changed after it was written, and one taken out", async () => {
+    const db = sqliteD1();
+    const store = createD1ModeratorStore(db);
+    for (let i = 0; i < 4; i++) await store.audit(event(i));
+    const chain = await store.auditChain();
+    await db.prepare("UPDATE audit SET details = ?1 WHERE id = ?2").bind(JSON.stringify({ n: 99 }), chain[1]!.id).run();
+    expect(await verifyAuditChain(await store.auditChain())).toMatchObject({ ok: false, brokenAt: chain[1]!.id, reason: expect.stringMatching(/changed/) });
+    await db.prepare("UPDATE audit SET details = ?1 WHERE id = ?2").bind(JSON.stringify({ n: 1 }), chain[1]!.id).run();
+    await db.prepare("DELETE FROM audit WHERE id = ?1").bind(chain[2]!.id).run();
+    expect(await verifyAuditChain(await store.auditChain())).toMatchObject({ ok: false, brokenAt: chain[3]!.id, reason: expect.stringMatching(/missing/) });
   });
 });

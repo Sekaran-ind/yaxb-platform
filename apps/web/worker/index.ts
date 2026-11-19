@@ -17,7 +17,7 @@ import { beaconSchema, CaseError, envelopeSchema, MAX_CASE_RUN, MAX_ENVELOPE, ma
 import { DesignerError, historyOf, LESSONS_IN_MEMORY, MAX_NARRATIVE } from "@sekaran-ind/yaxb-core/designer";
 import { ADMIN_ACTOR_ID, LibraryError, MAX_ENTRY_BYTES, permissionsOf, type LibraryActor } from "@sekaran-ind/yaxb-core/library";
 import { proposalEntry, ReviewError, type Reviewer } from "@sekaran-ind/yaxb-core/reviews";
-import { auditEvent, hashKey, looksLikeKey, MODERATOR_ROLES, statusOf, TeamRuleError } from "@sekaran-ind/yaxb-core/moderators";
+import { auditEvent, hashKey, looksLikeKey, MODERATOR_ROLES, statusOf, TeamRuleError, verifyAuditChain } from "@sekaran-ind/yaxb-core/moderators";
 import { AVAILABILITY, hubName, memberStatus, roomName, teamMember } from "@sekaran-ind/yaxb-core/team";
 import { HUB_HEADERS } from "./team";
 
@@ -568,7 +568,22 @@ app.post("/api/admin/moderators/:id/rotate", async (c) => {
 
 app.get("/api/admin/audit", async (c) => {
   const before = c.req.query("before");
-  return c.json({ events: await moderators(c.env).store.auditLog({ limit: 50, ...(before && /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(before) ? { before } : {}) }) });
+  const store = moderators(c.env).store;
+  const events = await store.auditLog({ limit: 50, ...(before && /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(before) ? { before } : {}) });
+  // Reading the audit log is itself audited (AUD-3): who, and how many records.
+  const who = await administrator(c);
+  await store.audit(auditEvent({ actor_type: "admin", actor_id: null, actor_name: who?.name ?? "Administrator", action: "audit.viewed", target_id: null, details: { scope: "all", count: events.length } }));
+  return c.json({ events });
+});
+
+/**
+ * The audit chain (AUD-2): its head (newest hash and count), for the box to compare daily, and a
+ * check of the newest records. Returns hashes and counts only.
+ */
+app.get("/api/admin/audit/chain", async (c) => {
+  const store = moderators(c.env).store;
+  const [head, check] = await Promise.all([store.auditHead(), store.auditChain(5000).then(verifyAuditChain)]);
+  return c.json({ head, check });
 });
 
 // ---- answer reviews and quality (MOD-4, MOD-10..13, MOD-30..34) ------------------------------------

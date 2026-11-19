@@ -10,7 +10,7 @@ import {
   type ThreadStore,
 } from "./index.js";
 import { feedbackSchema, newFeedbackItem, type FeedbackItem, type FeedbackStore } from "../feedback/index.js";
-import type { AuditEvent, Moderator, ModeratorStore } from "../moderators/index.js";
+import { AUDIT_GENESIS, auditHash, serially, type AuditEvent, type Moderator, type ModeratorStore } from "../moderators/index.js";
 import type { CustomRole, EntryRevision, Library, LibraryEntry, LibraryStore } from "../library/index.js";
 import type { Beacon, Case, CaseEvent, CaseStore, CaseSummary, Envelope, Mailbox } from "../cases/index.js";
 import type { EventStore, ServiceEvent } from "../metrics/index.js";
@@ -220,7 +220,12 @@ export function createD1FeedbackStore(db: D1Like): FeedbackStore {
  * Members on D1, scoped to one tenant (TEN-2): every query keeps to `tenant`, except finding a
  * member by their key hash, which looks across tenants (signing in tells the Worker the tenant).
  */
+/** One audit queue per tenant in this instance, whichever request's store writes (AUD-2). */
+const auditQueues = new Map<string, ReturnType<typeof serially>>();
+
 export function createD1ModeratorStore(db: D1Like, { tenant = "default" }: { tenant?: string } = {}): ModeratorStore {
+  let inOrder = auditQueues.get(tenant);
+  if (!inOrder) auditQueues.set(tenant, (inOrder = serially()));
   type Row = Omit<Moderator, "roles"> & { roles: string };
   const COLS = "id, name, label, roles, status, key_prefix, created_at, expires_at, last_seen_at, reviews, tenant_id AS tenant";
   const mod = (r: Row | null): Moderator | null => (r ? { ...r, roles: JSON.parse(r.roles) as Moderator["roles"] } : null);
@@ -279,11 +284,39 @@ export function createD1ModeratorStore(db: D1Like, { tenant = "default" }: { ten
         .bind(p.moderator_id, p.display_name, JSON.stringify(p.languages), JSON.stringify(p.sources), JSON.stringify(p.preferences), p.updated_at)
         .run();
     },
-    async audit(e) {
-      await db
-        .prepare("INSERT INTO audit (id, at, actor_type, actor_id, actor_name, action, target_id, details, tenant_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)")
-        .bind(e.id, e.at, e.actor_type, e.actor_id, e.actor_name, e.action, e.target_id, e.details ? JSON.stringify(e.details) : null, tenant)
-        .run();
+    /**
+     * The hash chain (AUD-2, migration 0015): the insert only happens while the tenant's head is
+     * still the one the hash was made from (one statement; a trigger moves the head), so two writes
+     * at once can't fork the chain. The one that lost reads the new head and tries again.
+     */
+    audit: (e) =>
+      inOrder(async () => {
+      for (let attempt = 0; attempt < 30; attempt++) {
+        if (attempt) await new Promise((r) => setTimeout(r, Math.random() * 20 * Math.min(attempt, 5)));
+        const head = await db.prepare("SELECT hash FROM audit_heads WHERE tenant_id = ?1").bind(tenant).first<{ hash: string }>();
+        const prev = head?.hash ?? AUDIT_GENESIS;
+        const hash = await auditHash(e, prev);
+        const r = await db
+          .prepare(
+            "INSERT INTO audit (id, at, actor_type, actor_id, actor_name, action, target_id, details, tenant_id, prev_hash, hash) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11 WHERE COALESCE((SELECT hash FROM audit_heads WHERE tenant_id = ?9), ?12) = ?10",
+          )
+          .bind(e.id, e.at, e.actor_type, e.actor_id, e.actor_name, e.action, e.target_id, e.details ? JSON.stringify(e.details) : null, tenant, prev, hash, AUDIT_GENESIS)
+          .run();
+        const changes = (r as { meta?: { changes?: number }; changes?: number | bigint } | null)?.meta?.changes ?? Number((r as { changes?: number | bigint } | null)?.changes ?? 0);
+        if (changes > 0) return;
+      }
+      throw new Error("The audit log is busy. Try again.");
+      }),
+    async auditHead() {
+      const r = await db.prepare("SELECT hash, n FROM audit_heads WHERE tenant_id = ?1").bind(tenant).first<{ hash: string; n: number }>();
+      return { hash: r?.hash ?? AUDIT_GENESIS, count: r?.n ?? 0 };
+    },
+    async auditChain(limit = 5000) {
+      const { results } = await db
+        .prepare("SELECT id, at, actor_type, actor_id, actor_name, action, target_id, details, prev_hash, hash FROM audit WHERE tenant_id = ?1 AND hash IS NOT NULL ORDER BY rowid DESC LIMIT ?2")
+        .bind(tenant, Math.min(Math.max(limit, 1), 20000))
+        .all<Omit<AuditEvent, "details"> & { details: string | null }>();
+      return results.reverse().map((r) => ({ ...r, details: r.details ? JSON.parse(r.details) : null }));
     },
     async auditLog({ limit = 100, actorId, targetId, before } = {}) {
       const where: string[] = [];
@@ -294,7 +327,7 @@ export function createD1ModeratorStore(db: D1Like, { tenant = "default" }: { ten
       if (before) where.push(`at < ?${values.push(before)}`);
       values.push(Math.min(Math.max(limit, 1), 500));
       const { results } = await db
-        .prepare(`SELECT id, at, actor_type, actor_id, actor_name, action, target_id, details FROM audit ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY at DESC LIMIT ?${values.length}`)
+        .prepare(`SELECT id, at, actor_type, actor_id, actor_name, action, target_id, details, prev_hash, hash FROM audit ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY at DESC LIMIT ?${values.length}`)
         .bind(...values)
         .all<Omit<AuditEvent, "details"> & { details: string | null }>();
       return results.map((r) => ({ ...r, details: r.details ? JSON.parse(r.details) : null }));
