@@ -41,6 +41,18 @@ export type SessionRow = { id: string; method: string; level: number; device: st
 const me = shallowRef<Me>({ signedIn: false });
 /** How sure the kiosk is of who this is (IDN-30): the account session's level, 0 when nobody is signed in. */
 export const accountLevel = computed(() => (me.value.signedIn ? me.value.level : 0));
+
+/** A box token from the account (IDN-42): a week long, verified by the box offline. */
+export const boxTokenFromAccount = () => api<{ token: string; expires_at: string }>("/api/identity/box/token", {});
+/** Renew the box token from the account when it has two days left (the person must be signed in). */
+async function renewBoxToken() {
+  const { settings, updateSettings } = await import("./settings");
+  const box = settings.box;
+  if (!box.account || !box.url || !me.value.signedIn) return;
+  if (box.expires && new Date(box.expires).getTime() - Date.now() > 2 * 86400_000) return;
+  const t = await boxTokenFromAccount().catch(() => null);
+  if (t) updateSettings({ box: { ...box, token: t.token, expires: t.expires_at } });
+}
 const config = shallowRef<IdentityConfig | null>(null);
 const loading = ref(false);
 let started = false;
@@ -68,6 +80,7 @@ async function load() {
   } finally {
     loading.value = false;
   }
+  void renewBoxToken();
   // The access token lasts 15 minutes: asking who is signed in renews it.
   if (me.value.signedIn && !timer) timer = setInterval(() => void load(), 10 * 60_000);
   if (!me.value.signedIn && timer) {

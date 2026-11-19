@@ -13,6 +13,10 @@ The kiosk can keep its data in four places (Settings → Storage):
 
 With **Local box**, the kiosk's browser talks to the box directly. That works whether the kiosk page comes from `localhost` or from Cloudflare, because the box is on the same network as the device, not the Worker. Each question still sends the notebook to the assistant as context, the same as with browser storage.
 
+## Signing the box in to your account (IDN-42)
+
+`node src/main.js login --site https://anjalai.cc` (on the Pi: `sudo -u yaxb-box node /opt/yaxb-box/src/main.js login`) shows a link and a code; approve it under Preferences → Account → Approve a device, then restart the box. People then connect with their account (Preferences → Storage → Connect with my account). The box checks their tokens itself, with the keys and revocations it fetched last (`site.json` beside the database, refreshed every five minutes), so they keep working while the internet is down, and a device signed out on the site stops at the box's next check. The shared token below stays for devices without an account.
+
 The CLI and a local server can use the box as well: set `YAXB_BOX_URL` and `YAXB_BOX_TOKEN`. Conversations then live on the box, and the agent's `/memories/` lives in the box's store through Deep Agents' `CompositeBackend` and `StoreBackend`.
 
 ## Install on the Pi (Pi 5, Raspberry Pi OS 64-bit)

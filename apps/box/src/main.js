@@ -2,6 +2,8 @@
 // Entry point for yaxb-box (deploy/yaxb-box.service runs this).
 import { networkInterfaces } from 'node:os';
 import { createBoxServer, loadConfig } from './server.js';
+import { createSiteLink } from './trust.js';
+import { hostname } from 'node:os';
 
 const lan = () =>
   Object.values(networkInterfaces())
@@ -10,6 +12,24 @@ const lan = () =>
     .map((i) => i.address);
 
 const config = loadConfig();
+
+// `yaxb-box login --site https://anjalai.cc`: sign the box in to its owner's account (IDN-42).
+if (process.argv[2] === 'login') {
+  const i = process.argv.indexOf('--site');
+  const site = i > 0 ? process.argv[i + 1] : 'https://anjalai.cc';
+  try {
+    const r = await createSiteLink(config.linkPath).login({
+      site,
+      name: `Box on ${hostname()}`.slice(0, 60),
+      show: (s) => console.log(`\nTo sign this box in, open\n\n  ${s.verification_uri_complete}\n\non a device where you are signed in, check the code ${s.user_code}, and approve it. Waiting…`),
+    });
+    console.log(`yaxb-box: signed in on ${r.site} as ${r.name}. Restart the box to use it.`);
+    process.exit(0);
+  } catch (e) {
+    console.error(`yaxb-box: ${e.message}`);
+    process.exit(1);
+  }
+}
 let box;
 try {
   box = createBoxServer(config);
