@@ -13,5 +13,6 @@ interface ImportMetaEnv {
   /** The Yaxb.ai portal's links to its platforms (SUR-7..9). */
   readonly VITE_FAMILY_URL?: string;
   readonly VITE_BUSINESS_URL?: string;
+  readonly VITE_COMMUNITY_URL?: string;
   readonly VITE_ENTERPRISE_URL?: string;
 }

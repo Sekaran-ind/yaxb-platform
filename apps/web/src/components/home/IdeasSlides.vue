@@ -6,12 +6,12 @@
 // Previous/Next, the dots, the two group buttons, the arrow keys and a swipe move between ideas;
 // #ideas-family and #ideas-business (the carousel's links) open that group's first idea.
 // Every card sits in the same grid cell, so the section keeps the tallest card's height.
-import { ArrowLeft, ArrowRight, Bike, Building2, GraduationCap, House, Scissors, UtensilsCrossed, Wrench, type LucideIcon } from "@lucide/vue";
+import { ArrowLeft, ArrowRight, Bike, Building2, GraduationCap, House, Landmark, Scissors, UtensilsCrossed, Wrench, type LucideIcon } from "@lucide/vue";
 import { offers } from "@/lib/surface";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { cn } from "@/lib/cn";
 
-type Group = "family" | "business";
+type Group = "family" | "business" | "community";
 interface Idea {
   group: Group;
   icon: LucideIcon;
@@ -27,6 +27,7 @@ interface Idea {
 const GROUPS: { id: Group; label: string }[] = [
   { id: "business", label: "Small business" },
   { id: "family", label: "Family and personal" },
+  { id: "community", label: "Community" },
 ];
 
 const ALL_IDEAS: Idea[] = [
@@ -129,8 +130,8 @@ const ALL_IDEAS: Idea[] = [
     steps: [
       { title: "Fill the notebook", body: "Add the manuals, warranty cards and school circulars as they arrive. Photos and PDFs both work." },
       { title: "Everyone asks", body: "\"When does the fridge warranty end?\" in Tamil, Hindi or English, with the warranty card cited." },
-      { title: "Ask for something", body: "A child asks for something and says why. Anything broken is reported the same way." },
-      { title: "A parent decides", body: "A parent approves or says no with a reason; whoever handles repairs books the electrician with a date." },
+      { title: "Ask for something", body: "From At home in Quick tools, a child asks for something and says why. Anything broken is reported the same way." },
+      { title: "A parent decides", body: "It goes only to that child's own parents, who say yes or not now; whoever handles repairs books the electrician with a date." },
     ],
     idea:
       "A family kiosk at home. Journey 1, Ask for something: a child says what they want and why; a parent approves or says no with a reason. " +
@@ -138,7 +139,7 @@ const ALL_IDEAS: Idea[] = [
       "Roles: parent, repairs. Key dates: birthdays, anniversaries and when bills are due.",
   },
   {
-    group: "family",
+    group: "community",
     icon: Building2,
     title: "Apartment association",
     summary: "The bylaws and the vendor list answer residents' questions; complaints and hall bookings reach the committee.",
@@ -155,6 +156,23 @@ const ALL_IDEAS: Idea[] = [
       "Journey 2, Book the community hall: a resident chooses the date, the time and the number of guests; a committee member approves or declines. " +
       "Roles: secretary, committee member. Key dates: the annual general meeting.",
   },
+  {
+    group: "community",
+    icon: Landmark,
+    title: "Temple or club committee",
+    summary: "The calendar and the rules answer members' questions; hall and pooja bookings, and donations' receipts, reach the right committee member.",
+    notebook: ["The festival and event calendar", "Booking rules and charges", "Donation and receipt rules", "Committee contacts"],
+    roles: ["Member", "Secretary", "Treasurer"],
+    steps: [
+      { title: "Fill the notebook", body: "The secretary adds the calendar, the rules and the charges; notices go in as they are issued." },
+      { title: "Members ask", body: "\"When is the Karthigai Deepam pooja?\" in Tamil, Hindi or English, with the calendar cited." },
+      { title: "Book or ask for a receipt", body: "A member chooses a date for the hall or a pooja, or asks for a receipt for a donation." },
+      { title: "The committee acts", body: "The secretary confirms the booking; the treasurer sends the receipt, each with a reference." },
+    ],
+    idea:
+      "Our temple committee. Journey 1, Book a pooja or the hall: a member chooses the date, the kind of booking and the number of guests; the secretary confirms or suggests another date. " +
+      "Journey 2, Donation receipt: a member gives the date, the amount and the name for the receipt; the treasurer issues it. Roles: secretary, treasurer. Key dates: the festivals.",
+  },
 ];
 
 /** `only`: one group's ideas, without the switch (a surface's own home page, SUR-2). */
@@ -168,7 +186,7 @@ const designLink = (text: string) => ({ path: "/catalogue", query: { service: "n
 
 // The carousel's links: #ideas-family / #ideas-business open that group.
 function fromHash() {
-  const g = location.hash === "#ideas-family" ? "family" : location.hash === "#ideas-business" ? "business" : null;
+  const g = location.hash === "#ideas-family" ? "family" : location.hash === "#ideas-business" ? "business" : location.hash === "#ideas-community" ? "community" : null;
   if (g) go(firstOf(g));
 }
 onMounted(() => {
@@ -194,6 +212,7 @@ function onKey(e: KeyboardEvent) {
   <div aria-roledescription="carousel" aria-label="Ideas for your Service Catalogue" @touchstart.passive="touchStart" @touchend="touchEnd" @keydown="onKey">
     <span id="ideas-family" class="block scroll-mt-20" aria-hidden="true" />
     <span id="ideas-business" class="block scroll-mt-20" aria-hidden="true" />
+    <span id="ideas-community" class="block scroll-mt-20" aria-hidden="true" />
 
     <!-- Controls: the two groups, then where you are and Previous/Next -->
     <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -209,7 +228,8 @@ function onKey(e: KeyboardEvent) {
           {{ g.label }}
         </button>
       </div>
-      <div class="flex items-center gap-2">
+      <!-- One idea: nothing to move between. -->
+      <div v-if="IDEAS.length > 1" class="flex items-center gap-2">
         <span class="mr-1 text-sm text-gray-500 tabular-nums" aria-live="polite">{{ current + 1 }} / {{ IDEAS.length }}</span>
         <button type="button" class="btn-light h-10 gap-1.5 px-4" aria-label="Previous idea" @click="go(current - 1)"><ArrowLeft class="size-4" aria-hidden="true" /> <span class="hidden sm:inline">Previous</span></button>
         <button type="button" class="btn-light h-10 gap-1.5 px-4" aria-label="Next idea" @click="go(current + 1)"><span class="hidden sm:inline">Next</span> <ArrowRight class="size-4" aria-hidden="true" /></button>
@@ -228,7 +248,7 @@ function onKey(e: KeyboardEvent) {
       >
         <div class="grid h-full lg:grid-cols-[1fr_1.35fr]">
           <div class="flex flex-col border-b border-gray-200/70 bg-mist/60 p-7 lg:border-r lg:border-b-0">
-            <p class="eyebrow">{{ i.group === "family" ? "Family and personal" : "Small business" }}</p>
+            <p class="eyebrow">{{ GROUPS.find((g) => g.id === i.group)?.label }}</p>
             <h3 class="mt-2 flex items-center gap-2.5 text-2xl font-semibold tracking-tight text-ink"><component :is="i.icon" class="size-6 shrink-0" aria-hidden="true" /> {{ i.title }}</h3>
             <p class="mt-3 text-sm leading-relaxed text-gray-600">{{ i.summary }}</p>
             <h4 class="mt-6 text-xs font-semibold tracking-wide text-gray-500 uppercase">The notebook holds</h4>
@@ -255,7 +275,7 @@ function onKey(e: KeyboardEvent) {
       </article>
     </div>
 
-    <div class="mt-5 flex justify-center gap-1.5">
+    <div v-if="IDEAS.length > 1" class="mt-5 flex justify-center gap-1.5">
       <button
         v-for="(i, n) in IDEAS"
         :key="i.title"

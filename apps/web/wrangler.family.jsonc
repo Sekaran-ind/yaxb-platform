@@ -17,6 +17,9 @@
   //   "limits": { "cpu_ms": 60000 },
   "observability": { "enabled": true },
 
+  // The edition's own domain (DOM-1), kept by every deploy. anjalai.cc is a zone on this account.
+  "routes": [{ "pattern": "family.anjalai.cc", "custom_domain": true }],
+
   // Threads, the moderation queue and the agent's long-term store. Create once with
   // `npx wrangler d1 create yaxb` and put the id here; local dev works without it.
   "d1_databases": [
@@ -25,6 +28,15 @@
       "database_name": "anjal-family",
       "database_id": "3ff23c41-3ae1-46fc-ab2d-4870f25572d6",
       "migrations_dir": "../../packages/yaxb-core/migrations"
+    },
+    // The shared platform database (PLA-1): records every edition reads and writes (accounts,
+    // approved sites, email routing, the directory). Create once with `npx wrangler d1 create
+    // anjal-platform` and put its id here, in every edition's wrangler file.
+    {
+      "binding": "PLATFORM_DB",
+      "database_name": "anjal-platform",
+      "database_id": "00000000-0000-0000-0000-000000000001",
+      "migrations_dir": "../../packages/yaxb-core/migrations-platform"
     }
   ],
 

@@ -10,17 +10,17 @@ Each edition is its own Worker with its own database (SUR-1). Shared code is alr
 
 | ID | Requirement | Status |
 |---|---|---|
-| PLA-1 | One D1 database, `anjal-platform`, must be bound to every edition's Worker (binding `PLATFORM_DB`) next to that edition's own `DB`. Its migrations live in yaxb-core beside the edition migrations, in their own folder. | Planned |
+| PLA-1 | One D1 database, `anjal-platform`, must be bound to every edition's Worker (binding `PLATFORM_DB`) next to that edition's own `DB`. Its migrations live in yaxb-core beside the edition migrations, in their own folder. | Built: `PLATFORM_DB` in every wrangler file, migrations in `packages/yaxb-core/migrations-platform` (0001: `platform_meta`). The remote database is created at the first deploy. |
 | PLA-2 | Only records that cross editions go in the platform database: accounts and their sign-in methods (15), the approved-sites catalogue (14), email routing (16) and the directory. Cases, the catalogue, reviews, the team, conversations and everything else stay in the edition's own database. | Planned |
 | PLA-3 | The code that uses the platform database must live in yaxb-core under its own exports (`./identity`, `./sites`, `./email`), like `./tenants` and `./library` today, with memory and D1 stores tested on both. | Planned |
 | PLA-4 | Every query on the platform database that touches tenant data must name the tenant and the edition, so a family tenant and a business tenant with the same id cannot meet. | Planned |
-| PLA-5 | A developer's local run (`node yaxb.mjs start`) must create and migrate a local `anjal-platform` beside the edition database, as it does for `DB` today. | Planned |
+| PLA-5 | A developer's local run (`node yaxb.mjs start`) must create and migrate a local `anjal-platform` beside the edition database, as it does for `DB` today. | Built: `node yaxb.mjs start` (and `db:migrate:local`) migrates a local `anjal-platform`. |
 
 ## Domains
 
 | ID | Requirement | Status |
 |---|---|---|
-| DOM-1 | The editions are served at `family.anjalai.cc`, `business.anjalai.cc` and `community.anjalai.cc`. The custom domains must be declared in each edition's wrangler file, so a deploy keeps them, and the portal's `VITE_*_URL` defaults must point at them. | Planned |
+| DOM-1 | The editions are served at `family.anjalai.cc`, `business.anjalai.cc` and `community.anjalai.cc`. The custom domains must be declared in each edition's wrangler file, so a deploy keeps them, and the portal's `VITE_*_URL` defaults must point at them. | Built: `routes` with `custom_domain` in each edition's wrangler file; the portal's links default to the anjalai.cc domains. |
 | DOM-2 | The account session cookie (IDN, 15) must be scoped to `.anjalai.cc`, so one sign-in works on every edition. Each edition's own cookies (`yaxb_sid`, the member cookie) stay host-only. | Planned |
 | DOM-3 | Passkeys must use the relying-party id `anjalai.cc`, so a passkey made on one edition works on the others. | Planned |
 | DOM-4 | The email assistant's address is `review@anjalai.cc` (16); Email Routing for `anjalai.cc` must be on the same Cloudflare account. | Planned |
@@ -30,11 +30,11 @@ Each edition is its own Worker with its own database (SUR-1). Shared code is alr
 
 | ID | Requirement | Status |
 |---|---|---|
-| EDN-1 | Tenants must have a third kind, `community`, beside `business` and `family` (a migration of `tenants.kind`). | Planned |
-| EDN-2 | yaxb-core's context must have a `community` surface. It offers what Business offers (the catalogue, requests, staff, the front desk, join links, the directory), plus profiles and the child lock from Family. | Planned |
-| EDN-3 | The Community edition is its own Worker (`anjal-community`, `wrangler.community.jsonc`, `vite build --mode community`) with its own database and secrets, like the other two (SUR-1), and the platform database (PLA-1). | Planned |
-| EDN-4 | The Community edition must have its own home page and words: residents, the committee, blocks, the hall, dues, notices. The "Apartment association" idea moves there from the Family home page. | Planned |
-| EDN-5 | The portal must offer Community as its own card, and "Which fits you?" must be able to point to it. | Planned |
+| EDN-1 | Tenants must have a third kind, `community`, beside `business` and `family` (a migration of `tenants.kind`). | Built: `Tenant.kind` takes `community` (`tenants.kind` is plain text, so no migration was needed). |
+| EDN-2 | yaxb-core's context must have a `community` surface. It offers what Business offers (the catalogue, requests, staff, the front desk, join links, the directory), plus profiles and the child lock from Family. | Built: the `community` surface offers everything but household requests. |
+| EDN-3 | The Community edition is its own Worker (`anjal-community`, `wrangler.community.jsonc`, `vite build --mode community`) with its own database and secrets, like the other two (SUR-1), and the platform database (PLA-1). | Built: `wrangler.community.jsonc` (anjal-community), `vite build --mode community`, `dev:`/`build:`/`preview:`/`deploy:community`. |
+| EDN-4 | The Community edition must have its own home page and words: residents, the committee, blocks, the hall, dues, notices. The "Apartment association" idea moves there from the Family home page. | Built: `pages/CommunityHomePage.vue`, the Community slide and ideas (the apartment association moved from Family, and a temple or club committee). |
+| EDN-5 | The portal must offer Community as its own card, and "Which fits you?" must be able to point to it. | Built: the portal's Community card, and "My association, club or committee" in Which fits you? |
 | EDN-6 | A committee's roles change at each election. The community organisation (ORG, 13) gives each committee role a term and an election hand-over that moves the role, its open cases and its records to the new holder in one step. | Planned |
 | EDN-7 | A committee must never be able to read a member's own notebook, journal, conversations or family data. It sees only the complaints, bookings and dues that come to it. | Planned |
 | EDN-8 | When a member leaves a community, their access must end at once. Their past complaints stay as the association's records. | Planned |

@@ -24,6 +24,15 @@
       "database_name": "yaxb",
       "database_id": "96e1dade-764b-4fe9-9950-8d9988ccf19b",
       "migrations_dir": "../../packages/yaxb-core/migrations"
+    },
+    // The shared platform database (PLA-1): records every edition reads and writes (accounts,
+    // approved sites, email routing, the directory). Create once with `npx wrangler d1 create
+    // anjal-platform` and put its id here, in every edition's wrangler file.
+    {
+      "binding": "PLATFORM_DB",
+      "database_name": "anjal-platform",
+      "database_id": "00000000-0000-0000-0000-000000000001",
+      "migrations_dir": "../../packages/yaxb-core/migrations-platform"
     }
   ],
 

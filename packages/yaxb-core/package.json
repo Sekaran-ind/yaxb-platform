@@ -171,6 +171,7 @@
   "files": [
     "dist",
     "migrations",
+    "migrations-platform",
     "content",
     "!dist/**/*.test.*"
   ],

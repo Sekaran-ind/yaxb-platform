@@ -11,7 +11,7 @@
 //             (consent wording, what may be kept) the way ClinüxFlow's realm does: not yet.
 //
 // As in ClinüxFlow, "surface" is which app it is; "realm" is kept for the regulatory context.
-export const SURFACES = ["family", "business", "all"] as const;
+export const SURFACES = ["family", "business", "community", "all"] as const;
 export type Surface = (typeof SURFACES)[number];
 
 /** household: requests between the profiles at home (EDN-20..24), kept on the household's devices. */
@@ -22,6 +22,8 @@ export type Feature = (typeof FEATURES)[number];
 const LEAVES_OUT: Record<Surface, readonly Feature[]> = {
   family: ["catalogue", "requests", "staff", "front-desk", "join", "directory"],
   business: ["child-lock", "profiles", "household"],
+  // An association, club or committee (EDN-2): what Business offers, with profiles and the child lock.
+  community: ["household"],
   all: [],
 };
 
@@ -63,4 +65,4 @@ export function servesApi(ctx: Context, path: string): boolean {
 }
 
 /** The surface's name for people. */
-export const surfaceName = (ctx: Context) => (ctx.surface === "family" ? "Anjal Family" : ctx.surface === "business" ? "Anjal for Business" : "Yaxb.ai");
+export const surfaceName = (ctx: Context) => (ctx.surface === "family" ? "Anjal Family" : ctx.surface === "business" ? "Anjal for Business" : ctx.surface === "community" ? "Anjal Community" : "Yaxb.ai");

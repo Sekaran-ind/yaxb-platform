@@ -12,12 +12,12 @@ const STEPS = [
   { icon: Sparkles, title: "Describe a service", body: "The AI designer drafts its journeys, screens and roles; the Legal Guardian writes the consent forms." },
   { icon: UserPlus, title: "Bring your team", body: "Send join links for each role. You accept who joins; each person gets their own key." },
   { icon: ArrowRightLeft, title: "Serve customers", body: "Customers ask in their own language and start requests; each goes to the right person, with a reference." },
-  { icon: ShieldCheck, title: "See how it goes", body: "My work for staff, and a dashboard per service: completion, waits, outcomes and the activity log." },
+  { icon: ShieldCheck, title: "See how it goes", body: "My work for staff, and a dashboard per service: completion, waits and outcomes. The audit log shows if any record was changed afterwards." },
 ];
 const PRINCIPLES = [
   { title: "Facts, not opinions", body: "Answers say what a source says and name it. No advice of the kiosk's own." },
   { title: "Your devices first", body: "Requests stay on your team's devices or your own box. The cloud is a transient relay; central storage is the paid plan." },
-  { title: "Consent in plain words", body: "Every service carries a consent form per role, reviewed with the service, shown before anyone starts." },
+  { title: "Consent and fairness", body: "Every service carries a consent form per role, and an ethics check: a reviewer must give a lawful reason to publish one that treats people differently." },
   { title: "Keys stay on the server", body: "AI and search keys never reach a browser; staff keys are shown once and stored hashed." },
 ];
 </script>

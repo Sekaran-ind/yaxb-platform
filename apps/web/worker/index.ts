@@ -384,7 +384,7 @@ app.get("/api/directory", async (c) => c.json({ tenants: await tenants(c.env).di
 app.post("/api/tenants", async (c) => {
   if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
   if (!(await isAdmin(c))) return jsonError(c, 401, "Only this deployment's administrator adds businesses.");
-  const body = (await readJson(c, MAX_FORM_BODY)).body as { name?: string; slug?: string; kind?: "business" | "family" };
+  const body = (await readJson(c, MAX_FORM_BODY)).body as { name?: string; slug?: string; kind?: "business" | "family" | "community" };
   try {
     const t = await tenants(c.env).createTenant({ name: String(body?.name ?? ""), slug: String(body?.slug ?? ""), kind: body?.kind });
     await audited(c, "tenant.created", "Administrator", t.id, { slug: t.slug });
