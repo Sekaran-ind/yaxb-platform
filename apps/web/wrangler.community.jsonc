@@ -27,7 +27,7 @@
     {
       "binding": "DB",
       "database_name": "anjal-community",
-      "database_id": "00000000-0000-0000-0000-000000000002",
+      "database_id": "393eafc5-5826-4ad8-8ad6-5bff476381da",
       "migrations_dir": "../../packages/yaxb-core/migrations"
     },
     // The shared platform database (PLA-1): records every edition reads and writes (accounts,
@@ -36,7 +36,7 @@
     {
       "binding": "PLATFORM_DB",
       "database_name": "anjal-platform",
-      "database_id": "00000000-0000-0000-0000-000000000001",
+      "database_id": "dffb9bd2-336d-47b3-a189-7980064af238",
       "migrations_dir": "../../packages/yaxb-core/migrations-platform"
     }
   ],

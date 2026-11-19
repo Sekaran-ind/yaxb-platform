@@ -35,7 +35,7 @@
     {
       "binding": "PLATFORM_DB",
       "database_name": "anjal-platform",
-      "database_id": "00000000-0000-0000-0000-000000000001",
+      "database_id": "dffb9bd2-336d-47b3-a189-7980064af238",
       "migrations_dir": "../../packages/yaxb-core/migrations-platform"
     }
   ],
