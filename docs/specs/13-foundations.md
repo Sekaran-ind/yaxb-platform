@@ -97,8 +97,8 @@ Nothing on the device is ever removed today, and Anjal never asks the browser to
 | ID | Requirement | Status |
 |---|---|---|
 | AUD-1 | Audit rows and service events can be exported as one record shape (who, what, which target, when, outcome, facts), as a schema.org `Action`. Clinux maps it to FHIR AuditEvent and Provenance. | Planned |
-| AUD-2 | Each audit record carries the hash of the one before it, per tenant. The box and the server compare chain heads daily. | Planned |
-| AUD-3 | Reading or exporting the audit log is itself audited (`audit.viewed`, `audit.exported`). | Planned |
+| AUD-2 | Each audit record carries the hash of the one before it, per tenant. The box and the server compare chain heads daily. | Partly built: the chain (`auditHash`, `verifyAuditChain`, migration 0015 with a per-tenant head that a record can only follow, so two writes can't fork it) and `GET /api/admin/audit/chain` (head and check), shown in Administration. The box's daily comparison waits for the box to hold the log. |
+| AUD-3 | Reading or exporting the audit log is itself audited (`audit.viewed`, `audit.exported`). | Partly built: `audit.viewed` when the audit log or a service's audit trail is read. `audit.exported` is defined for the export, which isn't built. |
 | AUD-4 | Form filling is measured per run: six counts (filled, asked, resolved, dismissed, out of scope, unmatched), plus the ids of fields that ended unmatched, dismissed or out of scope. Never the values, and never per person. Per-field events are not kept. | Planned |
 | AUD-5 | Each feature in 12–16 adds its audit actions and events when it ships, facts only. None may hold answers, messages, photos, transcripts, face images or connector payloads. | Planned |
 | AUD-6 | A case passed to another service or business carries a trace (trace id, parent, root, hop count capped at 10, a keyed digest of what this hop received, the sender's signature), never the earlier request's payload. `trace.sent` and `trace.received` record the trace without the payload. | Planned |

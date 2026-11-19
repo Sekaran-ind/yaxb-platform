@@ -2,7 +2,7 @@
 // Administration (MOD-20..23, MOD-25, TEAM-1..6): sign in with the administrator token (or as a
 // member with the administrator role), then invite members (their key is shown once), change their
 // roles, suspend, reinstate or remove them, and read the audit log.
-import { AUDIT_ACTIONS, MODERATOR_ROLES, type AuditEvent, type Moderator, type ModeratorStatus } from "@sekaran-ind/yaxb-core/moderators";
+import { AUDIT_ACTIONS, MODERATOR_ROLES, type AuditEvent, type ChainCheck, type Moderator, type ModeratorStatus } from "@sekaran-ind/yaxb-core/moderators";
 import { memberStatus, type MemberStatus } from "@sekaran-ind/yaxb-core/team";
 import { Copy, KeyRound, Lock, LogOut, Pencil, RefreshCw, RotateCw, ShieldAlert, Trash2, UserPlus } from "@lucide/vue";
 import { ConfirmAction } from "@sekaran-ind/yaxb-journeys/vue";
@@ -18,6 +18,8 @@ const error = ref<string | null>(null);
 const busy = ref(false);
 const rows = ref<Row[]>([]);
 const audit = ref<AuditEvent[]>([]);
+/** The audit chain (AUD-2): its head, and a check of the newest records. */
+const chain = ref<{ head: { hash: string; count: number }; check: ChainCheck } | null>(null);
 const form = ref<{ name: string; label: string; roles: string[]; expiresInDays: number | null } | null>(null);
 /** A key just issued or rotated: shown once, until dismissed. */
 const shownKey = ref<{ name: string; key: string } | null>(null);
@@ -40,6 +42,7 @@ async function load() {
     if (!admin.value?.admin) return;
     rows.value = (await api<{ moderators: Row[] }>("/api/admin/moderators")).moderators;
     audit.value = (await api<{ events: AuditEvent[] }>("/api/admin/audit")).events;
+    chain.value = await api<NonNullable<typeof chain.value>>("/api/admin/audit/chain").catch(() => null);
   } catch (e) {
     error.value = (e as Error).message;
   }
@@ -127,7 +130,7 @@ onMounted(load);
       <section class="card p-5">
         <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h3 class="font-semibold text-ink">Team</h3>
-          <div class="flex gap-2">
+          <div class="flex flex-wrap gap-2">
             <button type="button" class="btn-light" @click="form = { name: '', label: '', roles: ['moderator'], expiresInDays: null }"><UserPlus class="size-4" aria-hidden="true" /> Invite member</button>
             <button type="button" class="btn-light" aria-label="Refresh" @click="load"><RefreshCw class="size-4" aria-hidden="true" /></button>
             <button type="button" class="btn-light" @click="signOut"><LogOut class="size-4" aria-hidden="true" /> Sign out</button>
@@ -223,7 +226,12 @@ onMounted(load);
 
       <section class="card p-5">
         <h3 class="font-semibold text-ink">Audit log</h3>
-        <p class="mt-1 mb-3 text-sm text-gray-500">Who did what and when. It never records what was reviewed or asked.</p>
+        <p class="mt-1 mb-3 text-sm text-gray-500">Who did what and when, including who read this log. It never records what was reviewed or asked.</p>
+        <p v-if="chain" role="status" :class="cn('mb-3 rounded-lg px-3 py-2 text-sm', chain.check.ok ? 'bg-success/10 text-ink' : 'bg-danger/10 text-red-800')">
+          <template v-if="chain.check.ok">Intact: each of the {{ chain.check.checked }} newest records carries the hash of the one before it, and none was changed.</template>
+          <template v-else>The chain is broken: {{ chain.check.reason }} (record {{ chain.check.brokenAt }}). Tell whoever runs this server.</template>
+          <span class="mt-0.5 block font-mono text-xs break-all text-gray-500">Head {{ chain.head.hash.slice(0, 16) }}… · {{ chain.head.count }} chained records</span>
+        </p>
         <p v-if="!audit.length" class="text-sm text-gray-500">Nothing yet.</p>
         <ol v-else class="divide-y divide-gray-100 text-sm">
           <li v-for="e in audit" :key="e.id" class="flex flex-wrap items-baseline justify-between gap-x-4 py-2">

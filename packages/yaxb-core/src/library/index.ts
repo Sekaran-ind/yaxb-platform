@@ -386,7 +386,10 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
     /** What happened to a service: created, saved, submitted, reviewed, archived (never its content). */
     async auditTrail(a: LibraryActor, id: string) {
       await getEntry(a, id);
-      return options.auditTrail ? options.auditTrail(id) : [];
+      const events = options.auditTrail ? await options.auditTrail(id) : [];
+      // Reading an audit trail is itself audited (AUD-3).
+      await audit(a, "audit.viewed", id, { scope: "entry", count: events.length });
+      return events;
     },
 
     /** A new service, as a draft owned by its author. `libraryId` "default" (or none): the catalogue's default library. */

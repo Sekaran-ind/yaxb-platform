@@ -56,6 +56,8 @@ export type ModeratorProfile = {
 };
 
 export const AUDIT_ACTIONS = {
+  "audit.viewed": "Audit log viewed",
+  "audit.exported": "Audit log exported",
   "admin.signed_in": "Administrator signed in",
   "moderator.signed_in": "Moderator signed in",
   "moderator.sign_in_refused": "Sign-in refused",
@@ -104,7 +106,52 @@ export type AuditEvent = {
   target_id: string | null;
   /** Short facts only (a label, a role list, a count): never what was reviewed or asked. */
   details: Record<string, string | number | boolean> | null;
+  /**
+   * The hash chain (AUD-2): the hash of the tenant's record before this one, and this record's
+   * own hash over its facts and that one. Set by the store; null on records from before the chain.
+   */
+  prev_hash?: string | null;
+  hash?: string | null;
 };
+
+/**
+ * Runs async work one after another (a store's audit writes in one instance), so each record is
+ * hashed from the head the one before it left. Other instances are handled by the store (D1).
+ */
+export function serially(): <T>(work: () => Promise<T>) => Promise<T> {
+  let tail: Promise<unknown> = Promise.resolve();
+  return (work) => {
+    const run = tail.then(work, work);
+    tail = run.catch(() => undefined);
+    return run;
+  };
+}
+
+/** Where every tenant's chain starts. */
+export const AUDIT_GENESIS = "0".repeat(64);
+
+/** A record's hash (AUD-2): SHA-256 over its facts, in a fixed order, and the hash before it. */
+export async function auditHash(e: AuditEvent, prev: string): Promise<string> {
+  const details = e.details ? Object.fromEntries(Object.entries(e.details).sort(([a], [b]) => a.localeCompare(b))) : null;
+  return hashKey(JSON.stringify([prev, e.id, e.at, e.actor_type, e.actor_id, e.actor_name, e.action, e.target_id, details]));
+}
+
+export type ChainCheck = { ok: boolean; checked: number; head: string; brokenAt: string | null; reason: string | null };
+
+/**
+ * Re-computes a chain, oldest first (AUD-2). Records from before the chain (no hash) are skipped.
+ * A window that doesn't start at the beginning is checked from its first record's prev_hash.
+ */
+export async function verifyAuditChain(oldestFirst: readonly AuditEvent[]): Promise<ChainCheck> {
+  const chained = oldestFirst.filter((e) => e.hash);
+  let prev = chained[0]?.prev_hash ?? AUDIT_GENESIS;
+  for (const e of chained) {
+    if (e.prev_hash !== prev) return { ok: false, checked: chained.indexOf(e), head: prev, brokenAt: e.id, reason: "a record is missing or out of order before this one" };
+    if ((await auditHash(e, prev)) !== e.hash) return { ok: false, checked: chained.indexOf(e), head: prev, brokenAt: e.id, reason: "this record was changed after it was written" };
+    prev = e.hash!;
+  }
+  return { ok: true, checked: chained.length, head: prev, brokenAt: null, reason: null };
+}
 
 // ---- input ------------------------------------------------------------------------------------------
 
@@ -186,6 +233,10 @@ export interface ModeratorStore {
   remove(id: string): Promise<boolean>;
   audit(e: AuditEvent): Promise<void>;
   auditLog(opts?: { limit?: number; actorId?: string; targetId?: string; before?: string }): Promise<AuditEvent[]>;
+  /** The chain's newest hash and how many records it holds (AUD-2), to compare with the box. */
+  auditHead(): Promise<{ hash: string; count: number }>;
+  /** The newest `limit` chained records, oldest first, to verify. */
+  auditChain(limit?: number): Promise<AuditEvent[]>;
 }
 
 /** An audit entry, with details limited to short scalar facts. */
@@ -296,6 +347,8 @@ export function createMemoryModeratorStore(): ModeratorStore {
   const rows = new Map<string, Moderator & { key_hash: string }>();
   const profiles = new Map<string, ModeratorProfile>();
   const log: AuditEvent[] = [];
+  let chained = 0;
+  const inOrder = serially();
   const strip = (r: Moderator & { key_hash: string }): Moderator => {
     const { key_hash: _, ...m } = r;
     return { ...m, roles: [...m.roles] };
@@ -336,9 +389,18 @@ export function createMemoryModeratorStore(): ModeratorStore {
       profiles.delete(id);
       return rows.delete(id);
     },
-    async audit(e) {
-      log.unshift(e);
-      log.length = Math.min(log.length, 5000);
+    audit: (e) =>
+      inOrder(async () => {
+        const prev = log[0]?.hash ?? AUDIT_GENESIS;
+        log.unshift({ ...e, prev_hash: prev, hash: await auditHash(e, prev) });
+        log.length = Math.min(log.length, 5000);
+        chained++;
+      }),
+    async auditHead() {
+      return { hash: log[0]?.hash ?? AUDIT_GENESIS, count: chained };
+    },
+    async auditChain(limit = 5000) {
+      return log.slice(0, Math.max(1, limit)).reverse();
     },
     async auditLog({ limit = 100, actorId, targetId, before } = {}) {
       return log.filter((e) => (!actorId || e.actor_id === actorId) && (!targetId || e.target_id === targetId) && (!before || e.at < before)).slice(0, Math.min(Math.max(limit, 1), 500));

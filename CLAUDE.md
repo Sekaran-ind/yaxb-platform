@@ -159,7 +159,7 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
 - `moderators/` (core):
   - `createModeratorService(store)`: `issue` returns `{ moderator, key }`, and that is the only time the key appears. `revoke`, `rotate` and `change` are the other key operations.
   - Signing in checks the key's hash and that it is active and unexpired. `profile` and `saveProfile` handle the moderator profile (`moderatorProfileSchema`: sources must be real knowledge source ids).
-  - `auditEvent` keeps short facts only. Keys are `yaxb_mod_` plus 43 base64url characters (256 bits); `hashKey` is SHA-256 hex.
+  - `auditEvent` keeps short facts only. The audit chain (AUD-2): stores set `prev_hash` and `hash` (`auditHash`, SHA-256 over the facts and the hash before), per tenant from `AUDIT_GENESIS`; writes go one at a time per tenant (`serially`), and D1 inserts only while `audit_heads` still holds the hash it was made from (migration 0015: a trigger moves the head, a unique index refuses a fork). `auditHead`, `auditChain`, `verifyAuditChain`; `GET /api/admin/audit/chain`. Reading the log or a service's trail is audited (`audit.viewed`, AUD-3). Keys are `yaxb_mod_` plus 43 base64url characters (256 bits); `hashKey` is SHA-256 hex.
   - Stores: memory, and D1 (`createD1ModeratorStore`, migration 0004: `moderators`, `moderator_profiles`, `audit`). The D1 store is tested on node:sqlite through a D1-shaped adapter in `test/moderators.test.ts`, which expands `?N` placeholders.
 - Worker:
   - `session.ts` `moderatorOf(c, svc)`: the moderator cookie is `<id>.<HMAC over id and current key hash>`, so revoking or rotating a key signs the moderator out. `shared.<HMAC>` is the legacy `MODERATOR_TOKEN`.
