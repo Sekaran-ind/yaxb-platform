@@ -143,6 +143,13 @@ export class IdentityError extends Error {
 export const ACCESS_SECONDS = 15 * 60;
 export const REFRESH_DAYS = 30;
 export const KEY_ROTATE_DAYS = 30;
+/**
+ * The box checks people offline (IDN-42): a box token is signed like a session and lasts a week; the
+ * box keeps the signing keys and the owner's revoked sessions and devices from its last check.
+ */
+export const BOX_TOKEN_DAYS = 7;
+export const BOX_AUDIENCE = "yaxb-box";
+export type BoxTokenClaims = { iss: string; aud: typeof BOX_AUDIENCE; sub: string; sid: string; lvl: number; iat: number; exp: number };
 export const OTP_DIGITS = 6;
 export const OTP_MINUTES = 10;
 /** Wrong codes per challenge before it ends. */
@@ -538,6 +545,29 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
 
     async auditLog(accountId: string, limit = 50) {
       return store.auditLog(accountId, Math.min(limit, 200));
+    },
+
+    // ---- the box's offline check (IDN-42) -----------------------------------------------------------------
+
+    /** A token for the owner's box: signed like a session (the box verifies it offline), for a week. */
+    async boxToken(accountId: string, sid: string, level: number) {
+      await liveAccount(accountId);
+      const t = Math.floor(now().getTime() / 1000);
+      const k = await signingKey();
+      const claims: BoxTokenClaims = { iss: options.issuer, aud: BOX_AUDIENCE, sub: accountId, sid, lvl: level, iat: t, exp: t + BOX_TOKEN_DAYS * 86400 };
+      return { token: await signJwt(claims, k.kid, k.privateJwk), expires_at: iso(new Date(claims.exp * 1000)) };
+    },
+    /**
+     * What a box needs to check its owner's tokens offline: the signing keys that may have signed a
+     * token still in date, and the sessions and devices of the account revoked within a token's life.
+     */
+    async boxTrust(accountId: string) {
+      await liveAccount(accountId);
+      const since = iso(new Date(now().getTime() - (BOX_TOKEN_DAYS + 1) * 86400_000));
+      const keys = (await store.keys()).filter((k) => !k.retired_at || k.retired_at > since).map((k) => JSON.parse(k.public_jwk) as PublicJwk);
+      const sessions = (await store.sessions(accountId)).filter((s) => s.revoked_at && s.revoked_at > since).map((s) => s.id);
+      const devices = (await store.deviceCredentials(accountId)).filter((d) => d.revoked_at && d.revoked_at > since).map((d) => `dev:${d.id}`);
+      return { account: accountId, issuer: options.issuer, audience: BOX_AUDIENCE, keys, revoked: [...sessions, ...devices], checked_at: iso(now()) };
     },
 
     // ---- devices signed in with a code (IDN-17, 18, 41) -------------------------------------------------

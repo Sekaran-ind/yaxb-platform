@@ -145,8 +145,10 @@ const DEVICE_ROUTES: Record<string, [method: string, path: RegExp][]> = {
   chat: [
     ["POST", /^\/api\/agent\/chat$/],
     ["GET", /^\/api\/agent\/(providers|capabilities|sources|curated|moderation)$/],
+    ["POST", /^\/api\/identity\/box\/token$/],
   ],
-  box: [],
+  // The box fetches its owner's trust (IDN-42).
+  box: [["GET", /^\/api\/identity\/box\/trust$/]],
 };
 const DEVICE_ALWAYS: [string, RegExp][] = [
   ["GET", /^\/api\/identity\/me$/],
@@ -519,6 +521,23 @@ export function identityRoutes(deps: Deps) {
       return { space: null, pending: true, space_name: j.space_name };
     }),
   );
+  // ---- the box's offline check (IDN-42) ----
+  /** A box token for the person's box, for a week: the box verifies it offline. */
+  r.post("/box/token", (c) =>
+    call(c, async () => {
+      const a = mustSignIn(c);
+      return svc(c).boxToken(a.sub, a.sid, a.lvl);
+    }),
+  );
+  /** The box (its own credential, scope "box") fetches its owner's keys and revocations. */
+  r.get("/box/trust", (c) =>
+    call(c, async () => {
+      const d = c.get("device");
+      if (!d?.scopes.includes("box")) throw new IdentityError("Only a box signed in to the site reads this.", 403);
+      return svc(c).boxTrust(d.account_id);
+    }),
+  );
+
   // ---- devices signed in with a code (IDN-17, 18, 41) ----
   /** A device asks for a code (public: it isn't signed in yet). */
   r.post("/device/start", (c) =>

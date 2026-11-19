@@ -22,7 +22,8 @@ export type KioskSettings = {
   theme: ThemeChoice;
   activeNotebook: string | null;
   /** yaxb-box connection for Storage: Box. Stays in this browser; never sent with a chat turn. */
-  box: { url: string; token: string };
+  /** `account`: the token came from the person's account (IDN-42), renewed before `expires`. */
+  box: { url: string; token: string; account?: boolean; expires?: string };
   /**
    * Where requests (cases, LIB-42..48) are kept: on the devices that work on them (handed over device
    * to device, through the box, or through the cloud relay, which is transient), or centrally in the

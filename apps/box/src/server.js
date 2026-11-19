@@ -24,14 +24,17 @@
 //   POST   /v1/events  (body: [event])                   a service's events (MET-2): facts, never answers
 //   GET    /v1/events?service=&since=                    a service's events, oldest first
 //
-// Auth: `Authorization: Bearer <YAXB_BOX_TOKEN>`, compared in constant time. Bearer tokens, not
+// Auth: `Authorization: Bearer <a box token from the site>` (IDN-42, verified offline: trust.js), or
+// the older shared `Bearer <YAXB_BOX_TOKEN>`, compared in constant time. Bearer tokens, not
 // cookies, so CORS can't be used to ride a session; origins are still limited to the kiosk's own
 // (YAXB_BOX_ORIGINS). Chrome's Private Network Access preflight is answered for those origins.
 import { timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
+import { dirname, join } from 'node:path';
 import { COLLECTIONS, ID, NAMESPACE, openDb } from './db.js';
+import { createSiteLink, verifyBoxToken } from './trust.js';
 
 export const VERSION = '0.1.0';
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
@@ -45,6 +48,8 @@ export function loadConfig(env = process.env) {
     host: env.YAXB_BOX_HOST || '0.0.0.0',
     dbPath: env.YAXB_BOX_DB || '/var/lib/yaxb-box/yaxb-box.sqlite3',
     token: env.YAXB_BOX_TOKEN || '',
+    /** The box's link to the site (IDN-42): its credential and the trust it keeps. */
+    linkPath: env.YAXB_BOX_LINK || join(dirname(env.YAXB_BOX_DB || '/var/lib/yaxb-box/yaxb-box.sqlite3'), 'site.json'),
     origins: (env.YAXB_BOX_ORIGINS || '').split(/[\s,]+/).map((o) => o.trim().replace(/\/+$/, '')).filter(Boolean),
     tlsCertPath: env.YAXB_BOX_TLS_CERT || '',
     tlsKeyPath: env.YAXB_BOX_TLS_KEY || '',
@@ -97,8 +102,15 @@ function tokenMatches(header, token) {
 
 const plainObject = (v) => v && typeof v === 'object' && !Array.isArray(v);
 
-export function createBoxServer(config, { db = openDb(config.dbPath) } = {}) {
-  if (!config.token || config.token.length < 32) throw new Error('YAXB_BOX_TOKEN must be set, at least 32 characters (install.sh generates one)');
+export function createBoxServer(config, { db = openDb(config.dbPath), link = createSiteLink(config.linkPath) } = {}) {
+  if (config.token && config.token.length < 32) throw new Error('YAXB_BOX_TOKEN must be at least 32 characters (install.sh generates one)');
+  if (!config.token && !link.linked) throw new Error('Sign the box in to your site (yaxb-box login --site https://anjalai.cc), or set YAXB_BOX_TOKEN');
+  /** A person's box token (verified offline against the kept trust), or the shared token. */
+  const allowed = (header) => {
+    if (config.token && tokenMatches(header, config.token)) return true;
+    const m = /^Bearer (.+)$/.exec(header || '');
+    return Boolean(m && verifyBoxToken(m[1], link.trust));
+  };
 
   function cors(req, res) {
     const origin = req.headers.origin;
@@ -157,7 +169,7 @@ export function createBoxServer(config, { db = openDb(config.dbPath) } = {}) {
     if (!cors(req, res)) return send(res, 403, { error: 'This origin may not use the box. Add it to YAXB_BOX_ORIGINS.' });
     if (req.method === 'OPTIONS') return send(res, 204);
     if (url.pathname === '/health') return send(res, 200, { ok: true, name: 'yaxb-box', version: VERSION });
-    if (!tokenMatches(req.headers.authorization, config.token)) return send(res, 401, { error: 'The box token is missing or wrong.' });
+    if (!allowed(req.headers.authorization)) return send(res, 401, { error: 'The box token is missing or wrong (or its device was signed out).' });
     if (parts[0] === 'v2' && parts[1] === 'collections') return collectionsV2(req, res, url, parts[2], parts[3]);
     if (parts[0] !== 'v1') throw new HttpError(404, 'Not found.');
 
@@ -303,12 +315,20 @@ export function createBoxServer(config, { db = openDb(config.dbPath) } = {}) {
       })
     : null;
 
+  // The owner's trust, fetched every few minutes while the site can be reached (IDN-42).
+  let refreshing = null;
   return {
     db,
     tls: Boolean(tls),
     server,
+    link,
     listen: () =>
       new Promise((resolve) => {
+        if (link.linked) {
+          void link.refresh();
+          refreshing = setInterval(() => void link.refresh(), 5 * 60_000);
+          refreshing.unref?.();
+        }
         server.listen(config.port, config.host, () => {
           if (certServer) certServer.listen(config.certPort, config.host, resolve);
           else resolve();
@@ -317,6 +337,7 @@ export function createBoxServer(config, { db = openDb(config.dbPath) } = {}) {
     address: () => server.address(),
     close: () =>
       new Promise((resolve) => {
+        if (refreshing) clearInterval(refreshing);
         certServer?.close();
         server.close(() => {
           db.close();
