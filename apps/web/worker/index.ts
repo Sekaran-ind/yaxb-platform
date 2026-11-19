@@ -9,6 +9,9 @@ import { createMemoryRateLimiter } from "@sekaran-ind/yaxb-core/stores";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { settings, stringEnv, type Bindings } from "./env";
+import { connectorSecrets } from "./kiosk";
+import { callConnector, connectorSecrets as connectorSecretNames, ConnectorError, parseConnector } from "@sekaran-ind/yaxb-core/connectors";
+import { seal as sealIdentity, unseal as unsealIdentity } from "@sekaran-ind/yaxb-core/identity";
 import { cases, catalogue, currentTenant, designer, kiosk, library, moderators, relay, reviews, serviceEvents, tenantContext, tenantOfMember, tenants } from "./kiosk";
 import { DEFAULT_TENANT, SLUG, TenantError } from "@sekaran-ind/yaxb-core/tenants";
 import { offers, resolveContext, servesApi, SURFACE_HEADS } from "@sekaran-ind/yaxb-core/context";
@@ -920,6 +923,75 @@ app.post("/api/cases/:id/notes", (c) => caseCall(c, (a, body) => cases(c.env).no
 app.post("/api/cases/:id/finish", (c) => caseCall(c, (a, body) => cases(c.env).finish(a, caseKey(c), body)));
 
 // ---- service storage and events (MET-1..2) --------------------------------------------------------
+
+// ---- connectors (CNX-2..8) -----------------------------------------------------------------------------
+
+/** A published connector of this tenant, and whether a published journey uses the operation. */
+async function connectorFor(c: Context<AppEnv>, id: string) {
+  const lib = await catalogue(c.env);
+  const pub = await lib.published([], { all: true });
+  const entry = pub.connectors.find((x) => x.id === id);
+  if (!entry) return null;
+  const e = await lib.store.entry(entry.entry_id);
+  const parsed = e?.published_yaml ? parseConnector(e.published_yaml) : null;
+  if (!parsed?.ok) return null;
+  return { connector: parsed.connector, entry_id: entry.entry_id, used: (handler: string) => pub.services.some((s) => s.yaml.includes(handler)) };
+}
+const sealKey = (c: Context<AppEnv>) => settings(c.env).SESSION_SECRET;
+
+/**
+ * A journey's connector step (CNX-2, CNX-5): the kiosk sends the step's input; the server adds the
+ * secret and calls the API through the SSRF guard. Only an operation a published journey uses can be
+ * called, so this is never an open proxy. The answer comes back as untrusted data.
+ */
+app.post("/api/connectors/:id/:op", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, `connector:${await clientId(c)}`))) return jsonError(c, 429, "Too many requests. Please wait a minute.");
+  const found = await connectorFor(c, c.req.param("id"));
+  const handler = `connector.${c.req.param("id")}.${c.req.param("op")}`;
+  if (!found || !found.used(handler)) return jsonError(c, 404, "That connector isn't used by a published service here.");
+  const body = (await readJson(c, MAX_FORM_BODY)).body as { input?: unknown } | null;
+  const input = body?.input && typeof body.input === "object" && !Array.isArray(body.input) ? (body.input as Record<string, unknown>) : {};
+  const secrets: Record<string, string> = {};
+  for (const r of await connectorSecrets(c.env).list(currentTenant(), found.connector.id)) secrets[r.name] = await unsealIdentity(sealKey(c), r.sealed);
+  try {
+    const out = await callConnector(found.connector, c.req.param("op"), input, secrets, { resolve: dohResolver() });
+    return c.json(out);
+  } catch (e) {
+    if (e instanceof ConnectorError) return jsonError(c, e.status, e.message);
+    throw e;
+  }
+});
+
+/** A connector's secrets for its administrator: names and when they were set, never the values (CNX-3). */
+app.get("/api/library/connectors/:id/secrets", (c) =>
+  libraryCall(c, async (a) => {
+    if (!permissionsOf(a).manage) throw new LibraryError("Only an administrator sees a connector's secrets.", 403);
+    const found = await connectorFor(c, c.req.param("id"));
+    const needed = found ? connectorSecretNames(found.connector) : [];
+    const set = await connectorSecrets(c.env).list(currentTenant(), c.req.param("id"));
+    return { needed, set: set.map((r) => ({ name: r.name, set_at: r.set_at, set_by: r.set_by })) };
+  }),
+);
+app.put("/api/library/connectors/:id/secrets/:name", (c) =>
+  libraryCall(c, async (a, body) => {
+    if (!permissionsOf(a).manage) throw new LibraryError("Only an administrator sets a connector's secrets.", 403);
+    const value = String((body as { value?: unknown } | null)?.value ?? "");
+    if (!/^[A-Z][A-Z0-9_]{1,47}$/.test(c.req.param("name"))) throw new LibraryError("A secret's name is UPPER_CASE.");
+    if (!value || value.length > 4000) throw new LibraryError("Give the secret's value.");
+    await connectorSecrets(c.env).put({ tenant_id: currentTenant(), connector_id: c.req.param("id"), name: c.req.param("name"), sealed: await sealIdentity(sealKey(c), value), set_at: new Date().toISOString(), set_by: a.name });
+    await audited(c, "connector.secret_set", a.name, c.req.param("id"), { name: c.req.param("name") });
+    return { set: true };
+  }),
+);
+app.delete("/api/library/connectors/:id/secrets/:name", (c) =>
+  libraryCall(c, async (a) => {
+    if (!permissionsOf(a).manage) throw new LibraryError("Only an administrator removes a connector's secrets.", 403);
+    await connectorSecrets(c.env).remove(currentTenant(), c.req.param("id"), c.req.param("name"));
+    await audited(c, "connector.secret_removed", a.name, c.req.param("id"), { name: c.req.param("name") });
+    return { removed: true };
+  }),
+);
 
 /**
  * Where a service records what happens to its journeys: none, the box, or the server. Only an

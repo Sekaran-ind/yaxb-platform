@@ -72,6 +72,46 @@ for (const [name, make] of [
       return svc;
     };
 
+    it("publishes a connector, whose operations journeys may then use (CNX-2, CNX-6)", async () => {
+      const svc = setup();
+      const connector = `kind: connector
+id: stock-sheet
+title: Stock sheet
+base: https://sheets.example.com/v4/spreadsheets/abc
+auth: { type: bearer, secret: SHEETS_TOKEN }
+operations:
+  - { id: add, method: POST, path: "/values/A1:append", body: { values: [["{{input.item}}"]] } }
+`;
+      await expectError(svc.createEntry(reviewer, null, { yaml: connector }), 403, /Only an administrator adds a connector/);
+      const user = `kind: service
+id: stock
+title: Stock
+journeys:
+  - id: add-stock
+    title: Add stock
+    screens:
+      - { id: what, title: What, questions: [{ id: item, type: text, label: Item, required: true }] }
+      - { id: save, title: Save, service: connector.stock-sheet.add, with: { item: "{{answers.what.item}}" } }
+      - { id: done, result: { title: Added } }
+`;
+      // Before the connector is published, its handler is unknown.
+      const early = await svc.createEntry(admin, null, { yaml: user });
+      expect(early.problems.map((p) => p.message).join()).toMatch(/connector\.stock-sheet\.add/);
+      const bad = await svc.createEntry(admin, null, { yaml: connector.replace("secret: SHEETS_TOKEN", "secret: sk_live_1") });
+      expect(bad.problems.map((p) => p.message).join()).toMatch(/secret's name/);
+      await svc.setEntryArchived(admin, bad.entry.id, true);
+      const { entry } = await svc.createEntry(admin, null, { yaml: connector });
+      await svc.submit(admin, entry.id);
+      await svc.review(reviewer, entry.id, { decision: "accept" });
+      const pub = await svc.published();
+      expect(pub.connectors).toEqual([expect.objectContaining({ id: "stock-sheet", host: "sheets.example.com", secrets: ["SHEETS_TOKEN"], operations: [expect.objectContaining({ handler: "connector.stock-sheet.add" })] })]);
+      expect(JSON.stringify(pub.connectors)).not.toContain("Bearer");
+      expect(pub.services.map((x) => x.id)).not.toContain("stock-sheet");
+      // Now the service using it compiles.
+      const later = await svc.entry(admin, early.entry.id);
+      expect(later.problems.filter((p) => p.level === "error")).toEqual([]);
+    });
+
     it("lets a guest design a service in the default library, and keeps it theirs", async () => {
       const svc = setup();
       const { entry, problems } = await svc.createEntry(guest, null, { yaml: clinic() });

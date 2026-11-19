@@ -598,3 +598,20 @@ export function createD1EventStore(db: D1Like): EventStore {
     },
   };
 }
+
+/** Connector secrets (CNX-3) on D1 (migration 0018): sealed values, by tenant, connector and name. */
+export function createD1ConnectorSecretStore(db: D1Like): import("../connectors/index.js").ConnectorSecretStore {
+  type Row = import("../connectors/index.js").ConnectorSecretRow;
+  return {
+    list: async (t, c) => (await db.prepare("SELECT tenant_id, connector_id, name, sealed, set_at, set_by FROM connector_secrets WHERE tenant_id = ?1 AND connector_id = ?2 ORDER BY name").bind(t, c).all<Row>()).results,
+    put: async (r) =>
+      void (await db
+        .prepare("INSERT INTO connector_secrets (tenant_id, connector_id, name, sealed, set_at, set_by) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT (tenant_id, connector_id, name) DO UPDATE SET sealed = ?4, set_at = ?5, set_by = ?6")
+        .bind(r.tenant_id, r.connector_id, r.name, r.sealed, r.set_at, r.set_by)
+        .run()),
+    remove: async (t, c, n) =>
+      void (n
+        ? await db.prepare("DELETE FROM connector_secrets WHERE tenant_id = ?1 AND connector_id = ?2 AND name = ?3").bind(t, c, n).run()
+        : await db.prepare("DELETE FROM connector_secrets WHERE tenant_id = ?1 AND connector_id = ?2").bind(t, c).run()),
+  };
+}
