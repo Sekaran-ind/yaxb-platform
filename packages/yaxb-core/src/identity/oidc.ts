@@ -9,7 +9,11 @@
 //             claims validated (issuer, audience, nonce, expiry)
 import * as oauth from "oauth4webapi";
 
-export type OidcProvider = { id: "google"; issuer: string; clientId: string; clientSecret: string; redirectUri: string };
+/**
+ * A provider: Google, or a business's own (IDN-15: `org:<edition>:<tenant>`, any OpenID Connect
+ * provider found by discovery at its issuer).
+ */
+export type OidcProvider = { id: string; issuer: string; clientId: string; clientSecret: string; redirectUri: string };
 export type OidcPending = { verifier: string; state: string; nonce: string; at: number };
 export type OidcResult = { subject: string; email: string | null; emailVerified: boolean; name: string | null };
 
@@ -17,13 +21,20 @@ export const GOOGLE_ISSUER = "https://accounts.google.com";
 /** How long the person has to come back from the provider. */
 export const OIDC_MINUTES = 10;
 
+/** Only a provider on this computer may be plain http (a developer's test provider); never a real one. */
+export const localIssuer = (issuer: string) => {
+  const u = new URL(issuer);
+  return u.protocol === "http:" && (u.hostname === "localhost" || u.hostname === "127.0.0.1");
+};
+const extras = (issuer: string, fetchImpl?: typeof fetch) => ({ ...(fetchImpl ? { [oauth.customFetch]: fetchImpl } : {}), ...(localIssuer(issuer) ? { [oauth.allowInsecureRequests]: true } : {}) });
+
 const discovered = new Map<string, Promise<oauth.AuthorizationServer>>();
 function server(issuer: string, fetchImpl?: typeof fetch): Promise<oauth.AuthorizationServer> {
   let as = discovered.get(issuer);
   if (!as) {
     const url = new URL(issuer);
     as = oauth
-      .discoveryRequest(url, { algorithm: "oidc", ...(fetchImpl ? { [oauth.customFetch]: fetchImpl } : {}) })
+      .discoveryRequest(url, { algorithm: "oidc", ...extras(issuer, fetchImpl) })
       .then((r) => oauth.processDiscoveryResponse(url, r))
       .catch((e: unknown) => {
         discovered.delete(issuer);
@@ -59,7 +70,7 @@ export async function oidcFinish(p: OidcProvider, current: URL, pending: OidcPen
   const as = await server(p.issuer, fetchImpl);
   const client: oauth.Client = { client_id: p.clientId };
   const params = oauth.validateAuthResponse(as, client, current, pending.state);
-  const extra = fetchImpl ? { [oauth.customFetch]: fetchImpl } : {};
+  const extra = extras(p.issuer, fetchImpl);
   const response = await oauth.authorizationCodeGrantRequest(as, client, oauth.ClientSecretPost(p.clientSecret), params, p.redirectUri, pending.verifier, extra);
   const result = await oauth.processAuthorizationCodeResponse(as, client, response, { expectedNonce: pending.nonce, requireIdToken: true });
   const claims = oauth.getValidatedIdTokenClaims(result)!;

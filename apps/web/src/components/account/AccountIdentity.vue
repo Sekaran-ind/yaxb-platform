@@ -10,6 +10,7 @@ import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useIdentity, type DeviceRow, type SessionRow } from "@/composables/identity";
 import PhoneSignIn from "./PhoneSignIn.vue";
+import { api } from "@/lib/api";
 
 const id = useIdentity();
 const route = useRoute();
@@ -48,6 +49,13 @@ async function answerDevice(approve: boolean) {
 }
 
 const copied = ref(false);
+// A business's own sign-in (IDN-15): find it by its short name, then go to its provider.
+const company = ref("");
+const companySignIn = () =>
+  run("company", async () => {
+    const r = await api<{ space: string }>(`/api/identity/org/find?name=${encodeURIComponent(company.value.trim().toLowerCase())}`);
+    location.href = `/api/identity/org/start?consent=1&space=${encodeURIComponent(r.space)}&return=${encodeURIComponent("/kiosk?prefs=account")}`;
+  });
 
 // Google comes back with ?signin=<why> on failure, ?signedin=1 on success.
 watch(
@@ -122,6 +130,15 @@ async function copyCodes() {
         <button v-if="id.config.value?.google" type="button" class="btn-light" :disabled="busy !== null" @click="id.google()">Continue with Google</button>
         <button type="button" class="btn-ghost" :aria-expanded="showRecovery" @click="showRecovery = !showRecovery">Use a recovery code</button>
       </div>
+      <!-- Staff of a business with its own sign-in (IDN-15). -->
+      <details class="rounded-lg bg-mist px-3 py-2 text-sm">
+        <summary class="cursor-pointer text-ink">Sign in with your company</summary>
+        <form class="mt-2 flex flex-wrap items-end gap-2" @submit.prevent="companySignIn">
+          <label class="block"><span class="mb-1 block text-gray-600">Your business's short name in Anjalai</span><input v-model="company" class="input w-56" placeholder="sri-ram-hardware" autocomplete="organization" /></label>
+          <button type="submit" class="btn-light" :disabled="busy !== null || !company.trim()">Continue</button>
+        </form>
+        <p class="mt-1 text-xs text-gray-500">Your company's sign-in page opens. Pressing Continue agrees to the notice above: Anjal keeps only your company account's id.</p>
+      </details>
       <!-- On a shared or public screen: scan with a phone that is signed in (IDN-19). -->
       <PhoneSignIn label="Sign in with my phone (scan a code)" />
       <form v-if="showRecovery" class="flex flex-wrap items-end gap-2" @submit.prevent="run('recovery', () => id.recovery(recoveryCode))">

@@ -1,6 +1,6 @@
 // Identity in the platform database (PLATFORM_DB, migrations-platform 0002), shared by every edition.
 import type { D1Like } from "../stores/d1.js";
-import type { Account, Challenge, DeviceCredential, DeviceGrant, DeviceLock, SpacePolicy, IdentityAuditEvent, IdentityStore, Membership, Method, PendingJoin, Session, SigningKey } from "./index.js";
+import type { Account, Challenge, DeviceCredential, DeviceGrant, DeviceLock, SpaceOidc, SpacePolicy, IdentityAuditEvent, IdentityStore, Membership, Method, PendingJoin, Session, SigningKey } from "./index.js";
 
 type MembershipRow = Omit<Membership, "roles"> & { roles: string };
 type AuditRow = Omit<IdentityAuditEvent, "details"> & { details: string | null };
@@ -167,6 +167,23 @@ export function createD1IdentityStore(db: D1Like): IdentityStore {
         d.expires_at,
         d.revoked_at,
       )),
+    spaceOidc: (e, t) => first<SpaceOidc>("SELECT edition, tenant_id, issuer, client_id, sealed_secret, label, default_role, updated_at FROM space_oidc WHERE edition = ?1 AND tenant_id = ?2", e, t),
+    putSpaceOidc: async (o) =>
+      void (await run(
+        "INSERT INTO space_oidc (edition, tenant_id, issuer, client_id, sealed_secret, label, default_role, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT (edition, tenant_id) DO UPDATE SET issuer = ?3, client_id = ?4, sealed_secret = ?5, label = ?6, default_role = ?7, updated_at = ?8",
+        o.edition,
+        o.tenant_id,
+        o.issuer,
+        o.client_id,
+        o.sealed_secret,
+        o.label,
+        o.default_role,
+        o.updated_at,
+      )),
+    removeSpaceOidc: async (e, t) => {
+      const r = (await run("DELETE FROM space_oidc WHERE edition = ?1 AND tenant_id = ?2", e, t)) as { meta?: { changes?: number }; changes?: number };
+      return Number(r?.meta?.changes ?? r?.changes ?? 0) > 0;
+    },
     spacePolicy: async (e, t) => {
       const r = await first<Omit<SpacePolicy, "methods" | "staff_passkeys"> & { methods: string; staff_passkeys: number }>("SELECT edition, tenant_id, methods, staff_passkeys, session_hours, updated_at FROM space_policies WHERE edition = ?1 AND tenant_id = ?2", e, t);
       return r ? { ...r, methods: JSON.parse(r.methods) as SpacePolicy["methods"], staff_passkeys: Boolean(r.staff_passkeys) } : null;

@@ -10,7 +10,7 @@ import ToggleRow from "@/components/settings/ToggleRow.vue";
 type Policy = { methods: string[]; staff_passkeys: boolean; session_hours: number; updated_at: string | null };
 const METHOD_LABEL: Record<string, { label: string; detail: string }> = {
   passkey: { label: "Passkeys", detail: "Fingerprint, face or screen lock: the strongest." },
-  oidc: { label: "Google", detail: "A verified email." },
+  oidc: { label: "Google or your company's sign-in", detail: "A verified email, or your company's own accounts." },
   recovery: { label: "Recovery codes", detail: "For getting back in when a passkey is lost." },
 };
 const HOURS_LABEL: Record<number, string> = { 8: "A shift (8 hours)", 24: "A day", 168: "A week", 720: "A month" };

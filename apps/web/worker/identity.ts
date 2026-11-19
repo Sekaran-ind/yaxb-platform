@@ -207,6 +207,10 @@ type Deps = {
   /** The signed-in member (their key) and whether the administrator token is signed in, for linking. */
   signedInMember: (c: Context<AppEnv>) => Promise<{ id: string; roles: string[] } | null>;
   isAdmin: (c: Context<AppEnv>) => Promise<boolean>;
+  /** A space (edition and tenant) by its short name in the directory, for a business's own sign-in (IDN-15). */
+  findSpace: (c: Context<AppEnv>, slug: string) => Promise<{ edition: Edition; tenant_id: string; name: string } | null>;
+  /** Make a staff member in a space for someone its own provider vouched for, linked to their account. */
+  joinAsStaff: (c: Context<AppEnv>, edition: Edition, tenant: string, input: { name: string; role: string }) => Promise<{ member_id: string; roles: string[]; space_name: string; kind: SpaceKind }>;
   /** Whether the person is this space's administrator (their member key, the open space's membership, or ADMIN_TOKEN). */
   spaceAdministrator: (c: Context<AppEnv>) => Promise<boolean>;
   /** The tenant this request acts in (the tenant context). */
@@ -544,6 +548,85 @@ export function identityRoutes(deps: Deps) {
       return { status: "approved", account: out.account };
     }),
   );
+
+  // ---- a business's own sign-in (IDN-15) ----
+  const ORG_COOKIE = "anj_org";
+  const orgCallback = (c: Context) => `${new URL(c.req.url).origin}/api/identity/org/callback`;
+  r.get("/space-oidc", (c) =>
+    call(c, async () => {
+      await mustAdminister(c);
+      return { oidc: await svc(c).spaceOidc(currentEdition(), deps.tenant()), redirect_uri: orgCallback(c) };
+    }),
+  );
+  r.put("/space-oidc", (c) =>
+    call(c, async () => {
+      await mustAdminister(c);
+      const b = await body(c, z.object({ issuer: z.string().max(300), client_id: z.string().max(200), client_secret: z.string().max(500).optional(), label: z.string().max(40), default_role: z.string().max(32) }));
+      if (!b) throw new IdentityError("Check the provider's details.");
+      return { oidc: await svc(c).setSpaceOidc(currentEdition(), deps.tenant(), b, c.get("account")?.sub ?? null) };
+    }),
+  );
+  r.delete("/space-oidc", (c) =>
+    call(c, async () => {
+      await mustAdminister(c);
+      return { removed: await svc(c).removeSpaceOidc(currentEdition(), deps.tenant(), c.get("account")?.sub ?? null) };
+    }),
+  );
+  /** Find a business by its short name: whether it has its own sign-in. */
+  r.get("/org/find", (c) =>
+    call(c, async () => {
+      await limit(c, "org-find");
+      const space = await deps.findSpace(c, (c.req.query("name") ?? "").trim().toLowerCase());
+      const oidc = space ? await svc(c).spaceOidc(space.edition, space.tenant_id) : null;
+      if (!space || !oidc) throw new IdentityError("No business with its own sign-in has that short name.", 404);
+      return { space: `${space.edition}:${space.tenant_id}`, name: space.name, label: oidc.label };
+    }),
+  );
+  /** Go to the business's provider. Pressing the button under the notice is the consent (IDN-52). */
+  r.get("/org/start", async (c) => {
+    const back = backTo(c.req.query("return"));
+    try {
+      await limit(c, "org");
+      const named = spaceCookie(c, c.req.query("space") ?? "");
+      if (!named || !(c.req.query("space") ?? "").includes(":")) throw new IdentityError("Which business?");
+      const p = await svc(c).spaceOidcProvider(named.edition, named.tenant, orgCallback(c));
+      if (!p) throw new IdentityError("That business has no sign-in of its own.", 404);
+      const { url, pending } = await oidcStart(p);
+      const keep = { ...pending, edition: named.edition, tenant: named.tenant, back, consent: c.req.query("consent") === "1" };
+      setCookie(c, ORG_COOKIE, await seal(settings(c.env).IDENTITY_SECRET!, JSON.stringify(keep)), { httpOnly: true, secure: !local(c), sameSite: "Lax", path: "/api/identity/org", maxAge: 600 });
+      return c.redirect(url, 302);
+    } catch (e) {
+      return c.redirect(`${back}${back.includes("?") ? "&" : "?"}signin=${encodeURIComponent(e instanceof IdentityError ? e.message : "Your company's sign-in isn't available right now.")}`, 302);
+    }
+  });
+  r.get("/org/callback", async (c) => {
+    const sealed = getCookie(c, ORG_COOKIE);
+    setCookie(c, ORG_COOKIE, "", { path: "/api/identity/org", maxAge: 0 });
+    let back = "/kiosk";
+    try {
+      if (!sealed) throw new IdentityError("That sign-in took too long. Try again.", 410);
+      const kept = JSON.parse(await unseal(settings(c.env).IDENTITY_SECRET!, sealed)) as OidcPending & { edition: Edition; tenant: string; back: string; consent: boolean };
+      back = kept.back;
+      const p = await svc(c).spaceOidcProvider(kept.edition, kept.tenant, orgCallback(c));
+      if (!p) throw new IdentityError("That business has no sign-in of its own.", 404);
+      const who = await oidcFinish(p, new URL(c.req.url), kept);
+      const out = await svc(c).oidcSignIn({ provider: p.id, label: p.label, requireEmail: false, subject: who.subject, email: who.email, emailVerified: who.emailVerified, consent: kept.consent, name: who.name ?? undefined, device: device(c) ?? undefined });
+      if ("consent_required" in out) throw new IdentityError("Read the notice and press Sign in with your company again.", 428);
+      if (!("session" in out)) throw new IdentityError("Sign in again.", 401);
+      setSession(c, out.session);
+      // The business vouched for them: they are its staff, with the role it gives new staff.
+      let m = await svc(c).spaceOf(out.account.id, kept.edition, kept.tenant);
+      if (!m) {
+        const staff = await deps.joinAsStaff(c, kept.edition, kept.tenant, { name: who.name ?? out.account.display_name ?? "Staff", role: p.defaultRole });
+        m = await svc(c).addMembership(out.account.id, { edition: kept.edition, tenant_id: kept.tenant, space_name: staff.space_name, kind: staff.kind, roles: staff.roles, member_id: staff.member_id });
+      }
+      setSpace(c, m);
+      return c.redirect(back.includes("?") ? `${back}&signedin=1` : `${back}?signedin=1`, 302);
+    } catch (e) {
+      const why = e instanceof IdentityError ? e.message : "Your company's sign-in didn't work. Try again.";
+      return c.redirect(`${back}${back.includes("?") ? "&" : "?"}signin=${encodeURIComponent(why)}`, 302);
+    }
+  });
 
   // ---- the box's offline check (IDN-42) ----
   /** A box token for the person's box, for a week: the box verifies it offline. */
