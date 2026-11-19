@@ -17,7 +17,8 @@
   //   "limits": { "cpu_ms": 60000 },
   "observability": { "enabled": true },
 
-  // The edition's own domain (DOM-1), kept by every deploy. anjalai.cc is a zone on this account.
+  // The edition's own domain (DOM-1): wrangler attaches it (and its DNS record) on deploy, and
+  // every deploy keeps it. anjalai.cc is a zone on this account.
   "routes": [{ "pattern": "community.anjalai.cc", "custom_domain": true }],
 
   // Threads, the moderation queue and the agent's long-term store. Create once with
