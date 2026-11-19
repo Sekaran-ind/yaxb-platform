@@ -36,8 +36,11 @@ export type KioskSettings = {
    * PIN's SHA-256; staff unlock with it (or their own key).
    */
   restricted: { on: boolean; services: string[]; idleMinutes: number; mic: boolean; attach: boolean; pinHash: string | null };
-  /** The child safety lock (CHL-1): a parent's PIN, kept only as a hash. */
-  child: { on: boolean; pinHash: string | null };
+  /**
+   * The child safety lock (CHL-1): a parent's PIN, kept only as a hash. `spaces`: the family spaces
+   * (`<edition>:<tenant>`) a child may use here (SPC-9), chosen by a guardian while the lock is off.
+   */
+  child: { on: boolean; pinHash: string | null; spaces: string[] };
 };
 
 const DEFAULTS: KioskSettings = {
@@ -54,7 +57,7 @@ const DEFAULTS: KioskSettings = {
   box: { url: "", token: "" },
   cases: { storage: "devices", useBox: true, useRelay: true },
   restricted: { on: false, services: [], idleMinutes: 3, mic: true, attach: false, pinHash: null },
-  child: { on: false, pinHash: null },
+  child: { on: false, pinHash: null, spaces: [] },
 };
 
 function load(): KioskSettings {

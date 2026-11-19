@@ -11,6 +11,7 @@ import { browserSupportsWebAuthn, startAuthentication, startRegistration } from 
 import { computed, ref, shallowRef } from "vue";
 import { api } from "@/lib/api";
 import { rememberSpaceKind } from "@/lib/surface";
+import { childSpacesOf, useChildMode } from "./child";
 
 export type IdentityMethod = { id: string; kind: "passkey" | "oidc" | "recovery" | "phone" | "email" | "member_key"; display: string; created_at: string; last_used_at: string | null };
 export type Me =
@@ -107,6 +108,9 @@ export function useIdentity() {
   }
   const signedIn = computed(() => me.value.signedIn);
   const passkeys = computed(() => Boolean(config.value?.passkeys) && browserSupportsWebAuthn());
+  const child = useChildMode();
+  /** The spaces offered here: in child mode only the family spaces a guardian chose (SPC-9). */
+  const spacesHere = computed(() => (me.value.signedIn ? (child.on.value ? childSpacesOf(me.value.spaces) : me.value.spaces) : []));
   /** The space this device is kept for (SPC-5), or null. */
   const locked = computed(() => (me.value.signedIn ? me.value.locked : null) ?? config.value?.locked ?? null);
 
@@ -117,6 +121,9 @@ export function useIdentity() {
     signedIn,
     passkeys,
     locked,
+    spacesHere,
+    /** Child mode: no starting or joining spaces (SPC-9). */
+    childMode: child.on,
     reload: load,
 
     // ---- a device kept for one space (SPC-5): its administrator only ----
