@@ -23,3 +23,5 @@ export { default as ServiceItems } from "./ServiceItems.vue";
 export { default as StructureTree } from "./StructureTree.vue";
 export { default as YamlEditor } from "./YamlEditor.vue";
 export { ICONS_KEY, provideIcons, useIcons, type IconResolver } from "./icons";
+export { default as MediaCapture } from "./MediaCapture.vue";
+export { MEDIA_KEY, mediaRefOf, PHOTO_MAX_BYTES, PHOTO_MAX_SIDE, provideMedia, shrinkPhoto, useMedia, type MediaHost } from "./media";

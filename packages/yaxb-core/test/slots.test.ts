@@ -169,3 +169,11 @@ describe("passwords", () => {
     expect(checkExtracted(withPassword, { pin: "4321" })).toEqual([]);
   });
 });
+
+describe("photo fields and slot filling", () => {
+  it("never fills a photo from what someone says", async () => {
+    const { matchFields } = await import("../src/journeys/slots.js");
+    const r = await matchFields([{ id: "photo", type: "photo", label: "A photo of it" }, { id: "where", type: "text", label: "Where it is" }], "a photo of it is broken, where it is: block B");
+    expect(r.fills.map((f) => f.field)).not.toContain("photo");
+  });
+});

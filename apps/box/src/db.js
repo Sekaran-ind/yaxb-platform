@@ -74,6 +74,14 @@ const MIGRATIONS = [
    ALTER TABLE records ADD COLUMN seq INTEGER NOT NULL DEFAULT 0;
    UPDATE records SET seq = rowid;
    CREATE INDEX records_seq ON records (collection, seq);`,
+  // Photos (MED-1): kept apart from records, by their SHA-256; replicated by Litestream with the rest.
+  `CREATE TABLE media (
+     hash TEXT PRIMARY KEY,
+     type TEXT NOT NULL,
+     size INTEGER NOT NULL,
+     data BLOB NOT NULL,
+     created_at TEXT NOT NULL
+   );`,
 ];
 
 export function openDb(path) {
@@ -182,6 +190,10 @@ export function openDb(path) {
 
   return {
     raw: db,
+    /** A photo by its hash (MED-1), or null. */
+    media: (hash) => db.prepare('SELECT hash, type, size, data FROM media WHERE hash = ?').get(hash) ?? null,
+    putMedia: (hash, type, data) =>
+      void db.prepare('INSERT INTO media (hash, type, size, data, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (hash) DO NOTHING').run(hash, type, data.length, data, new Date().toISOString()),
     get: (collection, id) => {
       const r = s.get.get(collection, id);
       return r ? record(r) : null;

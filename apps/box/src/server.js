@@ -21,6 +21,8 @@
 //   DELETE /v2/collections/:name/:id?baseVersion=&conflict=            → 200 | 409, a tombstone
 //   POST   /v2/collections/:name/batch  { ops: [{ op: put|delete, id, baseVersion, data }], conflict }
 //          (collections: notebooks, threads, schedule, service-data; conflict: reject-stale | last-write-wins)
+//   PUT    /v1/media/:hash   (body: the photo's bytes)    a photo (MED-1), kept only if its SHA-256 is :hash
+//   GET    /v1/media/:hash                                 the photo, with its type
 //   POST   /v1/events  (body: [event])                   a service's events (MET-2): facts, never answers
 //   GET    /v1/events?service=&since=                    a service's events, oldest first
 //
@@ -28,7 +30,7 @@
 // the older shared `Bearer <YAXB_BOX_TOKEN>`, compared in constant time. Bearer tokens, not
 // cookies, so CORS can't be used to ride a session; origins are still limited to the kiosk's own
 // (YAXB_BOX_ORIGINS). Chrome's Private Network Access preflight is answered for those origins.
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
@@ -66,6 +68,26 @@ class HttpError extends Error {
 function send(res, status, body, headers = {}) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers });
   res.end(body === undefined ? '' : JSON.stringify(body));
+}
+
+/** The largest photo the box keeps (the kiosk makes them smaller first). */
+const MAX_MEDIA_BYTES = 4 * 1024 * 1024;
+function readBytes(req, max) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > max) {
+        reject(new HttpError(413, 'That photo is too large for the box.'));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
 }
 
 function readJson(req) {
@@ -259,6 +281,24 @@ export function createBoxServer(config, { db = openDb(config.dbPath), link = cre
     if (resource === 'mailbox-status' && req.method === 'GET') {
       const ids = (url.searchParams.get('ids') || '').split(',').filter((x) => ID.test(x)).slice(0, 100);
       return send(res, 200, { status: db.mailboxStatus(ids) });
+    }
+    if (resource === 'media') {
+      if (!/^[0-9a-f]{64}$/.test(a || '')) throw new HttpError(400, 'A photo is addressed by its SHA-256.');
+      if (req.method === 'GET') {
+        const m = db.media(a);
+        if (!m) throw new HttpError(404, 'That photo isn\'t on the box.');
+        res.writeHead(200, { 'Content-Type': m.type, 'Content-Length': m.size, 'Cache-Control': 'private, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff' });
+        return res.end(Buffer.from(m.data));
+      }
+      if (req.method === 'PUT') {
+        const type = String(req.headers['content-type'] || '').split(';')[0].trim();
+        if (!/^image\/(jpeg|png|webp)$/.test(type)) throw new HttpError(415, 'Only photos (JPEG, PNG or WebP).');
+        const data = await readBytes(req, MAX_MEDIA_BYTES);
+        if (createHash('sha256').update(data).digest('hex') !== a) throw new HttpError(400, 'The photo doesn\'t match its hash.');
+        db.putMedia(a, type, data);
+        return send(res, 200, { hash: a, size: data.length });
+      }
+      throw new HttpError(405, 'Method not allowed.');
     }
     if (resource === 'events') {
       if (req.method === 'POST') {

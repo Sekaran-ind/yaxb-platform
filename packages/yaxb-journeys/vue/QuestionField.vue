@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MediaCapture from "./MediaCapture.vue";
 // One question. `source` fields pick from the host's `sources`; `language` fields from `languages`.
 import type { Field } from "@sekaran-ind/yaxb-journeys/journeys";
 import { computed, useId } from "vue";
@@ -50,7 +51,8 @@ const target = (e: Event) => e.target as HTMLInputElement;
       <label :for="id" class="yj-field-label">
         <span>{{ field.label }}<span v-if="field.required" class="yj-required" aria-hidden="true"> *</span><span v-if="field.required" class="yj-sr-only"> (required)</span></span>
       </label>
-      <textarea v-if="field.type === 'textarea'" :id="id" class="yj-input" :aria-invalid="invalid || undefined" :placeholder="field.placeholder" :value="str(value)" @input="emit('change', target($event).value)" />
+      <MediaCapture v-if="field.type === 'photo'" :field="field" :value="value" @change="(v) => emit('change', v)" />
+      <textarea v-else-if="field.type === 'textarea'" :id="id" class="yj-input" :aria-invalid="invalid || undefined" :placeholder="field.placeholder" :value="str(value)" @input="emit('change', target($event).value)" />
       <select v-else-if="field.type === 'select'" :id="id" class="yj-input" :aria-invalid="invalid || undefined" :value="str(value)" @change="emit('change', target($event).value)">
         <option value="">Choose…</option>
         <option v-for="o in field.options" :key="o.value" :value="o.value">{{ o.label }}</option>

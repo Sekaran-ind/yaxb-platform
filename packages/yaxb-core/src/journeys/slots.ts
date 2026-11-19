@@ -64,7 +64,7 @@ const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
 const TODAY = () => new Date().toISOString().slice(0, 10);
 
 /** Fields slot filling can fill: notebook-source pickers are chosen on screen, and passwords are only ever typed. */
-const fillable = (fields: readonly Field[]) => fields.filter((f) => f.type !== "source" && f.type !== "password");
+const fillable = (fields: readonly Field[]) => fields.filter((f) => f.type !== "source" && f.type !== "password" && f.type !== "photo");
 
 function dateFrom(text: string): string | null {
   const t = text.toLowerCase();

@@ -7,7 +7,7 @@ import type { EmbeddingModelId } from "@sekaran-ind/yaxb-core/knowledge/semantic
 // First use downloads the model (hundreds of MB), then the browser caches it.
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void; onPartial?: (text: string) => void };
-export type OfflineProgress = { worker: "sandbox" | "translate" | "embed"; file?: string; progress?: number; status: string };
+export type OfflineProgress = { worker: "sandbox" | "translate" | "embed" | "media"; file?: string; progress?: number; status: string };
 
 const listeners = new Set<(p: OfflineProgress) => void>();
 /** Model download / load progress, for a status line. Returns an unsubscribe function. */
@@ -171,4 +171,32 @@ export async function translate(text: string, tgt: string, { src = "eng_Latn", o
     done.push(out);
   }
   return done.join(" ");
+}
+
+// ---- reading photos on the device (MED-5) ------------------------------------------------------------
+
+let reader: Worker | null = null;
+function mediaWorker() {
+  if (!reader) {
+    reader = new Worker(new URL("../../workers/media.worker.ts", import.meta.url), { type: "module" });
+    reader.onmessage = (e: MessageEvent) => {
+      const d = e.data as { type: string; reqId?: string; text?: string; message?: string; data?: unknown };
+      if (d.type === "progress") return emit({ worker: "media", ...(d.data as object), status: String((d.data as { status?: string })?.status ?? "progress") });
+      const p = d.reqId ? pending.get(d.reqId) : undefined;
+      if (!p) return;
+      pending.delete(d.reqId!);
+      if (d.type === "result") p.resolve(d.text ?? "");
+      else p.reject(new Error(d.message ?? "The photo couldn't be read on this device."));
+    };
+  }
+  return reader;
+}
+
+/** The text in a photo (ocr) or a description of it (caption), read on this device; it never leaves it. */
+export function readImage(blob: Blob, mode: "ocr" | "caption"): Promise<string> {
+  const id = reqId();
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
+    mediaWorker().postMessage({ reqId: id, blob, mode });
+  });
 }
