@@ -547,6 +547,10 @@ export function lessonFrom(draftYaml: string, reviewedYaml: string, decision: "a
 
 export function createDesignerService(store: DesignerStore, { now = () => new Date() }: { now?: () => Date } = {}) {
   const at = () => now().toISOString();
+  // Messages are read back in time order: each one is stamped after the one before, even within a
+  // millisecond (a reply and the next question can come that fast), so a thread never reorders.
+  let last = 0;
+  const stamp = () => new Date((last = Math.max(now().getTime(), last + 1))).toISOString();
   return {
     /** Record a drafting (without the narrative). */
     async recorded(ownerId: string, result: DesignResult, entryId: string | null = null): Promise<DesignRun> {
@@ -600,7 +604,7 @@ export function createDesignerService(store: DesignerStore, { now = () => new Da
       reply: { text: string; result: DesignResult | null; run: string | null },
     ): Promise<DesignMessage[]> {
       const base = { thread_id: threadId, entry_id: entryId, author_id: author.id };
-      const user: DesignMessage = { ...base, id: crypto.randomUUID(), author_name: author.name, role: "user", text: asked, yaml: null, ok: null, run_id: null, created_at: at() };
+      const user: DesignMessage = { ...base, id: crypto.randomUUID(), author_name: author.name, role: "user", text: asked, yaml: null, ok: null, run_id: null, created_at: stamp() };
       const assistant: DesignMessage = {
         ...base,
         id: crypto.randomUUID(),
@@ -610,7 +614,7 @@ export function createDesignerService(store: DesignerStore, { now = () => new Da
         yaml: reply.result?.yaml ?? null,
         ok: reply.result?.ok ?? null,
         run_id: reply.run,
-        created_at: new Date(now().getTime() + 1).toISOString(),
+        created_at: stamp(),
       };
       await store.addMessage(user);
       await store.addMessage(assistant);
