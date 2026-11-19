@@ -27,6 +27,7 @@ const TYPES: Record<FieldType, string> = {
   date: "A date",
   source: "A notebook source",
   language: "A language",
+  photo: "A photo (taken here)",
 };
 
 type Q = Field & Record<string, unknown>;

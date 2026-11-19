@@ -1,4 +1,5 @@
-import { ICONS_KEY } from "@sekaran-ind/yaxb-journeys/vue";
+import { ICONS_KEY, MEDIA_KEY } from "@sekaran-ind/yaxb-journeys/vue";
+import { kioskMediaHost } from "@/composables/media";
 import { createApp } from "vue";
 import { iconFor } from "./lib/icons";
 import { installNativeFetch } from "./lib/platform";
@@ -14,4 +15,5 @@ import "./composables/settings";
 // The native app sends /api calls to the kiosk server (lib/platform.ts).
 installNativeFetch();
 // The yaxb-journeys components draw YAML icon names with the site's icons.
-createApp(App).provide(ICONS_KEY, iconFor).use(router).mount("#app");
+// Photo fields keep their photos on this device and the box (MED-1), read on the device (MED-5).
+createApp(App).provide(ICONS_KEY, iconFor).provide(MEDIA_KEY, kioskMediaHost()).use(router).mount("#app");

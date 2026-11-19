@@ -4,6 +4,7 @@ import { computed } from "vue";
 import type { NotebookRecord } from "@/lib/browser/store";
 import { cn } from "@/lib/cn";
 import { LANGUAGES } from "@/lib/languages";
+import { MediaCapture } from "@sekaran-ind/yaxb-journeys/vue";
 
 // `suggested`: the value came from slot filling (what the visitor said), for them to check.
 const props = defineProps<{ field: Field; value: unknown; notebook: NotebookRecord | null; suggested?: SlotVia }>();
@@ -32,7 +33,8 @@ const ring = computed(() => (props.suggested ? "ring-2 ring-info/40" : ""));
       <span>{{ field.label }}<span v-if="field.required" class="text-red-700"> *</span></span>
       <span v-if="suggested" class="text-xs font-normal text-info">{{ VIA[suggested] }}: please check</span>
     </label>
-    <textarea v-if="field.type === 'textarea'" :id="id" :class="cn('input min-h-24', ring)" :placeholder="field.placeholder" :value="str(value)" @input="emit('change', ($event.target as HTMLTextAreaElement).value)" />
+    <MediaCapture v-if="field.type === 'photo'" :field="field" :value="value" @change="(v) => emit('change', v)" />
+    <textarea v-else-if="field.type === 'textarea'" :id="id" :class="cn('input min-h-24', ring)" :placeholder="field.placeholder" :value="str(value)" @input="emit('change', ($event.target as HTMLTextAreaElement).value)" />
     <select v-else-if="field.type === 'select'" :id="id" :class="cn('input', ring)" :value="str(value)" @change="emit('change', ($event.target as HTMLSelectElement).value)">
       <option value="">Choose…</option>
       <option v-for="o in field.options" :key="o.value" :value="o.value">{{ o.label }}</option>

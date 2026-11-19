@@ -13,11 +13,25 @@
 // `answers.<step>.<field>` (earlier steps) and `context.*`. A hidden field is never required and
 // its answer is kept as null.
 //
+// A `photo` field (MED-4) takes up to `max` photos (1 by default, at most 5). Its answer is a list of
+// media references, never the image: `{ hash, type, size, text? }` (MediaRef). `read` asks the kiosk
+// to read each photo on the device (ocr or caption) and keep the text beside it (MED-3, MED-5);
+// `keep` says where the photo itself is kept (device, box or server), apart from the record (MED-1).
+//
 // A `password` field is a masked input. Slot filling never fills it (from speech or the model), and
 // run summaries show it masked; it is still in `answers`, so a result template could show it.
 import { conditionPaths, conditionProblem, holds, type Scope } from "./expressions.js";
 
-export const FIELD_TYPES = ["text", "textarea", "password", "select", "boolean", "number", "date", "source", "language"] as const;
+export const FIELD_TYPES = ["text", "textarea", "password", "select", "boolean", "number", "date", "source", "language", "photo"] as const;
+/** Media fields (MED-4): the photo itself is kept apart from the record, referenced by its hash. */
+export const MEDIA_READS = ["ocr", "caption", "none"] as const;
+export const MEDIA_KEEPS = ["device", "box", "server"] as const;
+export const MAX_PHOTOS = 5;
+/** A photo in an answer: its content hash (SHA-256, hex), type and size, and the text read from it. */
+export type MediaRef = { hash: string; type: string; size: number; text?: string };
+const HASH = /^[0-9a-f]{64}$/;
+export const isMediaRef = (v: unknown): v is MediaRef =>
+  Boolean(v) && typeof v === "object" && HASH.test(String((v as MediaRef).hash)) && typeof (v as MediaRef).type === "string" && Number.isFinite((v as MediaRef).size);
 /** What a field holds, for slot filling: names (NER) and typed values (email, phone, web address, money, a measure). */
 export const FIELD_ENTITIES = ["person", "location", "organization", "email", "phone", "url", "money", "measure"] as const;
 export type FieldEntity = (typeof FIELD_ENTITIES)[number];
@@ -39,9 +53,13 @@ export type Field = {
   entity?: FieldEntity;
   /** Ask this question only when the condition holds. */
   when?: string;
+  /** photo: how many (1..MAX_PHOTOS), whether the kiosk reads them, and where they are kept. */
+  max?: number;
+  read?: (typeof MEDIA_READS)[number];
+  keep?: (typeof MEDIA_KEEPS)[number];
 };
 
-const FIELD_KEYS = new Set(["id", "type", "label", "required", "options", "placeholder", "default", "description", "keywords", "entity", "when"]);
+const FIELD_KEYS = new Set(["id", "type", "label", "required", "options", "placeholder", "default", "description", "keywords", "entity", "when", "max", "read", "keep"]);
 const FIELD_ID = /^[a-z][a-z0-9_-]{0,63}$/;
 const WHEN_ROOTS = new Set(["values", "answers", "context"]);
 
@@ -70,6 +88,10 @@ export function fieldListProblems(at: string, fields: unknown): string[] {
       else if (fd.options.some((o) => !o || typeof o !== "object" || typeof (o as { value?: unknown }).value !== "string" || !(o as { label?: unknown }).label))
         problems.push(`${fa}: every option needs a value (text) and a label`);
     }
+    const media = fd.type === "photo";
+    if (fd.max !== undefined && (!media || !Number.isInteger(fd.max) || (fd.max as number) < 1 || (fd.max as number) > MAX_PHOTOS)) problems.push(`${fa}: max is for photos, a whole number from 1 to ${MAX_PHOTOS}`);
+    if (fd.read !== undefined && (!media || !MEDIA_READS.includes(fd.read as never))) problems.push(`${fa}: read is for photos: ${MEDIA_READS.join(", ")}`);
+    if (fd.keep !== undefined && (!media || !MEDIA_KEEPS.includes(fd.keep as never))) problems.push(`${fa}: keep is for photos: ${MEDIA_KEEPS.join(", ")}`);
     if (fd.entity !== undefined && !FIELD_ENTITIES.includes(fd.entity as FieldEntity)) problems.push(`${fa}: entity must be one of ${FIELD_ENTITIES.join(", ")}`);
     if (fd.keywords !== undefined && (!Array.isArray(fd.keywords) || fd.keywords.some((k) => typeof k !== "string"))) problems.push(`${fa}: keywords must be a list of words`);
     if (fd.description !== undefined && typeof fd.description !== "string") problems.push(`${fa}: description must be text`);
@@ -96,13 +118,17 @@ export function fieldVisible(field: Field, values: Record<string, unknown>, scop
 
 /** A field's missing or malformed answer, or null. */
 export function fieldProblem(field: Field, value: unknown): string | null {
-  const empty = value === undefined || value === null || value === "";
+  const empty = value === undefined || value === null || value === "" || (Array.isArray(value) && !value.length);
   if (empty) return field.required ? `${field.label} is required.` : null;
   if (field.type === "select" && !field.options?.some((o) => o.value === value)) return `Choose one of the options for ${field.label}.`;
   if ((field.type === "text" || field.type === "textarea" || field.type === "password") && typeof value !== "string") return `${field.label} must be text.`;
   if (field.type === "boolean" && typeof value !== "boolean") return `${field.label} must be yes or no.`;
   if (field.type === "number" && !Number.isFinite(typeof value === "string" ? Number(value) : value)) return `${field.label} must be a number.`;
   if (field.type === "date" && !(typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value))) return `${field.label} must be a date.`;
+  if (field.type === "photo") {
+    if (!Array.isArray(value) || !value.every(isMediaRef)) return `${field.label} must be photos taken here.`;
+    if (value.length > (field.max ?? 1)) return `${field.label}: at most ${field.max ?? 1} photo${(field.max ?? 1) === 1 ? "" : "s"}.`;
+  }
   return null;
 }
 

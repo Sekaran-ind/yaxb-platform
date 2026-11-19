@@ -1,0 +1,29 @@
+# Seeded into the Service Catalogue (LIB-21): an example of a photo field (MED-1..4). The photo is kept
+# on this device and on the box, apart from the request, which carries only a reference to it;
+# maintenance staff see it from the box when they open the request.
+kind: service
+id: repairs
+title: Repairs
+summary: Report something broken, with a photo; maintenance takes it from there.
+icon: wrench
+order: 40
+roles:
+  - { id: maintenance, label: Maintenance, description: Fixes what is reported and closes the report }
+journeys:
+  - id: report-repair
+    title: Report a repair
+    summary: Take a photo of what's broken and say where it is; maintenance gets it with the photo.
+    icon: wrench
+    category: repair
+    roles: { complete: [maintenance] }
+    screens:
+      - id: what
+        title: What's broken
+        ask: Take a photo of it, and tell us where it is.
+        submitLabel: Send to maintenance
+        questions:
+          - { id: photo, type: photo, label: A photo of it, required: true, keep: box }
+          - { id: where, type: text, label: Where it is, required: true, placeholder: "e.g. Block B, second floor" }
+          - { id: what, type: textarea, label: What's wrong }
+      - id: done
+        result: { title: "Sent to maintenance", text: "They have your photo and where it is. Keep the reference to see how it goes.", outcome: repair-reported }

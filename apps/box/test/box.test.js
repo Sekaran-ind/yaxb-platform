@@ -189,3 +189,19 @@ test('sync v2: changes since a cursor, versions, 409 on a stale write, tombstone
   assert.equal((await call('/v2/collections/secrets')).status, 404);
   assert.equal((await call('/v2/collections/threads/t2', { method: 'PUT', body: { baseVersion: 0, data: { title: 'no notebook' } } })).status, 400);
 });
+
+test('keeps a photo by its hash, and refuses one that doesn\'t match (MED-1)', async () => {
+  const { createHash } = await import('node:crypto');
+  const bytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 5]);
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  const put = (h, body, type = 'image/jpeg') => fetch(`${base}/v1/media/${h}`, { method: 'PUT', headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': type }, body });
+  assert.equal((await put(hash, bytes)).status, 200);
+  assert.equal((await put('0'.repeat(64), bytes)).status, 400, 'wrong hash');
+  assert.equal((await put(hash, bytes, 'text/html')).status, 415, 'not a photo');
+  const got = await fetch(`${base}/v1/media/${hash}`, { headers: { Authorization: `Bearer ${TOKEN}` } });
+  assert.equal(got.status, 200);
+  assert.equal(got.headers.get('content-type'), 'image/jpeg');
+  assert.deepEqual(Buffer.from(await got.arrayBuffer()), bytes);
+  assert.equal((await fetch(`${base}/v1/media/${'1'.repeat(64)}`, { headers: { Authorization: `Bearer ${TOKEN}` } })).status, 404);
+  assert.equal((await fetch(`${base}/v1/media/${hash}`)).status, 401, 'needs the token');
+});

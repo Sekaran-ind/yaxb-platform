@@ -1,7 +1,7 @@
 // Journey summaries (docs/specs/05-journeys-and-forms.md, JRN-20..22): what a journey does, built
 // from its definition so it is always current, and what a finished run did.
 import { LANGUAGES } from "../schemas/index.js";
-import { afterTasks, journeyRolesNeeded, journeyTasks, progressOf, type Field, type Journey, type RunState, type Step } from "./index.js";
+import { afterTasks, isMediaRef, journeyRolesNeeded, journeyTasks, progressOf, type Field, type Journey, type MediaRef, type RunState, type Step } from "./index.js";
 
 /** Where a service's work happens, for the visitor. */
 /** `account`: Anjal's account service (sign-in and spaces, 15-identity.md), never the AI assistant. */
@@ -121,7 +121,7 @@ export type RunSummary = {
   /** Steps passed, in order, and whether each went well. */
   steps: { label: string; ok: boolean }[];
   /** The answers as the visitor saw them. */
-  answers: { step: string; field: string; value: string }[];
+  answers: { step: string; field: string; value: string; media?: MediaRef[] }[];
   result: { title: string; text: string } | null;
   /** The whole run as Markdown, to save to the notebook. */
   markdown: string;
@@ -140,6 +140,13 @@ function display(field: Field, value: unknown): string {
       return String((value as { title?: unknown } | null)?.title ?? "");
     case "password":
       return "••••••";
+    case "photo": {
+      // Never the photo itself (MED-1): how many, and what was read from them (MED-3).
+      const list = Array.isArray(value) ? (value as { text?: string }[]) : [];
+      if (!list.length) return "";
+      const read = list.map((p) => p.text?.trim()).filter(Boolean).join(" · ");
+      return `${list.length} photo${list.length === 1 ? "" : "s"}${read ? `: ${read}` : ""}`;
+    }
     default:
       return String(value).trim();
   }
@@ -153,8 +160,10 @@ export function summarizeRun(journey: Journey, state: RunState): RunSummary {
   for (const t of state.trail) {
     const step = journey.steps[t.step];
     for (const f of step?.fields ?? []) {
-      const v = display(f, state.answers[t.step]?.[f.id]);
-      if (v) answers.push({ step: t.label, field: f.label, value: v });
+      const value = state.answers[t.step]?.[f.id];
+      const v = display(f, value);
+      // Photos go by reference (MED-1): the screen shows them from this device or the box.
+      if (v) answers.push({ step: t.label, field: f.label, value: v, ...(f.type === "photo" && Array.isArray(value) ? { media: value.filter(isMediaRef) } : {}) });
     }
   }
   const result = state.result ? { title: state.result.title, text: state.result.text } : null;

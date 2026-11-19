@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MediaThumbs from "./MediaThumbs.vue";
 // One case (LIB-33..38): a catalogue journey handed between people. It shows where the journey is,
 // the answers so far, and its thread (who did what, and notes). Whoever's turn it is carries on in
 // the journey panel from where it stopped; a finisher closes it; the role whose turn it is, a
@@ -247,7 +248,7 @@ const when = (iso: string) => new Date(iso).toLocaleString([], { dateStyle: "med
           </li>
         </ol>
         <dl v-if="run.answers.length" class="mt-2 grid gap-x-4 gap-y-1 @lg:grid-cols-[auto_1fr]">
-          <template v-for="(a, i) in run.answers" :key="i"><dt class="text-gray-500">{{ a.field }}</dt><dd class="mb-1 text-ink @lg:mb-0">{{ a.value }}</dd></template>
+          <template v-for="(a, i) in run.answers" :key="i"><dt class="text-gray-500">{{ a.field }}</dt><dd class="mb-1 text-ink @lg:mb-0">{{ a.value }}<MediaThumbs v-if="a.media?.length" :media="a.media" :label="a.field" /></dd></template>
         </dl>
       </details>
 
