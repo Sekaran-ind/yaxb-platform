@@ -48,7 +48,8 @@ export type Session = {
   account_id: string;
   refresh_hash: string;
   prev_hash: string | null;
-  method: MethodKind;
+  /** How it began: a sign-in method, or "handoff" (a kiosk signed in by scanning with a phone, IDN-19). */
+  method: MethodKind | "handoff";
   /** The assurance level reached (IDN-30): 2 a verified contact, 3 a strong sign-in. */
   level: number;
   device: string | null;
@@ -216,15 +217,17 @@ export type TokenClaims = { iss: string; sub: string; sid: string; lvl: number; 
 // ---- devices signed in with a code (IDN-17, 18, 41) -----------------------------------------------------
 
 /** What a device signs in as: the CLI, a box, a kiosk, a voice device. */
-export const DEVICE_CLIENTS = ["cli", "box", "kiosk", "voice"] as const;
+export const DEVICE_CLIENTS = ["cli", "box", "kiosk", "voice", "handoff"] as const;
 export type DeviceClient = (typeof DEVICE_CLIENTS)[number];
 /** What each kind of device may do with its credential. */
-export const DEVICE_SCOPES: Record<DeviceClient, readonly string[]> = { cli: ["chat"], box: ["box"], kiosk: ["chat"], voice: ["chat"] };
+export const DEVICE_SCOPES: Record<DeviceClient, readonly string[]> = { cli: ["chat"], box: ["box"], kiosk: ["chat"], voice: ["chat"], handoff: [] };
+/** A kiosk signed in by scanning (IDN-19) gets a short session, never renewed past its end. */
+export const HANDOFF_MINUTES = 30;
 /** A code to type lasts ten minutes; a device's credential a year (sign in again after). */
 export const DEVICE_CODE_MINUTES = 10;
 export const DEVICE_CREDENTIAL_DAYS = 365;
 export const DEVICE_TOKEN_PREFIX = "anj_dev_";
-export type DeviceGrant = { id: string; device_code_hash: string; user_code_hash: string; client: DeviceClient; name: string; status: "pending" | "approved" | "denied" | "used"; account_id: string | null; created_at: string; expires_at: string };
+export type DeviceGrant = { id: string; device_code_hash: string; user_code_hash: string; client: DeviceClient; name: string; status: "pending" | "approved" | "denied" | "used"; account_id: string | null; created_at: string; expires_at: string; level?: number | null };
 export type DeviceCredential = { id: string; account_id: string; secret_hash: string; client: DeviceClient; name: string; scopes: string[]; created_at: string; last_used_at: string | null; expires_at: string; revoked_at: string | null };
 export type DeviceCredentialView = Omit<DeviceCredential, "secret_hash">;
 /** Letters and digits that can't be mistaken for one another, for a code a person types. */
@@ -294,7 +297,7 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
   async function issue(account: Account, session: Session, refresh: string): Promise<SignedIn> {
     const t = Math.floor(now().getTime() / 1000);
     const k = await signingKey();
-    const claims: TokenClaims = { iss: options.issuer, sub: account.id, sid: session.id, lvl: session.level, amr: [session.method], iat: t, exp: t + ACCESS_SECONDS, auth_time: Math.floor(new Date(session.created_at).getTime() / 1000) };
+    const claims: TokenClaims = { iss: options.issuer, sub: account.id, sid: session.id, lvl: session.level, amr: [session.method], iat: t, exp: Math.min(t + ACCESS_SECONDS, Math.floor(new Date(session.expires_at).getTime() / 1000)), auth_time: Math.floor(new Date(session.created_at).getTime() / 1000) };
     return {
       account,
       session: { id: session.id, access: await signJwt(claims, k.kid, k.privateJwk), refresh: `${session.id}.${refresh}`, access_expires_at: iso(new Date((t + ACCESS_SECONDS) * 1000)), expires_at: session.expires_at },
@@ -302,7 +305,7 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
     };
   }
 
-  async function newSession(account: Account, method: MethodKind, level: number, device: string | null): Promise<SignedIn> {
+  async function newSession(account: Account, method: MethodKind | "handoff", level: number, device: string | null, { minutes }: { minutes?: number } = {}): Promise<SignedIn> {
     // Keep the newest sessions; a person with too many loses the oldest.
     const open = (await store.sessions(account.id)).filter((s) => !s.revoked_at && s.expires_at > iso(now())).sort((a, b) => a.last_used_at.localeCompare(b.last_used_at));
     for (const s of open.slice(0, Math.max(0, open.length - MAX_SESSIONS + 1))) await store.putSession({ ...s, revoked_at: iso(now()) });
@@ -318,7 +321,7 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
       device: device?.slice(0, 80) ?? null,
       created_at: t,
       last_used_at: t,
-      expires_at: iso(new Date(now().getTime() + REFRESH_DAYS * 86400_000)),
+      expires_at: iso(new Date(now().getTime() + (minutes ? minutes * 60_000 : REFRESH_DAYS * 86400_000))),
       revoked_at: null,
     };
     await store.putSession(s);
@@ -433,7 +436,9 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
       }
       const account = await liveAccount(s.account_id);
       const next = randomToken();
-      const updated: Session = { ...s, prev_hash: s.refresh_hash, refresh_hash: await h("refresh", next), last_used_at: iso(now()), expires_at: iso(new Date(now().getTime() + REFRESH_DAYS * 86400_000)) };
+      // A kiosk's session from scanning ends when it ends: renewing never lengthens it (IDN-19).
+      const expires = s.method === "handoff" ? s.expires_at : iso(new Date(now().getTime() + REFRESH_DAYS * 86400_000));
+      const updated: Session = { ...s, prev_hash: s.refresh_hash, refresh_hash: await h("refresh", next), last_used_at: iso(now()), expires_at: expires };
       await store.putSession(updated);
       return issue(account, updated, next);
     },
@@ -607,7 +612,7 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
       await liveAccount(accountId);
       const g = await store.deviceGrantBy("user_code_hash", await h("device-user", normalizeUserCode(userCode)));
       if (!g || g.status !== "pending" || g.expires_at <= iso(now())) throw new IdentityError("That code isn't waiting any more. Ask the device for a new one.", 404);
-      await store.putDeviceGrant({ ...g, status: approve ? "approved" : "denied", account_id: approve ? accountId : null });
+      await store.putDeviceGrant({ ...g, status: approve ? "approved" : "denied", account_id: approve ? accountId : null, level });
       return { client: g.client, name: g.name, approved: approve };
     },
     /**
@@ -616,7 +621,8 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
      */
     async devicePoll(deviceCode: string): Promise<{ status: "pending" | "denied" | "expired" } | { status: "approved"; token: string; credential: DeviceCredentialView }> {
       const g = await store.deviceGrantBy("device_code_hash", await h("device-grant", deviceCode));
-      if (!g || g.status === "used") return { status: "expired" };
+      // A kiosk's scan gets a session (handoffPoll), never a credential.
+      if (!g || g.status === "used" || g.client === "handoff") return { status: "expired" };
       if (g.status === "denied") return { status: "denied" };
       if (g.status === "pending") return g.expires_at <= iso(now()) ? { status: "expired" } : { status: "pending" };
       const id = crypto.randomUUID();
@@ -639,6 +645,22 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
       const { secret_hash: _, ...view } = cred;
       return { status: "approved", token: `${DEVICE_TOKEN_PREFIX}${id}.${secret}`, credential: view };
     },
+    /**
+     * The kiosk polls after showing its QR code (IDN-19): once the person's phone approves it, the
+     * kiosk gets a session of its own for HANDOFF_MINUTES, at the level the phone was signed in at.
+     */
+    async handoffPoll(deviceCode: string, device: string | null): Promise<{ status: "pending" | "denied" | "expired" } | ({ status: "approved" } & SignedIn)> {
+      const g = await store.deviceGrantBy("device_code_hash", await h("device-grant", deviceCode));
+      if (!g || g.client !== "handoff" || g.status === "used") return { status: "expired" };
+      if (g.status === "denied") return { status: "denied" };
+      if (g.status === "pending") return g.expires_at <= iso(now()) ? { status: "expired" } : { status: "pending" };
+      await store.putDeviceGrant({ ...g, status: "used" });
+      const account = await liveAccount(g.account_id!);
+      const out = await newSession(account, "handoff", Math.min(g.level ?? 2, 3), device, { minutes: HANDOFF_MINUTES });
+      await audit(account.id, "signed_in", { method: "handoff", level: Math.min(g.level ?? 2, 3) });
+      return { status: "approved", ...out };
+    },
+
     /** The credential a device presents, while it holds (seen at most once an hour). */
     async deviceCredentialOf(token: string | null | undefined): Promise<DeviceCredentialView | null> {
       const m = new RegExp(`^${DEVICE_TOKEN_PREFIX}([0-9a-f-]{36})\\.([A-Za-z0-9_-]{20,100})$`).exec(token ?? "");

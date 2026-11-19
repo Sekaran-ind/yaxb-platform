@@ -402,3 +402,34 @@ describe("devices signed in with a code (IDN-17, 18, 41)", () => {
       expect(await id.deviceCredentialOf(got.token)).toBeNull();
     });
 });
+
+describe("signing in on a kiosk by scanning (IDN-19)", () => {
+  for (const [name, make] of [
+    ["memory", (): IdentityStore => createMemoryIdentityStore()],
+    ["D1", (): IdentityStore => createD1IdentityStore(sqliteD1({ folder: "migrations-platform" }))],
+  ] as const)
+    it(`the phone approves, the kiosk gets a short session at the phone's level, on ${name}`, async () => {
+      let clock = new Date("2026-11-19T10:00:00Z");
+      const id = createIdentityService(make(), { secret: "test-secret-0123456789", issuer: "https://anjalai.cc", now: () => clock });
+      const r = await id.oidcSignIn({ provider: "google", subject: "s", email: "a@b.in", emailVerified: true, consent: true });
+      if (!("session" in r)) throw new Error();
+      const kiosk = await id.deviceStart({ client: "handoff", name: "Front desk" });
+      expect(await id.handoffPoll(kiosk.device_code, "kiosk")).toEqual({ status: "pending" });
+      // A credential is never minted for a scan.
+      expect(await id.devicePoll(kiosk.device_code)).toEqual({ status: "expired" });
+      await id.deviceApprove(r.account.id, 2, kiosk.user_code, true);
+      const got = await id.handoffPoll(kiosk.device_code, "kiosk");
+      if (got.status !== "approved") throw new Error(got.status);
+      const claims = await id.verify(got.session.access);
+      expect(claims).toMatchObject({ sub: r.account.id, lvl: 2, amr: ["handoff"] });
+      expect(new Date(got.session.expires_at).getTime() - clock.getTime()).toBe(30 * 60_000);
+      // Used once.
+      expect(await id.handoffPoll(kiosk.device_code, "kiosk")).toEqual({ status: "expired" });
+      // Renewing doesn't lengthen it, and after its end it is gone.
+      clock = new Date(clock.getTime() + 20 * 60_000);
+      const renewed = await id.refresh(got.session.refresh);
+      expect(renewed.session.expires_at).toBe(got.session.expires_at);
+      clock = new Date(clock.getTime() + 11 * 60_000);
+      await expect(id.refresh(renewed.session.refresh)).rejects.toThrow(/Sign in again/);
+    });
+});

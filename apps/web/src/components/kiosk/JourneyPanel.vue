@@ -29,6 +29,7 @@ import { actCase, deliveryText, resendCase, startCase, type CaseDetail } from "@
 import type { CaseSummary, Delivery } from "@sekaran-ind/yaxb-core/cases";
 import { useConsent } from "@/composables/consent";
 import ConsentGate from "./ConsentGate.vue";
+import PhoneSignIn from "@/components/account/PhoneSignIn.vue";
 import { JourneyTasks } from "@sekaran-ind/yaxb-journeys/vue";
 
 const props = defineProps<{
@@ -542,6 +543,8 @@ onBeforeUnmount(() => {
         <button v-if="state.stepUp.level <= 2 && identity.config.value?.google" type="button" class="btn-light" @click="identity.google()">Continue with Google</button>
         <button type="button" class="btn-ghost" @click="openAccount">{{ identity.signedIn.value ? "Add a passkey to my account" : "Make an account" }}</button>
       </div>
+      <!-- Not signed in here (a front desk, a shared screen): scan with a phone that is (IDN-19). -->
+      <PhoneSignIn v-if="!identity.signedIn.value" label="Scan with my phone instead" />
       <p v-if="stepUpError" role="alert" class="text-sm text-red-800">{{ stepUpError }}</p>
     </div>
 

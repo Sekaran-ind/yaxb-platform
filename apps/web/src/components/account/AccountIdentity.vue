@@ -9,6 +9,7 @@ import { Check, Copy, KeyRound, Loader2, LogOut, MonitorSmartphone, Plus, Shield
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useIdentity, type DeviceRow, type SessionRow } from "@/composables/identity";
+import PhoneSignIn from "./PhoneSignIn.vue";
 
 const id = useIdentity();
 const route = useRoute();
@@ -30,7 +31,7 @@ const devices = ref<DeviceRow[]>([]);
 const deviceCode = ref(typeof route.query.device === "string" ? route.query.device : "");
 const asking = ref<{ client: string; name: string; scopes: string[] } | null>(null);
 const CLIENT: Record<string, string> = { cli: "Terminal (yaxb)", box: "Box", kiosk: "Kiosk", voice: "Voice device" };
-const CLIENT_A: Record<string, string> = { cli: "a terminal", box: "a box", kiosk: "a kiosk", voice: "a voice device" };
+const CLIENT_A: Record<string, string> = { cli: "a terminal", box: "a box", kiosk: "a kiosk", voice: "a voice device", handoff: "a kiosk you scanned" };
 const SCOPE: Record<string, string> = { chat: "ask the kiosk as you", box: "use your box" };
 async function lookUpDevice() {
   asking.value = null;
@@ -121,6 +122,8 @@ async function copyCodes() {
         <button v-if="id.config.value?.google" type="button" class="btn-light" :disabled="busy !== null" @click="id.google()">Continue with Google</button>
         <button type="button" class="btn-ghost" :aria-expanded="showRecovery" @click="showRecovery = !showRecovery">Use a recovery code</button>
       </div>
+      <!-- On a shared or public screen: scan with a phone that is signed in (IDN-19). -->
+      <PhoneSignIn label="Sign in with my phone (scan a code)" />
       <form v-if="showRecovery" class="flex flex-wrap items-end gap-2" @submit.prevent="run('recovery', () => id.recovery(recoveryCode))">
         <label class="text-sm"><span class="mb-1 block text-gray-600">Recovery code</span><input v-model="recoveryCode" class="input w-48 font-mono uppercase" placeholder="ABCDE-23456" autocomplete="one-time-code" required /></label>
         <button type="submit" class="btn-light" :disabled="busy !== null">Sign in</button>
@@ -211,13 +214,14 @@ async function copyCodes() {
       <!-- A device asks to sign in with a code (IDN-41). -->
       <section class="space-y-2" aria-labelledby="approve-h">
         <h4 id="approve-h" class="text-sm font-semibold text-ink">Approve a device</h4>
-        <p class="text-sm text-gray-600">A terminal (<code>yaxb login</code>), a box or a voice device shows a code. Type it here to sign it in as you.</p>
+        <p class="text-sm text-gray-600">A kiosk you scanned, a terminal (<code>yaxb login</code>), a box or a voice device shows a code. Type it here (a scan fills it in) to sign it in as you.</p>
         <form class="flex flex-wrap items-end gap-2" @submit.prevent="lookUpDevice">
           <label class="block text-sm"><span class="mb-1 block font-medium text-ink">The code it shows</span><input v-model="deviceCode" class="input w-40 font-mono uppercase tracking-widest" maxlength="9" placeholder="ABCD-EFGH" autocomplete="off" /></label>
           <button type="submit" class="btn-light h-10 px-3 text-sm" :disabled="busy !== null || deviceCode.trim().length < 8">Look it up</button>
         </form>
         <div v-if="asking" class="space-y-2 rounded-xl bg-mist p-3 text-sm" role="group" aria-label="The device asking">
-          <p class="text-ink"><strong>{{ asking.name }}</strong>, {{ CLIENT_A[asking.client] ?? asking.client }}, asks to {{ asking.scopes.map((s) => SCOPE[s] ?? s).join(" and ") }}. Only approve it if you started it yourself, just now.</p>
+          <p v-if="asking.client === 'handoff'" class="text-ink">The kiosk you scanned asks to sign you in on it for 30 minutes. Only approve it if you are standing at it, just now.</p>
+          <p v-else class="text-ink"><strong>{{ asking.name }}</strong>, {{ CLIENT_A[asking.client] ?? asking.client }}, asks to {{ asking.scopes.map((s) => SCOPE[s] ?? s).join(" and ") }}. Only approve it if you started it yourself, just now.</p>
           <div class="flex flex-wrap gap-2">
             <button type="button" class="btn-primary h-9 px-3 text-sm" :disabled="busy !== null" @click="answerDevice(true)">Approve</button>
             <button type="button" class="btn-ghost h-9 px-3 text-sm" :disabled="busy !== null" @click="answerDevice(false)">Turn it down</button>
