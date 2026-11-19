@@ -80,6 +80,7 @@ From `apps/web`: `npm run deploy:family`, `npm run deploy:business` and `npm run
 - **Stop local servers with `node yaxb.mjs stop`.** Stopping a background wrangler or vite only kills the wrapper, and its workerd and esbuild children keep running.
 - **PowerShell 5.1** writes files with a byte-order mark. Strip it from JSON files.
 - **Vite in dev** may load a module twice, under a `?t=` URL, after a hot update.
+- **Rebuilding yaxb-core (or yaxb-journeys) while a dev server runs** can leave its Worker broken ("Internal Server Error: Cannot convert undefined or null to object" from `runner-worker`): the Worker reloaded while `dist/` was half written. Restart that server (`node yaxb.mjs restart`, or stop and start the edition's `vite --mode …`).
 
 ## Known issue, not fixed
 
