@@ -22,6 +22,7 @@ import BoxConnection from "./BoxConnection.vue";
 import FrontDeskSetup from "./FrontDeskSetup.vue";
 import ChildLockSetup from "./ChildLockSetup.vue";
 import BoxSync from "./BoxSync.vue";
+import StorageMeter from "./StorageMeter.vue";
 import { useChildMode } from "@/composables/child";
 import { casesCaps } from "@/composables/case-network";
 import ChoiceGrid from "./ChoiceGrid.vue";
@@ -322,6 +323,8 @@ async function clearBrowser() {
             <span v-if="cleared" role="status" class="text-sm text-gray-600">{{ cleared }}</span>
           </div>
         </section>
+        <!-- What this device keeps, and asking the browser to keep it (STO-1, STO-2). -->
+        <StorageMeter class="mt-4" />
         <!-- Requests (cases, LIB-42..48): devices first; the cloud keeps service data only on the paid plan. -->
         <section v-if="caps" class="card mt-4 p-5">
           <h2 class="text-lg font-semibold text-ink">Where requests are kept</h2>

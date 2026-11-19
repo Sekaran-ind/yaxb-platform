@@ -17,6 +17,7 @@ import ChatJourney from "./ChatJourney.vue";
 import ContextSheet from "./ContextSheet.vue";
 import RequestCard from "./RequestCard.vue";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { sessionEnds } from "@/composables/restricted";
 import { cn } from "@/lib/cn";
 import AnswerText from "./AnswerText.vue";
 import CommandCard from "./CommandCard.vue";
@@ -111,6 +112,11 @@ function toolLabel(t: ToolActivity) {
 }
 
 const draft = ref("");
+// A front desk session ends (STO-3): what the visitor had started typing goes too.
+watch(sessionEnds, () => {
+  draft.value = "";
+  menu.value = false;
+});
 const end = ref<HTMLElement | null>(null);
 const scroller = ref<HTMLElement | null>(null);
 const provider = computed(() => props.catalog?.providers.find((p) => p.id === props.selection?.provider));

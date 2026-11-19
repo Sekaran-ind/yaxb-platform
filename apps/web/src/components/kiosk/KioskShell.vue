@@ -12,7 +12,7 @@ import { composeLocalAnswer, composeWebAnswer, EMBEDDING_MODELS, looksLikeEmerge
 import { resolveLayout, screensFor } from "@sekaran-ind/yaxb-core/screens";
 import { DEFAULT_LANGUAGE, type LanguageCode } from "@sekaran-ind/yaxb-core/settings";
 import { chooseSpelling } from "@sekaran-ind/yaxb-core/spell";
-import { checkSpelling } from "@/lib/browser/spell";
+import { checkSpelling, forgetSpelling } from "@/lib/browser/spell";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, toRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { logActivity, useAccount } from "@/composables/account";
@@ -111,9 +111,13 @@ const unlocking = ref(false);
 /** The conversations drawer, opened from its pill in the tab row. */
 const threadsOpen = ref(false);
 // A visit ends (End session, idle, or the front desk turned on): nothing of it stays.
+// A front desk session ends (STO-3): the visit's conversation, notebook, words and drafts go.
 watch(sessionEnds, async () => {
   voiceOut.cancel();
+  voiceIn.stop();
   chat.reset();
+  forgetSpelling();
+  threadsOpen.value = false;
   for (const n of nb.notebooks.value) await nb.remove(n.id).catch(() => undefined);
   screen.value = "transcript";
 });

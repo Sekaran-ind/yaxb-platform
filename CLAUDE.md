@@ -368,6 +368,8 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
 
 ## Storage (configurable, Deep Agents backends)
 
+The device (STO-1..3): `lib/browser/storage-meter.ts` (`measureStorage`, `askPersistence`, `bytesText`) and `components/settings/StorageMeter.vue` under Preferences → Storage; `App.vue` asks for persistent storage on the native app, an installed app and a front desk. A front desk session's end (`sessionEnds`) also clears the message box (`TranscriptPane`) and the spelling dictionary (`forgetSpelling`).
+
 Settings → Storage: `indexeddb` | `session` | `box` | `server`.
 - **Browser / session / box**: the browser keeps notebooks and conversations (`apps/web/src/lib/browser/store.ts`; box = yaxb-box over `@sekaran-ind/yaxb-core/stores/box`). Each turn sends them; the core returns the conversation and memory in the `state` event. The box connection (`settings.box`) stays in localStorage and is never sent to the Worker.
 - **Server**: conversations in D1 (`ThreadStore`); the agent's `/memories/` through Deep Agents' `CompositeBackend` → `StoreBackend` over `KvStore` (a LangGraph `BaseStore`, `stores/kv.ts`) on D1 (`createD1Kv`, migration 0002). Namespace `yaxb.memories.<caller>.<notebook>` from `config.configurable.memoryNamespace`; seeded once from the notebook's memory. `harness.ts backendFor()` builds the backend and passes it to the filesystem middleware too (our custom one replaces Deep Agents' default by name, so it must get the backend).

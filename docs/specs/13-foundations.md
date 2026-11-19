@@ -70,9 +70,9 @@ Nothing on the device is ever removed today, and Anjal never asks the browser to
 
 | ID | Requirement | Status |
 |---|---|---|
-| STO-1 | Preferences → Storage shows a meter: total used, the browser's quota, and the size of each category (models, conversations, cases, sync data, queued events, team chat, media, map tiles). | Planned |
-| STO-2 | Kiosks and installed apps ask for persistent storage (`navigator.storage.persist()`). | Planned |
-| STO-3 | When a Restricted Mode session ends, the visitor's conversation, form drafts and media are wiped from the device. | Planned |
+| STO-1 | Preferences → Storage shows a meter: total used, the browser's quota, and the size of each category (models, conversations, cases, sync data, queued events, team chat, media, map tiles). | Built: `StorageMeter.vue` (`lib/browser/storage-meter.ts`): the browser's estimate, and each of the kiosk's IndexedDB databases, Cache Storage (models) and local storage, measured on the device. Media and map tiles appear once they are stored. |
+| STO-2 | Kiosks and installed apps ask for persistent storage (`navigator.storage.persist()`). | Built: asked at start by the native app, an installed app and a front desk; anyone can ask from the meter. |
+| STO-3 | When a Restricted Mode session ends, the visitor's conversation, form drafts and media are wiped from the device. | Built: the conversation, the visit's notebook and its words, the consent answers, the message box and open forms go; requests waiting to be delivered stay. |
 | STO-4 | "Free up space" lists suggestions, largest first, each saying what will be removed and whether a copy exists elsewhere. A notebook or a conversation can be exported first. | Planned |
 | STO-5 | An automatic cleanup runs once a day when the device is idle and charging, and at once when free space falls below a threshold. It never removes anything that exists only on this device and has not expired: unsynced changes, undelivered cases and unsent events are always kept. | Planned |
 | STO-6 | How long a record is kept: a statutory minimum (RET) always wins. After that, the shortest of the service's consent form, the business's policy and the person's own choice applies. Families have a "keep forever" mark that cleanup always respects. | Planned |
