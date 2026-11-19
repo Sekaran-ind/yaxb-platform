@@ -5,7 +5,7 @@ import { offers, resolveContext, servesApi, surfaceName } from "../src/context/i
 describe("context", () => {
   it("resolves a surface and what it offers", () => {
     const family = resolveContext({ surface: "family" });
-    expect(family.features).toEqual(["child-lock", "profiles"]);
+    expect(family.features).toEqual(["child-lock", "profiles", "household"]);
     expect(offers(family, "catalogue")).toBe(false);
     const business = resolveContext({ surface: "Business", tenant: "velan", jurisdiction: "in-tn" });
     expect(business).toMatchObject({ surface: "business", tenant: "velan", jurisdiction: "IN-TN" });

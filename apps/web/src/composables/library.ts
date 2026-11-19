@@ -6,6 +6,9 @@
 import { JOURNEY_SERVICES, kioskContent } from "@sekaran-ind/yaxb-core/content";
 import { trackWrite } from "@/lib/browser/sync-hook";
 import { compileBundle, DEFAULT_ROLES, journeyRolesNeeded, roleLabel, type Journey, type Role, type RunActor, type Service } from "@sekaran-ind/yaxb-journeys";
+import { HOUSEHOLD_ENTRY, HOUSEHOLD_ROLE_LABELS, householdJourneys } from "@sekaran-ind/yaxb-core/household";
+import { useHousehold } from "@/composables/household";
+import { offers } from "@/lib/surface";
 import { computed, ref, shallowRef } from "vue";
 import { api } from "@/lib/api";
 
@@ -117,18 +120,21 @@ export const loadedServices = computed(() =>
 export const kioskJourneys = computed<Journey[]>(() => {
   const extra = loadedServices.value.flatMap((s) => s.journeys.filter((j) => s.meta.journeys.find((m) => m.id === j.id)?.allowed));
   const ids = new Set(extra.map((j) => j.id));
-  return [...kioskContent.journeys.filter((j) => !ids.has(j.id)), ...extra];
+  // At home (Family): the built-in Household service's journeys (EDN-22).
+  const home = offers("household") ? householdJourneys() : [];
+  return [...kioskContent.journeys.filter((j) => !ids.has(j.id)), ...extra, ...home];
 });
 
 export const roleCatalogue = computed(() => roles.value);
-export const roleName = (id: string) => roleLabel(id, roles.value);
+export const roleName = (id: string) => (offers("household") && id in HOUSEHOLD_ROLE_LABELS ? HOUSEHOLD_ROLE_LABELS[id as keyof typeof HOUSEHOLD_ROLE_LABELS] : roleLabel(id, roles.value));
 
 /** Who is at this kiosk, for a catalogue journey's runner: the person starting it, with their roles. */
-export const kioskActor = computed<RunActor>(() => ({ starter: true, roles: viewer.value.roles }));
+export const kioskActor = computed<RunActor>(() => ({ starter: true, roles: [...viewer.value.roles, ...useHousehold().roles.value] }));
 export const viewerIsMember = computed(() => viewer.value.member);
 
 /** The catalogue entry a journey comes from (null for a built-in journey). */
 export function entryOfJourney(journeyId: string): string | null {
+  if (offers("household") && householdJourneys().some((j) => j.id === journeyId)) return HOUSEHOLD_ENTRY;
   return loadedServices.value.find((s) => s.journeys.some((j) => j.id === journeyId))?.meta.entry_id ?? null;
 }
 

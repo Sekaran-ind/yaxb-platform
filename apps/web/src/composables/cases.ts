@@ -6,6 +6,7 @@
 // A visitor never gets a list (kiosks are shared): they open theirs by its reference.
 import type { Beacon, Case, CaseEvent, CaseSummary, Delivery } from "@sekaran-ind/yaxb-core/cases";
 import type { RunActor } from "@sekaran-ind/yaxb-journeys";
+import { HOUSEHOLD_ENTRY } from "@sekaran-ind/yaxb-core/household";
 import { computed, shallowRef } from "vue";
 import { api } from "@/lib/api";
 import {
@@ -45,12 +46,12 @@ const keyOf = (d: CaseDetail) => (d.actor.starter && d.case.started_by.startsWit
 
 /** Hand a run over: a new case. */
 export async function startCase(entry: string, journey: string, answers: unknown, steps: unknown): Promise<Handed> {
-  if (onDevices.value) return startOnDevice(entry, journey, answers, steps);
+  if (onDevices.value || entry === HOUSEHOLD_ENTRY) return startOnDevice(entry, journey, answers, steps);
   return { ...(await api<{ case: CaseSummary }>("/api/cases", { entry, journey, answers, steps })), delivery: null };
 }
 /** This person's part of a case they carried on. */
 export async function actCase(d: CaseDetail, answers: unknown, steps: unknown): Promise<Handed> {
-  if (onDevices.value) return actOnDevice(keyOf(d), answers, steps);
+  if (onDevices.value || d.case.entry_id === HOUSEHOLD_ENTRY) return actOnDevice(keyOf(d), answers, steps);
   return { ...(await api<{ case: CaseSummary }>(`/api/cases/${encodeURIComponent(keyOf(d))}/act`, { answers, steps })), delivery: null };
 }
 export const openCase = (key: string): Promise<CaseDetail> => (onDevices.value ? openOnDevice(key.trim()) : api<CaseDetail>(`/api/cases/${encodeURIComponent(key.trim())}`));
