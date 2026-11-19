@@ -9,14 +9,14 @@ describe("context", () => {
     // Community (EDN-2): Business's features, with profiles and the child lock; no household.
     const community = resolveContext({ surface: "community" });
     expect(community.features).toEqual(["catalogue", "requests", "staff", "front-desk", "join", "directory", "child-lock", "profiles"]);
-    expect(surfaceName(community)).toBe("Anjal Community");
+    expect(surfaceName(community)).toBe("Anjalai Community");
     expect(offers(family, "catalogue")).toBe(false);
     const business = resolveContext({ surface: "Business", tenant: "velan", jurisdiction: "in-tn" });
     expect(business).toMatchObject({ surface: "business", tenant: "velan", jurisdiction: "IN-TN" });
     expect(offers(business, "child-lock")).toBe(false);
     expect(offers(business, "catalogue")).toBe(true);
     expect(resolveContext().surface).toBe("all");
-    expect(surfaceName(family)).toBe("Anjal Family");
+    expect(surfaceName(family)).toBe("Anjalai Family");
     expect(surfaceName(resolveContext({}))).toBe("Yaxb.ai");
   });
 

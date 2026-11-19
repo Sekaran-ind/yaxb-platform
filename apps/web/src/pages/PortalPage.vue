@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The Yaxb.ai portal (SUR-7..9): the combined site's home page. It leads to the platforms Yaxb.ai
-// provides, each on its own site: Anjal.ai Family (personal and family), Anjal.ai Community
-// (associations, clubs, committees; EDN-5), Anjal.ai for Business (small businesses) and ClinüxFlow
+// provides, each on its own site: Anjalai Family (personal and family), Anjalai Community
+// (associations, clubs, committees; EDN-5), Anjalai for Business (small businesses) and ClinüxFlow
 // (enterprises in regulated care). "Which fits you?" highlights one; each
 // card opens its platform. Below: the one core they share, what every platform does, and how data
 // is kept. Every claim here is something the platforms actually do.
@@ -24,6 +24,8 @@ import {
 } from "@lucide/vue";
 import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import BrandLogo from "@/components/site/BrandLogo.vue";
+import BrandText from "@/components/site/BrandText.vue";
+import MeetAnjalai from "@/components/site/MeetAnjalai.vue";
 import ContactPanel from "@/components/site/ContactPanel.vue";
 import PageSection from "@/components/site/PageSection.vue";
 import { cn } from "@/lib/cn";
@@ -50,14 +52,14 @@ const PLATFORMS: Platform[] = [
     icon: HeartHandshake,
     audience: "Personal & Family",
     pick: "Me or my family",
-    name: "Anjal.ai Family",
+    name: "Anjalai Family",
     tagline: "Stay connected, in a space that's yours.",
     points: [
       "One shared notebook of manuals, circulars and recipes that everyone can ask in their own language",
       "Requests at home: a child asks, their own parent decides; repairs reach whoever handles them",
       "Profiles sealed on the device, and a PIN-protected child safety lock",
     ],
-    cta: "Open Anjal.ai Family",
+    cta: "Open Anjalai Family",
     accent: "#f97316",
   },
   {
@@ -65,15 +67,15 @@ const PLATFORMS: Platform[] = [
     icon: Store,
     audience: "Small Business",
     pick: "My small business",
-    name: "Anjal.ai for Business",
-    tagline: "Connect with your customers. Get found on Anjal.ai.",
+    name: "Anjalai for Business",
+    tagline: "Connect with your customers. Get found on Anjalai.",
     points: [
       "Describe a service and the AI designer drafts its journeys, screens and consent forms",
       "Join links for your team, and every request routed to the right person with a reference",
       "A kiosk front desk, and a dashboard per service with completion, waits and outcomes",
       "An ethics check on every service, and an audit log that shows if anything was changed",
     ],
-    cta: "Open Anjal.ai for Business",
+    cta: "Open Anjalai for Business",
     accent: "#c026d3",
   },
   {
@@ -81,14 +83,14 @@ const PLATFORMS: Platform[] = [
     icon: UsersRound,
     audience: "Community",
     pick: "My association, club or committee",
-    name: "Anjal.ai Community",
+    name: "Anjalai Community",
     tagline: "Your association, in every resident's language.",
     points: [
       "The bylaws, minutes and notices answer residents' questions, with the clause cited",
       "Complaints and hall bookings reach the right committee member, each with a reference",
       "The committee sees only what comes to it: never a resident's own notebook or conversations",
     ],
-    cta: "Open Anjal.ai Community",
+    cta: "Open Anjalai Community",
     accent: "#0d9488",
   },
   {
@@ -209,6 +211,8 @@ onBeforeUnmount(() => observer?.disconnect());
       </div>
     </section>
 
+    <MeetAnjalai />
+
     <!-- Choose a platform -->
     <PageSection id="platforms" color="light" title="Choose your platform" subtitle="Each platform has its own site, on the same engine. Tell us who it's for, or open the one you need.">
       <div data-reveal class="mx-auto -mt-4 mb-10 flex flex-wrap items-center justify-center gap-2" role="group" aria-label="Which fits you?">
@@ -251,7 +255,7 @@ onBeforeUnmount(() => observer?.disconnect());
             <span class="rounded-full bg-mist px-3 py-1 text-xs font-medium text-gray-600">{{ p.audience }}</span>
           </div>
 
-          <h3 class="mt-6 text-2xl font-semibold tracking-[-0.03em] text-ink">{{ p.name }}</h3>
+          <h3 class="mt-6 text-2xl font-semibold tracking-[-0.03em] text-ink"><BrandText :text="p.name" /></h3>
           <p class="mt-2 text-pretty text-gray-600">{{ p.tagline }}</p>
 
           <ul class="mt-6 flex-1 space-y-3">
@@ -291,17 +295,20 @@ onBeforeUnmount(() => observer?.disconnect());
           </ul>
         </div>
 
-        <div data-reveal class="rounded-3xl bg-mist/60 p-5 ring-1 ring-gray-200/70 sm:p-7" role="img" aria-label="Anjal.ai Family, Anjal.ai for Business and ClinüxFlow all run on the same journey engine and core">
-          <div class="grid grid-cols-3 gap-2 sm:gap-3">
-            <div v-for="p in PLATFORMS" :key="p.id" class="rounded-2xl bg-surface p-3 text-center ring-1 ring-gray-200/80 sm:p-4">
-              <span class="mx-auto grid size-9 place-items-center rounded-xl text-white" :style="{ background: p.accent }"><component :is="p.icon" class="size-4" aria-hidden="true" /></span>
-              <p class="mt-2 text-[11px] font-medium tracking-wide text-gray-500 uppercase sm:text-xs">{{ p.audience }}</p>
-              <p class="mt-0.5 text-xs font-semibold text-ink sm:text-sm">{{ p.name }}</p>
+        <div data-reveal class="rounded-3xl bg-mist/60 p-5 ring-1 ring-gray-200/70 sm:p-7" role="img" aria-label="Anjalai Family, Anjalai for Business, Anjalai Community and ClinüxFlow all run on the same journey engine and core">
+          <!-- One column per platform, its line under its own box, so they always meet the engine
+               straight: four across from 40rem, two by two on a phone (one line from the middle). -->
+          <div class="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+            <div v-for="p in PLATFORMS" :key="p.id" class="flex flex-col">
+              <div class="flex flex-1 flex-col items-center rounded-2xl bg-surface p-3 text-center ring-1 ring-gray-200/80 sm:p-4">
+                <span class="grid size-9 place-items-center rounded-xl text-white" :style="{ background: p.accent }"><component :is="p.icon" class="size-4" aria-hidden="true" /></span>
+                <p class="mt-2 text-[10px] font-medium tracking-wide text-gray-500 uppercase sm:text-[11px]">{{ p.audience }}</p>
+                <p class="mt-0.5 text-xs font-semibold text-balance text-ink sm:text-sm"><BrandText :text="p.name" /></p>
+              </div>
+              <div aria-hidden="true" class="mx-auto hidden h-8 w-px sm:block" :style="{ background: `linear-gradient(${p.accent}, color-mix(in srgb, ${p.accent} 25%, transparent))` }" />
             </div>
           </div>
-          <div aria-hidden="true" class="grid grid-cols-3 gap-3">
-            <div v-for="p in PLATFORMS" :key="p.id" class="mx-auto h-8 w-px" :style="{ background: `linear-gradient(${p.accent}, transparent)` }" />
-          </div>
+          <div aria-hidden="true" class="mx-auto h-6 w-px bg-gradient-to-b from-gray-400 to-gray-200 sm:hidden" />
           <div class="rounded-2xl bg-surface p-4 ring-1 ring-gray-200/80">
             <p class="text-xs font-medium tracking-wide text-gray-500 uppercase">Journey engine</p>
             <p class="mt-1 text-sm font-semibold text-ink">Services, journeys, forms and consent</p>

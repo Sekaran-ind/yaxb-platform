@@ -6,6 +6,7 @@ import { ArrowRightLeft, Lock, ShieldCheck, Sparkles, UserPlus } from "@lucide/v
 import HeroCarousel from "@/components/home/HeroCarousel.vue";
 import IdeasSlides from "@/components/home/IdeasSlides.vue";
 import ContactPanel from "@/components/site/ContactPanel.vue";
+import MeetAnjalai from "@/components/site/MeetAnjalai.vue";
 import PageSection from "@/components/site/PageSection.vue";
 
 const STEPS = [
@@ -24,6 +25,7 @@ const PRINCIPLES = [
 
 <template>
   <HeroCarousel />
+  <MeetAnjalai />
 
   <PageSection id="how" title="From an idea to a running service" subtitle="Four steps, all in the kiosk.">
     <ol class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

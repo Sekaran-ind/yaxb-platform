@@ -6,6 +6,8 @@
 // page's own (--fam-*), with warm dark variants for the Night and High contrast themes.
 import { Baby, CalendarHeart, Heart, HeartHandshake, House, Languages, Lock, MessageCircleHeart, NotebookPen, ShieldCheck, Sparkles, Star, Sun, UsersRound } from "@lucide/vue";
 import IdeasSlides from "@/components/home/IdeasSlides.vue";
+import BrandText from "@/components/site/BrandText.vue";
+import MeetAnjalai from "@/components/site/MeetAnjalai.vue";
 import ContactPanel from "@/components/site/ContactPanel.vue";
 import { SITE_WIDTH } from "@/lib/site-width";
 
@@ -46,7 +48,7 @@ const FLOATERS = [
       </span>
       <div :class="['mx-auto grid items-center gap-12 py-16 md:py-24 lg:grid-cols-[1.1fr_1fr]', SITE_WIDTH]">
         <div>
-          <p class="fam-badge"><Sun class="size-4" aria-hidden="true" /> Anjal Family</p>
+          <p class="fam-badge"><Sun class="size-4" aria-hidden="true" /> <BrandText text="Anjalai Family" /></p>
           <h1 class="mt-5 text-4xl font-bold tracking-[-0.035em] text-balance text-[var(--fam-ink)] md:text-6xl">
             Love lives here, and now it remembers
             <span class="fam-squiggle">everything</span>.
@@ -80,6 +82,8 @@ const FLOATERS = [
       </div>
       <svg class="fam-wave" viewBox="0 0 1440 80" preserveAspectRatio="none" aria-hidden="true"><path d="M0 40 C 240 90, 480 0, 720 40 S 1200 90, 1440 30 L 1440 80 L 0 80 Z" /></svg>
     </section>
+
+    <MeetAnjalai />
 
     <!-- What a family does with it: sticker cards. -->
     <section id="joys" class="fam-band py-16 md:py-24">

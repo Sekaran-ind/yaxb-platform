@@ -65,4 +65,4 @@ export function servesApi(ctx: Context, path: string): boolean {
 }
 
 /** The surface's name for people. */
-export const surfaceName = (ctx: Context) => (ctx.surface === "family" ? "Anjal Family" : ctx.surface === "business" ? "Anjal for Business" : ctx.surface === "community" ? "Anjal Community" : "Yaxb.ai");
+export const surfaceName = (ctx: Context) => (ctx.surface === "family" ? "Anjalai Family" : ctx.surface === "business" ? "Anjalai for Business" : ctx.surface === "community" ? "Anjalai Community" : "Yaxb.ai");

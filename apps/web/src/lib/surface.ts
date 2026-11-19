@@ -9,7 +9,7 @@ export const SURFACE = CONTEXT.surface;
 export const offers = (f: Feature) => contextOffers(CONTEXT, f);
 export const SURFACE_NAME = surfaceName(CONTEXT);
 /** The name in the site's header and footer: the combined site is the Yaxb.ai portal (SUR-7). */
-export const SITE_BRAND = SURFACE === "all" ? "Yaxb.ai" : "Anjal.ai";
+export const SITE_BRAND = SURFACE === "all" ? "Yaxb.ai" : "Anjalai";
 
 /**
  * The platforms the Yaxb.ai portal leads to (SUR-7..9). Each address is set when the portal is built

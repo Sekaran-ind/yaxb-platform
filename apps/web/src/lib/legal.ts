@@ -3,7 +3,7 @@
 // (docs/specs/09-privacy-storage-security.md); only what Anjal really uses is credited, and a service
 // or library we use is not an endorsement. Update this file, and UPDATED, when that changes.
 
-export const BRAND = "Anjal.ai";
+export const BRAND = "Anjalai";
 export const UPDATED = "2026-11-14";
 export const CONTACT_EMAIL = "helpdesk@yaxb.ai";
 export const CLINUX_URL = "https://clinux.yaxb.ai/";

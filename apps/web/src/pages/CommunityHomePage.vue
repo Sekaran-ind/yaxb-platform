@@ -6,6 +6,8 @@
 // contrast. Its words: residents and members, the committee, blocks, the hall, notices.
 import { ArrowRightLeft, BookOpen, Building2, CheckCircle2, Handshake, HeartHandshake, Megaphone, Scale, ShieldCheck, UserPlus, UsersRound } from "@lucide/vue";
 import IdeasSlides from "@/components/home/IdeasSlides.vue";
+import BrandText from "@/components/site/BrandText.vue";
+import MeetAnjalai from "@/components/site/MeetAnjalai.vue";
 import ContactPanel from "@/components/site/ContactPanel.vue";
 import { SITE_WIDTH } from "@/lib/site-width";
 
@@ -30,7 +32,7 @@ const VALUES = [
     <section id="about" class="com-hero relative isolate scroll-mt-16 overflow-hidden">
       <div :class="['mx-auto grid items-center gap-12 py-16 md:py-24 lg:grid-cols-[1.1fr_1fr]', SITE_WIDTH]">
         <div>
-          <p class="com-badge"><UsersRound class="size-4" aria-hidden="true" /> Anjal Community</p>
+          <p class="com-badge"><UsersRound class="size-4" aria-hidden="true" /> <BrandText text="Anjalai Community" /></p>
           <h1 class="mt-5 text-4xl font-semibold tracking-[-0.03em] text-balance text-[var(--com-ink)] md:text-6xl">
             A community runs best <span class="com-underline">together</span>.
           </h1>
@@ -69,11 +71,13 @@ const VALUES = [
       </div>
     </section>
 
+    <MeetAnjalai />
+
     <!-- How it runs: four steps on one line, done together. -->
     <section id="how" class="com-band py-16 md:py-24">
       <div :class="['mx-auto', SITE_WIDTH]">
         <header class="mx-auto mb-12 max-w-2xl text-center">
-          <h2 class="text-3xl font-semibold tracking-[-0.03em] text-[var(--com-ink)] md:text-4xl">How your community runs on Anjal</h2>
+          <h2 class="text-3xl font-semibold tracking-[-0.03em] text-[var(--com-ink)] md:text-4xl">How your community runs on <BrandText text="Anjalai" /></h2>
           <p class="mt-3 text-lg text-[var(--com-body)]">Four steps, shared by the committee and the residents.</p>
         </header>
         <ol class="com-steps grid gap-6 sm:grid-cols-2 lg:grid-cols-4">

@@ -32,11 +32,11 @@ function workerNodeShims(): Plugin {
 
 /** Each build's page title and description (index.html is shared): the portal, a surface, the app. */
 const HEADS: Record<string, { title: string; description: string }> = {
-  all: { title: "Yaxb.ai", description: "Yaxb.ai: AI kiosks that answer with facts and sources, in your own language, for families and communities (Anjal.ai Family), small businesses (Anjal.ai for Business) and enterprises in regulated care (ClinüxFlow)." },
-  family: { title: "Anjal Family", description: "Anjal Family: one shared notebook the whole family can ask in its own language, key dates that come up by themselves, and a protected space." },
-  business: { title: "Anjal for Business", description: "Anjal for Business: connect with your customers, design your services with the AI designer, and get found on Anjal.ai." },
-  community: { title: "Anjal Community", description: "Anjal Community: for apartment associations, clubs and committees. Residents raise complaints and book the hall, the committee answers, and notices reach everyone in their own language." },
-  native: { title: "Anjal.ai", description: "Anjal.ai, the kiosk." },
+  all: { title: "Yaxb.ai", description: "Yaxb.ai: AI kiosks that answer with facts and sources, in your own language, for families and communities (Anjalai Family), small businesses (Anjalai for Business) and enterprises in regulated care (ClinüxFlow)." },
+  family: { title: "Anjalai Family", description: "Anjalai Family: one shared notebook the whole family can ask in its own language, key dates that come up by themselves, and a protected space." },
+  business: { title: "Anjalai for Business", description: "Anjalai for Business: connect with your customers, design your services with the AI designer, and get found on Anjalai." },
+  community: { title: "Anjalai Community", description: "Anjalai Community: for apartment associations, clubs and committees. Residents raise complaints and book the hall, the committee answers, and notices reach everyone in their own language." },
+  native: { title: "Anjalai", description: "Anjalai, the kiosk." },
 };
 function pageHead(mode: string): Plugin {
   const head = HEADS[mode] ?? HEADS.all!;

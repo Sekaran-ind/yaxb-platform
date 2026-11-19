@@ -99,6 +99,18 @@
 @utility caution {
   @apply rounded-lg border-l-4 border-warning bg-warning/15 text-ink;
 }
+/* The brand's "ai" (BrandText): the accent gradient, lighter in the dark themes so it stays readable. */
+@utility brand-ai {
+  background-image: linear-gradient(100deg, #6a1bd1, #c026d3 55%, #f97316);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-weight: 800;
+}
+[data-theme="night"] .brand-ai,
+[data-theme="contrast"] .brand-ai {
+  background-image: linear-gradient(100deg, #b794ff, #f07aff 55%, #ffb066);
+}
 @utility eyebrow {
   @apply text-[11px] font-semibold tracking-[0.18em] text-gray-500 uppercase;
 }
