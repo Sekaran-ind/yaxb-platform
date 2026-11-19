@@ -12,6 +12,7 @@ import { KvStore } from "@sekaran-ind/yaxb-core/stores/kv";
 import { stringEnv, type Bindings } from "./env";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { currentEdition, db, scoped } from "./edition";
+import { createD1SiteStore, createSiteService } from "@sekaran-ind/yaxb-core/sites";
 import { createD1TenantStore, createTenantService, DEFAULT_TENANT, type TenantService } from "@sekaran-ind/yaxb-core/tenants";
 
 /**
@@ -89,6 +90,9 @@ export function cases(env: Bindings): CaseService {
     }),
   );
 }
+
+/** Approved sites (SIT-1..6), in the platform database: one list for every edition. */
+export const sites = (env: Bindings) => createSiteService(createD1SiteStore(env.PLATFORM_DB as D1Database));
 
 /** Connector secrets (CNX-3), sealed, per tenant, in the edition's D1. */
 export const connectorSecrets = (env: Bindings) => createD1ConnectorSecretStore(db(env));

@@ -59,20 +59,32 @@ async function addFiles(files: FileList | null) {
 const site = ref<{ url: string; follow: number } | null>(null);
 const refreshing = ref<string | null>(null);
 type FetchedPage = { url: string; title: string; text: string; fetchedAt: string };
-async function fetchPages(url: string, follow: number): Promise<{ pages: FetchedPage[]; skipped: number }> {
+// Approved sites (SIT-1..6): a site not on the list yet is flagged (and its review asked for), or,
+// when the list is enforced, refused with "Ask to add this site".
+const askable = ref<string | null>(null);
+async function fetchPages(url: string, follow: number): Promise<{ pages: FetchedPage[]; skipped: number; unapproved: boolean }> {
   const res = await fetch("/api/sources/web", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url, follow }) });
-  const body = (await res.json().catch(() => null)) as { pages?: FetchedPage[]; skipped?: number; error?: string } | null;
+  const body = (await res.json().catch(() => null)) as { pages?: FetchedPage[]; skipped?: number; unapproved?: boolean; error?: string; ask?: boolean } | null;
+  askable.value = body?.ask ? url : null;
   if (!res.ok || !body?.pages) throw new Error(body?.error ?? "That page couldn't be loaded.");
-  return { pages: body.pages, skipped: body.skipped ?? 0 };
+  return { pages: body.pages, skipped: body.skipped ?? 0, unapproved: Boolean(body.unapproved) };
+}
+async function askForSite() {
+  const url = askable.value;
+  if (!url) return;
+  const res = await fetch("/api/sites/requests", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url, use: "source", reason: "To add it to a notebook" }) });
+  askable.value = null;
+  message.value = res.ok ? { tone: "ok", text: "Asked. It can be added once the site is approved." } : { tone: "error", text: "That couldn't be asked just now." };
 }
 async function addSite() {
   if (!site.value?.url.trim()) return;
   busy.value = true;
   message.value = null;
   try {
-    const { pages, skipped } = await fetchPages(site.value.url.trim(), site.value.follow);
+    const { pages, skipped, unapproved } = await fetchPages(site.value.url.trim(), site.value.follow);
     for (const p of pages) await props.nb.addSource({ title: p.title, mime: "text/html", text: p.text.slice(0, NOTEBOOK_LIMITS.sourceChars), url: p.url, fetchedAt: p.fetchedAt });
-    message.value = { tone: "ok", text: `Added ${pages.map((p) => p.title).join(", ")}.${skipped ? ` ${skipped} linked page${skipped === 1 ? "" : "s"} couldn't be read.` : ""}` };
+    const note = unapproved ? " This site isn't on the approved list yet: we've asked for it to be reviewed." : "";
+    message.value = { tone: "ok", text: `Added ${pages.map((p) => p.title).join(", ")}.${skipped ? ` ${skipped} linked page${skipped === 1 ? "" : "s"} couldn't be read.` : ""}${note}` };
     site.value = null;
   } catch (e) {
     message.value = { tone: "error", text: (e as Error).message };
@@ -173,7 +185,10 @@ async function deleteThread(id: string) {
         </div>
       </div>
       <p class="mb-2 text-xs text-gray-500">Text, Markdown, CSV, JSON, HTML or PDF. Files are read in this browser; the assistant sees their text when you ask a question.</p>
-      <p v-if="message" :role="message.tone === 'error' ? 'alert' : 'status'" :class="cn('mb-2 rounded-md px-3 py-2 text-sm', message.tone === 'error' ? 'bg-danger/10 text-red-800' : 'bg-success/10 text-ink')">{{ message.text }}</p>
+      <p v-if="message" :role="message.tone === 'error' ? 'alert' : 'status'" :class="cn('mb-2 rounded-md px-3 py-2 text-sm', message.tone === 'error' ? 'bg-danger/10 text-red-800' : 'bg-success/10 text-ink')">
+        {{ message.text }}
+        <button v-if="askable" type="button" class="btn-light ml-2 h-8 px-2 text-sm" @click="askForSite">Ask to add this site</button>
+      </p>
       <form v-if="site" class="card mb-3 space-y-2 p-3" @submit.prevent="addSite">
         <label for="nb-site" class="block text-sm font-medium text-ink">Web address</label>
         <input id="nb-site" v-model="site.url" class="input" type="url" inputmode="url" placeholder="https://www.who.int/news-room/fact-sheets/…" autocomplete="url" required />
