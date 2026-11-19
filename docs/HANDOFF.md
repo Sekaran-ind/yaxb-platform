@@ -1,6 +1,6 @@
 # Hand-over: where things stand
 
-Last updated 2026-11-19, at the end of Wave 1. Read this with `CLAUDE.md` (how the code is built) and `docs/specs/` (every requirement and its status). Together they replace the notes a previous Claude session kept outside the repo.
+Last updated 2026-11-19, when the first part of Wave 2 was deployed. The rest of Wave 2 continues on the other laptop. Read this with `CLAUDE.md` (how the code is built) and `docs/specs/` (every requirement and its status). Together they replace the notes a previous Claude session kept outside the repo.
 
 ## Wave 1 is complete and live
 
@@ -25,16 +25,39 @@ What Wave 1 added, and its requirement ids:
 - the Community edition, the platform database and the anjalai.cc domains (EDN-1..5, PLA-1, PLA-5, DOM-1);
 - the Family and Community home pages with their own moods, the Anjalai brand and mascot.
 
-## Wave 2 so far
+## Wave 2 so far: deployed on 2026-11-19
 
-- PR #32: the organisation design (ORG-1..5, 8, 9). Edition migration `0016_organisation.sql`.
-- PR #33: the catalogue's player holds its controls; a new service is designed in Ask Me (LIB-64).
-- Identity step 1 with spaces (IDN-1..6, 10, 14, 21, 50..54; SPC-1..4, 6, 7, 10): passkeys, Google and recovery codes; SMS, WhatsApp and email codes wait for a later release (decided 2026-11-19). Platform migration `0002_identity.sql`.
+Merged as PRs #32 and #34 (#33 shipped inside #34) and deployed to all four sites. Remote migrations are applied up to the editions' `0016_organisation.sql` and the platform database's `0003_pending_joins.sql`.
 
-Before deploying identity:
-1. One `IDENTITY_SECRET` (32+ characters), **the same on every Worker** (the portal and the three editions): `npx wrangler secret put IDENTITY_SECRET -c wrangler.<edition>.jsonc`, and without `-c` for the portal. Changing it signs everyone out and makes the stored signing keys unreadable.
-2. For Google: a Google Cloud project → APIs & Services → OAuth consent screen (external, the app's name and the support email), then Credentials → OAuth client ID → Web application, with an authorised redirect URI per site: `https://family.anjalai.cc/api/identity/google/callback`, the same for business, community and anjalai.cc. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` on every Worker. Without them, Google isn't offered.
-3. The platform migration is applied by each edition's deploy script.
+- **The organisation design** (ORG-1..5, 8, 9): units, reporting lines, "the requester's manager", fifteen templates, checks before publishing.
+- **The catalogue's player** holds its controls, and a new service is designed as a conversation in Ask Me (LIB-64). Also fixed: the extra bubble that repeated the question before each answer.
+- **Identity step 1 with spaces** (IDN-1..6, 10, 14, 21, 40, 50..54; SPC-1..4, 6..8, 10):
+  - Passkeys, Google and recovery codes. SMS, WhatsApp and email codes wait for a later release (decided 2026-11-19).
+  - The guided **your-account journey** in the conversation: sign in, then open, start or join a space.
+  - The space picker, and the Account button in the Business player.
+
+**Accounts are off on the live sites until `IDENTITY_SECRET` is set** (`/api/identity/config` says `enabled: false`). Setting production secrets is for the owner to run:
+1. Make one secret of 32+ characters and keep it in the password manager: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`.
+2. Put **the same value** on every Worker, from `apps/web`: `npx wrangler secret put IDENTITY_SECRET -c wrangler.family.jsonc`, the same with `wrangler.business.jsonc` and `wrangler.community.jsonc`, and `npx wrangler secret put IDENTITY_SECRET` (the portal). Changing it later signs everyone out and makes the stored signing keys unreadable.
+3. Optional, Google: a Google Cloud project → APIs & Services → OAuth consent screen (external, the app's name and the support email), then Credentials → OAuth client ID → Web application, with an authorised redirect URI per site: `https://family.anjalai.cc/api/identity/google/callback`, the same for business, community and anjalai.cc. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` on every Worker. Without them, Google isn't offered.
+
+No redeploy is needed after setting a secret.
+
+## Wave 2: what is left (on the other laptop)
+
+- **Identity, the rest of step 1:**
+  - Link the device profile to the account (IDN-1, 4).
+  - A child's profile under a guardian's account (IDN-5).
+  - Start a space from an organisation template (SPC-8).
+  - Join links on Family (today only Business and Community have them).
+- **Identity, steps 2 to 6** (`15-identity.md`, Order of work):
+  - Step 2: retire `MODERATOR_TOKEN`, lock a front desk to its space, children's spaces (IDN-16, 44; SPC-5, 9).
+  - Step 3: assurance levels (IDN-30..34).
+  - Step 4: CLI and box sign-in (IDN-17, 18, 41, 42).
+  - Step 5: SMS, WhatsApp and email codes, Microsoft, Apple, a business's own provider, the native app (IDN-11..15, 43).
+  - Step 6: QR hand-off (IDN-19).
+- **Organisation:** business identity numbers (ORG-6, 7), and ORG-4 weighted by case events.
+- **Everything below** under "Wave 2: where to start" that isn't listed as done here.
 
 Running the editions side by side locally: `apps/web/.env.development.local` points the portal's links at `localhost:3001` (Business), `3002` (Family) and `3003` (Community); start one with `npx vite --mode business --port 3001` in `apps/web`. Cookies are shared across ports, so one sign-in covers them all, like `.anjalai.cc` does live.
 
