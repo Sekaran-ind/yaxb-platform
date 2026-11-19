@@ -159,6 +159,10 @@
       "types": "./dist/sync/index.d.ts",
       "default": "./dist/sync/index.js"
     },
+    "./identity": {
+      "types": "./dist/identity/index.d.ts",
+      "default": "./dist/identity/index.js"
+    },
     "./tenants": {
       "types": "./dist/tenants/index.d.ts",
       "default": "./dist/tenants/index.js"

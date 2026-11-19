@@ -17,6 +17,23 @@ Source: *Anjal Identity and Sign-in Service* (2026-11-16), reviewed on 2026-11-1
 | IDN-5 | A child's profile links to a guardian's account. A child does not sign in with outside providers. | Planned |
 | IDN-6 | An account is not required: visitors and Kiosk-only use stay anonymous unless a service needs more (IDN-30). | Planned |
 
+## Spaces: choosing where you are
+
+A **space** is one place a person belongs to: their family, a business they work in, a community they are part of. Each space is a tenant of one edition (Family, Business or Community). Today the edition is chosen by which website is opened; with spaces, the person chooses in the kiosk and the Service Catalogue, and the space decides which sections load. The word on screen is the space's own name ("Our home", "Sri Ram Hardware", "Lake View Apartments"), never "realm", "edition" or "tenant".
+
+| ID | Requirement | Status |
+|---|---|---|
+| SPC-1 | A space is a tenant of an edition, with a name, a kind (family, business or community) and the person's roles there (a membership, IDN-3). One account may hold memberships in any number of spaces, on any edition. | Planned |
+| SPC-2 | "Who's using Anjal?" asks for the person first (their profile), then, when they belong to more than one space, which space. A person with one space goes straight in. The last space chosen on this device is offered first. | Planned |
+| SPC-3 | The open space's kind decides the sections, with the same rules each edition applies today (`offers`: household requests in a family; the catalogue, requests, staff and the front desk in a business or community; profiles and the child lock in a family or community). On the combined site and in the native app this is read from the open space while the app runs, not fixed at build time. An edition's own site offers only spaces of its kind. | Planned |
+| SPC-4 | The person switches space from the player's profile button, without signing in again. The conversation, the notebooks shown, the loaded services, requests and the team all switch with it. Nothing from one space is shown, sent or kept in another. | Planned |
+| SPC-5 | A space administrator can lock a device to one space (a shop's front desk, a society's lobby kiosk). A locked device offers no switching, and its visitors stay anonymous within that space (IDN-6). The lock is part of Front desk setup and is undone only by that space's administrator. | Planned |
+| SPC-6 | Without an account nothing changes: a local profile works in this device's one space, as today. Linking the profile to an account (IDN-2) brings its memberships. | Planned |
+| SPC-7 | The server decides, not the browser: every call names its space, and the Worker serves a space's data only when the account session holds a membership there (or the device is locked to it). The tenant context comes from the session and that check, not from a cookie the browser chose (PLA-4). | Planned |
+| SPC-8 | A person can start a space ("Start a family", "Start a business", "Start a community") from an organisation template (ORG-2) and becomes its administrator, or join one through a join link (IDN-40), which ends in a membership. | Planned |
+| SPC-9 | A child's profile sees only the family spaces its guardian has added it to, never a business space, and cannot start or join one (IDN-5, CHL). | Planned |
+| SPC-10 | Audit, facts only: `space.created`, `membership.added`, `membership.removed`, `device.locked`, `device.unlocked`. Switching space is not audited (it says nothing a session doesn't). | Planned |
+
 ## Sign-in methods
 
 | ID | Requirement | Status |
@@ -66,8 +83,8 @@ Source: *Anjal Identity and Sign-in Service* (2026-11-16), reviewed on 2026-11-1
 
 ## Order of work
 
-1. IDN-1..6, 10, 11 and 50..54. Gate: one person uses the same account on two editions, the web and a second phone, with a family and a business membership, switching without signing in again.
-2. IDN-16, 40 and 44. Gate: every member signs in with a passkey or OTP, and keys remain only for machines.
+1. IDN-1..6, 10, 11 and 50..54, with SPC-1..4, 6, 7 and 10. Gate: one person uses the same account on two editions, the web and a second phone, with a family and a business membership, switching between the two spaces without signing in again, and neither space's data shows in the other.
+2. IDN-16, 40 and 44, with SPC-5, 8 and 9. Gate: every member signs in with a passkey or OTP, and keys remain only for machines; a front-desk kiosk locked to its space offers no switching.
 3. IDN-30..34. Gate: a hall booking starts at level 2 and its approval step steps up to level 3, resuming where it paused.
 4. IDN-17, 18, 41 and 42. Gate: `yaxb login` works with no secrets in `~/.yaxb/.env`, and one lost phone is revoked without touching any other device.
 5. IDN-12..15, 43. Gate: a business's staff sign in with their company accounts.

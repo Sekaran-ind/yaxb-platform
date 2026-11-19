@@ -6,7 +6,7 @@ Source: the design reports *Anjal Family and Community Editions* (2026-11-16) an
 
 ## The shared platform layer
 
-Each edition is its own Worker with its own database (SUR-1). Shared code is already in the npm packages (yaxb-core, yaxb-journeys). Records that every edition must read and write go in one more database, bound to every edition's Worker. It is not a separate service.
+Each edition is its own Worker with its own database (SUR-1). With spaces (15, SPC-1..10) the person chooses their family, business or community inside the app, and that choice decides the sections; an edition's site then becomes a front door that offers only spaces of its kind. Shared code is already in the npm packages (yaxb-core, yaxb-journeys). Records that every edition must read and write go in one more database, bound to every edition's Worker. It is not a separate service.
 
 | ID | Requirement | Status |
 |---|---|---|
