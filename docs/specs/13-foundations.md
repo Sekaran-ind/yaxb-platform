@@ -107,11 +107,11 @@ Nothing on the device is ever removed today, and Anjal never asks the browser to
 
 | ID | Requirement | Status |
 |---|---|---|
-| ETH-1 | A check without a model runs on every design: protected-attribute words (gender, caste, religion, colour, nationality, region, language, disability, age, marital status) in field ids, labels, options and conditions, in English, Tamil and Hindi. Its findings appear as warnings in `compileBundle`, with their lines, and it works in Kiosk-only mode. | Planned |
+| ETH-1 | A check without a model runs on every design: protected-attribute words (gender, caste, religion, colour, nationality, region, language, disability, age, marital status) in field ids, labels, options and conditions, in English, Tamil and Hindi. Its findings appear as warnings in `compileBundle`, with their lines, and it works in Kiosk-only mode. | Built: yaxb-journeys `ethicsChecks` (`ethics.ts`); a question asking for an attribute is medium, a condition or decision reading one is high. |
 | ETH-2 | An `ethics-counsellor` subagent of the Service Designer agent reviews the whole design. Its findings (severity, line, reason, suggested change) go into the repair loop as suggestions, never applied silently. Accepted and rejected suggestions become designer lessons. | Planned |
 | ETH-3 | Lawful differences (a women's hostel, a senior citizens' discount, reserved scholarships) are allowed. The designer states the purpose, which is kept with the published service and shown to the reviewer. | Planned |
-| ETH-4 | The catalogue's review shows an Ethics checklist. A reviewer cannot accept a service with an unresolved high-severity finding without writing a reason. | Planned |
-| ETH-5 | Every review is audited (`ethics.reviewed`, finding counts only). The rules are published and versioned. The counsellor never collects protected attributes to measure fairness. | Planned |
+| ETH-4 | The catalogue's review shows an Ethics checklist. A reviewer cannot accept a service with an unresolved high-severity finding without writing a reason. | Built: the review form's Ethics checklist; the library refuses an accept with a high finding and an empty note (422). |
+| ETH-5 | Every review is audited (`ethics.reviewed`, finding counts only). The rules are published and versioned. The counsellor never collects protected attributes to measure fairness. | Partly built: the accept and reject audit rows carry `ethics_high` and `ethics_medium` counts. Publishing and versioning the rules is open. |
 
 ## The player
 

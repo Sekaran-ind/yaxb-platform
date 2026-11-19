@@ -94,6 +94,20 @@ for (const [name, make] of [
       expect((await svc.reviewQueue(reviewer)).length).toBe(1);
     });
 
+    it("won't accept a service that treats people differently by a protected attribute without a reason (ETH-4)", async () => {
+      const svc = setup();
+      const yaml = clinic("hostel")
+        .replace("          - { id: name, type: text, label: Your name, required: true }", "          - { id: name, type: text, label: Your name, required: true }\n          - { id: gender, type: select, label: Gender, options: [{ value: f, label: Female }, { value: m, label: Male }] }\n      - id: route\n        decide:\n          - { if: \"answers.about-you.gender == 'f'\", to: done }\n          - { to: done }");
+      const { entry, problems } = await svc.createEntry(mod, null, { yaml });
+      expect(problems.filter((p) => p.ethics).map((p) => p.ethics!.severity)).toEqual(["medium", "high"]);
+      await svc.submit(mod, entry.id);
+      await expectError(svc.review(reviewer, entry.id, { decision: "accept" }), 422, /differently by gender/);
+      await expectError(svc.review(reviewer, entry.id, { decision: "accept", note: "  " }), 422);
+      expect((await svc.review(reviewer, entry.id, { decision: "accept", note: "A women's hostel: rooms are for women only, as the law allows." })).status).toBe("accepted");
+      const accepted = (await svc.auditTrail(reviewer, entry.id)).find((e) => e.action === "library.entry_accepted")!;
+      expect(accepted.details).toMatchObject({ ethics_high: 1, ethics_medium: 1 });
+    });
+
     it("reviews, publishes, and records an audit trail without content", async () => {
       const svc = setup();
       const { entry } = await svc.createEntry(mod, null, { yaml: clinic() });
