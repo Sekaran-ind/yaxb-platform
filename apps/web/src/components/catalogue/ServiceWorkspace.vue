@@ -170,6 +170,9 @@ async function load() {
 // ---- checking -------------------------------------------------------------------------------
 const check = computed(() => checkDocument(yaml.value, [], { services: JOURNEY_SERVICES, roles: props.roles.map((r) => r.id) }));
 const errors = computed(() => check.value.problems.filter((p) => p.level === "error"));
+/** The Ethics checklist (ETH-1, ETH-4): high findings need the reviewer's reason to accept. */
+const ethics = computed(() => check.value.problems.filter((p) => p.ethics).sort((a, b) => (a.ethics!.severity === b.ethics!.severity ? a.line - b.line : a.ethics!.severity === "high" ? -1 : 1)));
+const ethicsHigh = computed(() => ethics.value.filter((p) => p.ethics!.severity === "high").length);
 const editor = ref<InstanceType<typeof YamlEditor> | null>(null);
 function goToLine(line: number) {
   openView("yaml");
@@ -493,9 +496,21 @@ watch(
     <form v-if="canReview" class="space-y-2 rounded-xl bg-mist p-3" @submit.prevent>
       <p class="text-sm font-medium text-ink">Your review of revision {{ entry?.revision }}</p>
       <p class="text-xs text-gray-500">Read the summary, try it in the preview, then decide.</p>
-      <textarea v-model="reviewNote" class="input min-h-16" maxlength="1000" placeholder="A note for the author (needed to reject)" aria-label="Review note" />
+      <!-- The Ethics checklist (ETH-4): what the check found, high first, each linked to its line. -->
+      <div class="rounded-lg bg-surface p-3 ring-1 ring-gray-200">
+        <p class="text-sm font-medium text-ink">Ethics checklist</p>
+        <p v-if="!ethics.length" class="mt-1 text-sm text-gray-600">It asks for no protected attribute (gender, caste, religion, colour, nationality, region, mother tongue, disability, age or marital status) and decides by none.</p>
+        <ul v-else class="mt-1.5 space-y-1.5">
+          <li v-for="(p, i) in ethics" :key="i" class="flex items-start gap-2 text-sm">
+            <span :class="p.ethics!.severity === 'high' ? 'shrink-0 rounded-full bg-warning/25 px-2.5 py-1 text-[11px] font-semibold text-ink' : 'chip shrink-0 text-[11px]'">{{ p.ethics!.severity === "high" ? "Decides by it" : "Asks for it" }}</span>
+            <button type="button" class="min-w-0 text-left text-ink hover:underline" @click="goToLine(p.line)">{{ p.message.replace(/^Ethics: /, "") }} <span class="text-gray-500">(line {{ p.line }})</span></button>
+          </li>
+        </ul>
+        <p v-if="ethicsHigh" class="mt-2 text-xs text-gray-700">It treats people differently. Accept it only for a lawful purpose (a women's hostel, a senior citizens' discount, reserved scholarships), and write that reason in the note.</p>
+      </div>
+      <textarea v-model="reviewNote" class="input min-h-16" maxlength="1000" :placeholder="ethicsHigh ? 'The lawful purpose (needed to accept), or what to change (needed to reject)' : 'A note for the author (needed to reject)'" aria-label="Review note" />
       <div class="flex flex-wrap gap-2">
-        <button type="button" class="btn-primary" :disabled="busy" @click="review('accept')"><Check class="size-4" aria-hidden="true" /> Accept and publish</button>
+        <button type="button" class="btn-primary" :disabled="busy || (ethicsHigh > 0 && !reviewNote.trim())" :title="ethicsHigh && !reviewNote.trim() ? 'Write the lawful purpose in the note first' : undefined" @click="review('accept')"><Check class="size-4" aria-hidden="true" /> Accept and publish</button>
         <button type="button" class="btn-light" :disabled="busy || !reviewNote.trim()" @click="review('reject')"><X class="size-4" aria-hidden="true" /> Reject</button>
       </div>
     </form>

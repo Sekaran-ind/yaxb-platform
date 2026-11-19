@@ -465,9 +465,18 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
       if ((e.submitted_by === a.id || e.owner_id === a.id) && a.id !== ADMIN_ACTOR_ID) throw new LibraryError("This is your own service: another reviewer has to review it.", 403);
       const r = parse(reviewInputSchema, input);
       const accepted = r.decision === "accept";
+      const problems = await problemsOf(e.yaml);
+      // The Ethics checklist (ETH-1, ETH-4): counts only go to the audit log.
+      const high = problems.filter((p) => p.ethics?.severity === "high");
+      const ethics = { ethics_high: high.length, ethics_medium: problems.filter((p) => p.ethics?.severity === "medium").length };
       if (accepted) {
-        const errors = (await problemsOf(e.yaml)).filter((p) => p.level === "error");
+        const errors = problems.filter((p) => p.level === "error");
         if (errors.length) throw new LibraryError(`It doesn't compile: ${errors.map((p) => p.message).join("; ")}`);
+        if (high.length && !r.note?.trim())
+          throw new LibraryError(
+            `It treats people differently by ${[...new Set(high.map((p) => p.ethics!.attribute))].join(", ")}. Accept it only for a lawful purpose, and write the reason in the note.`,
+            422,
+          );
       }
       const next: LibraryEntry = {
         ...e,
@@ -479,7 +488,7 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
         review_note: r.note || null,
       };
       await store.putEntry(next);
-      await audit(a, accepted ? "library.entry_accepted" : "library.entry_rejected", id, { id: e.doc_id, revision: e.revision });
+      await audit(a, accepted ? "library.entry_accepted" : "library.entry_rejected", id, { id: e.doc_id, revision: e.revision, ...ethics });
       await options.onReviewed?.(next, accepted ? "accepted" : "rejected", next.review_note, a).catch(() => undefined);
       return next;
     },

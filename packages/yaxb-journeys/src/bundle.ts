@@ -11,6 +11,7 @@
 // Documents can come in any order. Each problem names its document and the line it starts on,
 // so an editor can point at it.
 import { designChecks } from "./machine.js";
+import { ethicsChecks, type EthicsFinding } from "./ethics.js";
 import { load } from "js-yaml";
 import { compileJourney, type Journey, type ServiceHandler } from "./journeys.js";
 import { compileQuestionnaire, type Questionnaire } from "./questionnaires.js";
@@ -31,6 +32,8 @@ export type BundleProblem = {
   line: number;
   kind?: string;
   id?: string;
+  /** An Ethics Counsellor finding (ETH-1): always a warning; a reviewer weighs it (ETH-4). */
+  ethics?: Pick<EthicsFinding, "severity" | "attribute">;
 };
 
 export type BundleDocument = { kind?: string; id?: string; line: number; ok: boolean };
@@ -191,6 +194,11 @@ export function compileBundle(source: string | string[], options: BundleOptions 
       for (const c of designChecks(r.journey, { roles: [...new Set([...DEFAULT_ROLES.map((x) => x.id), "curator", ...(options.roles ?? [])])], order: Object.keys(r.journey.steps) })) {
         const message = p.nested ? c.message : c.message.replace(/screen '/g, "step '");
         problems.push({ level: c.level, line: problemLine(p.chunk, message), kind: "journey", id: p.meta.id, message });
+      }
+      // The Ethics Counsellor's check without a model (ETH-1): warnings, with their severity.
+      for (const f of ethicsChecks(r.journey)) {
+        const message = `Ethics: ${p.nested ? f.message : f.message.replace(/screen '/g, "step '")}`;
+        problems.push({ level: "warning", line: problemLine(p.chunk, message), kind: "journey", id: p.meta.id, message, ethics: { severity: f.severity, attribute: f.attribute } });
       }
     } else fail(p, r.problems);
   }

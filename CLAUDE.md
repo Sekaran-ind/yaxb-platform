@@ -320,6 +320,7 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
 ## Journeys as state machines (JRN-40..44)
 
 - yaxb-journeys `machine.ts` (export `./machine`, and from the root): `journeyMachine(j)` (XState 5: a state per step, each way out its own event: `SUBMIT[.n]`, `DONE[.n]`, `ERROR` → next or `(failed)`, `DECIDE.n`; structure only), `journeyGraph(j)` (`@xstate/graph` `toDirectedGraph`, plus kind, role, depth, reachable; unreached steps get their own rows below), `waysThrough(j)` (shortest path to each ending), `designChecks(j, { roles, order })`. `compileBundle` adds the checks as warnings (screens never reached, loops with no ending, an approval that is a decision nobody is asked for, a role one letter from a known role). The runner (journeys.ts) still runs journeys.
+- The Ethics Counsellor's check without a model (ETH-1, ETH-4): yaxb-journeys `ethics.ts` (`ethicsChecks`, `protectedAttributeIn`, `ETHICS_WORDS` in English, Tamil and Hindi). `compileBundle` adds its findings as warnings with `ethics: { severity, attribute }`; the library's `review` refuses an accept with a high finding and no note, and audits the counts; `ServiceWorkspace`'s review form shows the Ethics checklist.
 - Vue `FlowDiagram` (SVG, `.yj-fd-*` styles); the web's `catalogue/JourneyFlow.vue` is the workspace's Flow view (diagram, the journey's warnings with their lines, ways through). The designer prompt carries the same rules.
 
 ## My work and service dashboards (WRK-1..2, MET-3..5)
