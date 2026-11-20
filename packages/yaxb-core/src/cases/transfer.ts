@@ -17,7 +17,7 @@
 // box, or in the relay with the same expiry, refreshed while the case moves.
 import { replay, type RunState } from "@sekaran-ind/yaxb-journeys/journeys";
 import { z } from "zod";
-import type { Case, CaseEvent, CaseStore } from "./index.js";
+import { contextOf, type Case, type CaseEvent, type CaseStore } from "./index.js";
 
 export const RELAY_TTL_HOURS = 48;
 export const RELAY_MAX_HOURS = 7 * 24;
@@ -162,7 +162,7 @@ export async function receiveCase(store: CaseStore, body: unknown): Promise<{ ca
   const b = body as CaseBody;
   const c = b?.case;
   if (!c || typeof c !== "object" || !c.journey || !c.run || !Array.isArray(b.events)) throw new TransferError("That isn't a case.");
-  const r = await replay(c.journey, { answers: c.run.answers ?? {}, steps: c.run.steps ?? {} });
+  const r = await replay(c.journey, { answers: c.run.answers ?? {}, steps: c.run.steps ?? {} }, contextOf(c));
   if (!r.ok) throw new TransferError(`The case's answers don't fit its journey: ${r.problems[0]}`);
   const at = standing(r.state);
   const claimed = c.status === "done" || c.status === "declined" ? (r.state.status === "done" ? "to_finish" : "waiting") : c.status;
@@ -179,7 +179,7 @@ export async function receiveCase(store: CaseStore, body: unknown): Promise<{ ca
 }
 
 function standing(s: RunState): { status: "waiting" | "to_finish"; step: string | null } {
-  return s.status === "done" ? { status: "to_finish", step: null } : { status: "waiting", step: s.prompt?.step ?? null };
+  return s.status === "done" ? { status: "to_finish", step: null } : { status: "waiting", step: s.prompt?.step ?? s.waiting?.step ?? null };
 }
 
 /** A mailbox in memory (tests, and the shape the box and the relay follow). */

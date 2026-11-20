@@ -1021,12 +1021,14 @@ app.route(
   }),
 );
 
-app.post("/api/cases", (c) => caseCall(c, (a, body) => cases(c.env).start(a, body), { limited: true }));
+// A dependency started (DEP-1) is said by its reference only: its run is for the roles it goes to.
+const spawnedRefs = <T extends { spawned?: { id: string; ref: string; service_title: string }[] }>(r: T) => ({ ...r, spawned: (r.spawned ?? []).map((x) => ({ id: x.id, ref: x.ref, service_title: x.service_title })) });
+app.post("/api/cases", (c) => caseCall(c, async (a, body) => spawnedRefs(await cases(c.env).start(a, body)), { limited: true }));
 app.get("/api/cases", (c) => caseCall(c, (a) => cases(c.env).list(a)));
 app.get("/api/cases/:id", (c) => caseCall(c, (a) => cases(c.env).get(a, caseKey(c))));
-app.post("/api/cases/:id/act", (c) => caseCall(c, (a, body) => cases(c.env).act(a, caseKey(c), body)));
+app.post("/api/cases/:id/act", (c) => caseCall(c, async (a, body) => spawnedRefs(await cases(c.env).act(a, caseKey(c), body))));
 app.post("/api/cases/:id/notes", (c) => caseCall(c, (a, body) => cases(c.env).note(a, caseKey(c), body)));
-app.post("/api/cases/:id/finish", (c) => caseCall(c, (a, body) => cases(c.env).finish(a, caseKey(c), body)));
+app.post("/api/cases/:id/finish", (c) => caseCall(c, async (a, body) => spawnedRefs(await cases(c.env).finish(a, caseKey(c), body))));
 
 // ---- service storage and events (MET-1..2) --------------------------------------------------------
 

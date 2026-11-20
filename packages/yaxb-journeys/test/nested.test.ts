@@ -74,7 +74,7 @@ describe("nested services", () => {
     expect(messages).toContain(`10 journey 'check-in': role 'doctor' isn't one of this service's roles: add it to the roles`);
     expect(messages.some((m) => m.endsWith("screen 'route' decide[0]: no screen 'urgnt'"))).toBe(true);
     expect(compileBundle(CLINIC.replace("        questions: [{ id: note, type: textarea, label: Notes }]\n", "")).problems.map((p) => p.message)).toContain(
-      "journey 'triage' screen 'notes': give it questions, a service, a decision or a result",
+      "journey 'triage' screen 'notes': give it questions, a service, a decision, another service it uses, or a result",
     );
     const x = expandService(load("kind: service\nid: s\ntitle: S\nroles: [visitor]\nitems: []\njourneys: []\n") as Record<string, unknown>);
     expect(x.problems).toEqual(["a service with journeys lists no items: each journey is one", "role 'visitor' is built in (anyone at the kiosk): don't define it", "add at least one journey"]);

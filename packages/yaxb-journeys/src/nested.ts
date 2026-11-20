@@ -47,7 +47,7 @@ export const isNestedService = (doc: unknown): doc is Record<string, unknown> =>
 
 const SERVICE_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "order", "layouts", "hidden", "roles", "journeys", "dates", "consent"]);
 const JOURNEY_KEYS = new Set(["id", "title", "summary", "icon", "category", "version", "roles", "flow", "level", "start", "screens"]);
-const SCREEN_KEYS = new Set(["id", "title", "ask", "questions", "submitLabel", "service", "with", "onError", "decide", "next", "result", "stage", "icon", "role", "after", "level", "guard"]);
+const SCREEN_KEYS = new Set(["id", "title", "ask", "questions", "submitLabel", "service", "with", "onError", "decide", "next", "result", "stage", "icon", "role", "after", "level", "guard", "uses"]);
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 
 export type Expanded = {
@@ -203,13 +203,18 @@ export function expandService(doc: Record<string, unknown>): Expanded {
         if (s.after !== undefined) step.after = s.after;
         if (s.level !== undefined) step.level = s.level;
         if (s.guard !== undefined) step.guard = s.guard;
+        // DEP-1: another service's journey; its `with:` values are all that service gets.
+        if (s.uses !== undefined) {
+          step.uses = s.uses;
+          if (s.with !== undefined) step.with = s.with;
+        }
         const task = j.flow === "parallel" && s.decide === undefined && (step.ask !== undefined || step.service !== undefined);
         if (s.decide !== undefined) step.decide = s.decide;
         // A parallel journey's task has no way out of its own (the journey goes on when every task is done).
         else if (task) {
           if (s.next !== undefined) step.next = s.next;
         } else step.next = s.next ?? following ?? endId();
-        if (step.ask === undefined && step.service === undefined && step.decide === undefined) problems.push(`${sat}: give it questions, a service, a decision or a result`);
+        if (step.ask === undefined && step.service === undefined && step.decide === undefined && step.uses === undefined) problems.push(`${sat}: give it questions, a service, a decision, another service it uses, or a result`);
       }
       steps[sid] = step;
     }

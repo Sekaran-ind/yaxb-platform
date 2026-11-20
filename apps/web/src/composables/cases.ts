@@ -12,6 +12,7 @@ import { api } from "@/lib/api";
 import {
   actOnDevice,
   board as boardOnDevices,
+  capsReady,
   finishOnDevice,
   noteOnDevice,
   onDevices,
@@ -46,6 +47,7 @@ const keyOf = (d: CaseDetail) => (d.actor.starter && d.case.started_by.startsWit
 
 /** Hand a run over: a new case. */
 export async function startCase(entry: string, journey: string, answers: unknown, steps: unknown): Promise<Handed> {
+  await capsReady();
   if (onDevices.value || entry === HOUSEHOLD_ENTRY) return startOnDevice(entry, journey, answers, steps);
   return { ...(await api<{ case: CaseSummary }>("/api/cases", { entry, journey, answers, steps })), delivery: null };
 }
@@ -54,7 +56,11 @@ export async function actCase(d: CaseDetail, answers: unknown, steps: unknown): 
   if (onDevices.value || d.case.entry_id === HOUSEHOLD_ENTRY) return actOnDevice(keyOf(d), answers, steps);
   return { ...(await api<{ case: CaseSummary }>(`/api/cases/${encodeURIComponent(keyOf(d))}/act`, { answers, steps })), delivery: null };
 }
-export const openCase = (key: string): Promise<CaseDetail> => (onDevices.value ? openOnDevice(key.trim()) : api<CaseDetail>(`/api/cases/${encodeURIComponent(key.trim())}`));
+/** Where requests are kept depends on the server's capabilities: wait for them on a fresh page, or a central request is looked for on the device. */
+export async function openCase(key: string): Promise<CaseDetail> {
+  await capsReady();
+  return onDevices.value ? openOnDevice(key.trim()) : api<CaseDetail>(`/api/cases/${encodeURIComponent(key.trim())}`);
+}
 export const addNote = (key: string, text: string) => (onDevices.value ? noteOnDevice(key, text) : api<{ event: CaseEvent }>(`/api/cases/${encodeURIComponent(key)}/notes`, { text }));
 export const finishCase = (key: string, decision: "done" | "declined", note?: string) =>
   onDevices.value ? finishOnDevice(key, decision, note) : api<{ case: CaseSummary }>(`/api/cases/${encodeURIComponent(key)}/finish`, { decision, ...(note?.trim() ? { note: note.trim() } : {}) });
@@ -69,7 +75,9 @@ export async function caseBoard(): Promise<Beacon[]> {
 export const reassignCase = (b: Beacon, member: { id: string; name: string }, reason: string | null) => reassignOnDevices(b, member, reason);
 
 /** What a case's status means, in words. */
-export function statusText(c: Pick<CaseSummary, "status" | "waiting_role" | "finish_roles">, roleName: (id: string) => string): string {
+export function statusText(c: Pick<CaseSummary, "status" | "waiting_role" | "finish_roles" | "links">, roleName: (id: string) => string): string {
+  // DEP-1: waiting for another service's request.
+  if (c.status === "waiting" && c.links?.child) return `Waiting for ${c.links.child.service_title} (${c.links.child.ref})`;
   if (c.status === "waiting") return c.waiting_role ? `Waiting for ${roleName(c.waiting_role)}` : "Waiting for the person who started it";
   if (c.status === "to_finish") return `To be finished by ${c.finish_roles.map(roleName).join(" or ")}`;
   return c.status === "done" ? "Done" : "Declined";

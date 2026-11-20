@@ -61,6 +61,8 @@ const withActor = computed(() => handsOver.value || levelled);
 const actorNow = () => (props.resume ? { ...props.resume.actor, level: Math.max(props.resume.actor.level ?? 0, accountLevel.value) } : kioskActor.value);
 const runner = createRunner(props.journey, {
   services: props.services,
+  // DEP-2: a request started for another service's screen reads what that screen shared as context.uses.
+  ...(props.resume?.case.links?.inputs ? { context: { uses: props.resume.case.links.inputs } } : {}),
   onChange: (s) => (state.value = s),
   ...(withActor.value ? { actor: actorNow() } : {}),
 });
@@ -145,6 +147,8 @@ const handedTo = computed(() => {
   if (!c) return "";
   // At home: the people, by name ("Amma"), not the role (EDN-21).
   if (atHome.value && c.status === "waiting" && c.waiting_role) return householdRecipients(c.waiting_role, account.profileId.value, new Map(account.list.value.map((p) => [p.id, p.nickname])));
+  // DEP-1: waiting for another service's request.
+  if (c.status === "waiting" && c.links?.child) return c.links.child.service_title;
   if (c.status === "waiting") return c.waiting_role ? roleName(c.waiting_role) : "the person who started it";
   if (c.status === "to_finish") return c.finish_roles.map(roleName).join(" or ");
   return "";
@@ -482,7 +486,8 @@ onBeforeUnmount(() => {
         </template>
         <h4 v-else class="font-semibold text-ink">{{ handed.status === "done" ? "Done" : `Sent to ${handedTo}` }}</h4>
         <p v-if="handed.status !== 'done'" class="text-sm text-ink">
-          <template v-if="handed.status === 'waiting' && !handed.waiting_role">It goes back to the person who started it. They carry on with this reference.</template>
+          <template v-if="handed.status === 'waiting' && handed.links?.child">{{ handed.links.child.service_title }} has it as its own request ({{ handed.links.child.ref }}). This one carries on when that is done.</template>
+          <template v-else-if="handed.status === 'waiting' && !handed.waiting_role">It goes back to the person who started it. They carry on with this reference.</template>
           <template v-else-if="handed.status === 'to_finish'">{{ handedTo }} closes it when it is done.</template>
           <template v-else-if="atHome">{{ handedTo }} sees it on Quick tools when they open their profile on this device.</template>
           <template v-else>It is in {{ handedTo }}'s work queue. They carry on from here.</template>

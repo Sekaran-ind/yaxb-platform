@@ -462,19 +462,25 @@ export function createD1DesignerStore(db: D1Like): DesignerStore {
 /** Cases and their threads (migration 0009). */
 export function createD1CaseStore(db: D1Like): CaseStore {
   const SUMMARY =
-    "id, ref, entry_id, service_id, service_title, journey_id, journey_title, revision, status, waiting_step, waiting_role, finish_roles, roles, started_by, started_by_name, created_at, updated_at, closed_at, result, starter_device, assignee, assignee_name";
-  type Row = Omit<Case, "finish_roles" | "roles" | "result" | "run" | "journey"> & { finish_roles: string; roles: string; result: string | null; run?: string; journey?: string };
+    "id, ref, entry_id, service_id, service_title, journey_id, journey_title, revision, status, waiting_step, waiting_role, finish_roles, roles, started_by, started_by_name, created_at, updated_at, closed_at, result, starter_device, assignee, assignee_name, links";
+  type Row = Omit<Case, "finish_roles" | "roles" | "result" | "run" | "journey" | "links"> & { finish_roles: string; roles: string; result: string | null; run?: string; journey?: string; links: string | null };
+  const linksOf = (r: Row, pins: boolean) => {
+    if (!r.links) return null;
+    const l = JSON.parse(r.links) as NonNullable<Case["links"]>;
+    if (!pins) delete l.pins;
+    return l;
+  };
   const summary = (r: Row): CaseSummary => {
     const { run: _r, journey: _j, ...rest } = r;
-    return { ...rest, finish_roles: JSON.parse(r.finish_roles), roles: JSON.parse(r.roles), result: r.result ? JSON.parse(r.result) : null };
+    return { ...rest, finish_roles: JSON.parse(r.finish_roles), roles: JSON.parse(r.roles), result: r.result ? JSON.parse(r.result) : null, links: linksOf(r, false) };
   };
-  const full = (r: Row | null): Case | null => (r ? { ...summary(r), run: JSON.parse(r.run!), journey: JSON.parse(r.journey!) } : null);
+  const full = (r: Row | null): Case | null => (r ? { ...summary(r), links: linksOf(r, true), run: JSON.parse(r.run!), journey: JSON.parse(r.journey!) } : null);
   return {
     async put(c) {
       await db
         .prepare(
-          `INSERT INTO cases (${SUMMARY}, run, journey) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?22, ?23, ?24, ?20, ?21)
-           ON CONFLICT (id) DO UPDATE SET status = ?9, waiting_step = ?10, waiting_role = ?11, updated_at = ?17, closed_at = ?18, result = ?19, run = ?20, assignee = ?23, assignee_name = ?24`,
+          `INSERT INTO cases (${SUMMARY}, run, journey) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?22, ?23, ?24, ?25, ?20, ?21)
+           ON CONFLICT (id) DO UPDATE SET status = ?9, waiting_step = ?10, waiting_role = ?11, updated_at = ?17, closed_at = ?18, result = ?19, run = ?20, assignee = ?23, assignee_name = ?24, links = ?25`,
         )
         .bind(
           c.id,
@@ -501,6 +507,7 @@ export function createD1CaseStore(db: D1Like): CaseStore {
           c.starter_device ?? null,
           c.assignee ?? null,
           c.assignee_name ?? null,
+          c.links ? JSON.stringify(c.links) : null,
         )
         .run();
     },

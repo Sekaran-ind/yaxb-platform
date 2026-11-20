@@ -43,7 +43,7 @@ const { data: caps } = useCapabilities();
 /** What this server offers for cases: central storage (paid) and the relay. */
 export const casesCaps = computed<CasesCapabilities>(() => (caps.value as { cases?: CasesCapabilities } | null)?.cases ?? { central: false, relay: false, relayHours: 48 });
 /** The server's capabilities, fetched if they haven't arrived yet (a fresh page collects at once). */
-async function capsReady() {
+export async function capsReady() {
   if (caps.value) return;
   try {
     caps.value = (await (await fetch("/api/agent/capabilities")).json()) as never;
@@ -148,6 +148,11 @@ async function accept(e: Envelope): Promise<boolean> {
   if (e.kind === "case") {
     const got = await receiveCase(localCaseStore, e.body);
     if (got.changed) void beacon(got.case, nextAddress(got.case));
+    // DEP-1: a request this device's case was waiting for came back closed: that case carries on.
+    if (got.changed && got.case.links?.parent && (got.case.status === "done" || got.case.status === "declined")) {
+      const back = await service.childClosed(got.case.id, (await deviceActor()).device ?? null);
+      if (back) await passOn(back.spawned, back.case);
+    }
     return true;
   }
   // A moderator reassigned a case this device has a copy of: apply it and send it to them.
@@ -226,12 +231,25 @@ export async function refreshDeliveries(caseId: string): Promise<Delivery[]> {
 
 // ---- what the kiosk calls ------------------------------------------------------------------------
 
+/** DEP-1: requests started for another service's screen go to their roles; a parent that carried on goes on too. */
+async function passOn(spawned: readonly Case[], resumed: CaseSummary | null = null) {
+  for (const child of spawned) await handOn(child).catch(() => null);
+  if (resumed) {
+    const parent = await localCaseStore.get(resumed.id);
+    if (parent) await handOn(parent).catch(() => null);
+  }
+}
+
 export async function startOnDevice(entry: string, journey: string, answers: unknown, steps: unknown): Promise<{ case: CaseSummary; delivery: Delivery | null }> {
-  const { case: c } = await service.start(await deviceActor(), { entry, journey, answers, steps });
+  const { case: c, spawned } = await service.start(await deviceActor(), { entry, journey, answers, steps });
+  await passOn(spawned);
   return { case: c, delivery: await handOn((await localCaseStore.get(c.id))!) };
 }
 export async function actOnDevice(key: string, answers: unknown, steps: unknown): Promise<{ case: CaseSummary; delivery: Delivery | null }> {
-  const { case: c } = await service.act(await deviceActor(), key, { answers, steps });
+  const { case: c, spawned, resumed } = await service.act(await deviceActor(), key, { answers, steps });
+  await passOn(spawned, resumed);
+  // A dependency that ended here with nobody to close it goes back to the device whose case waits for it.
+  if (c.status === "done" && c.links?.parent && !resumed) await sendBack((await localCaseStore.get(c.id))!).catch(() => undefined);
   return { case: c, delivery: await handOn((await localCaseStore.get(c.id))!) };
 }
 export async function openOnDevice(key: string) {
@@ -245,16 +263,21 @@ export async function noteOnDevice(key: string, text: string) {
 /** Close it here, and tell the kiosk it started on. */
 export async function finishOnDevice(key: string, decision: "done" | "declined", note?: string) {
   const r = await service.finish(await deviceActor(), key, { decision, ...(note?.trim() ? { note: note.trim() } : {}) });
+  await passOn(r.spawned, r.resumed);
   const c = (await localCaseStore.get(r.case.id))!;
   if (c.entry_id === HOUSEHOLD_ENTRY) return r;
   void beacon(c, null);
-  if (c.starter_device && c.starter_device !== (await thisDevice()).id) {
-    const a = await deviceActor();
-    const { box, relay } = mailboxes();
-    const e = caseEnvelope(c, await localCaseStore.events(c.id), { device: c.starter_device }, { id: a.id, name: a.name, device: a.device! }, casesCaps.value.relayHours);
-    await saveDelivery(c.id, await deliver(e, "the kiosk it was started on", { online: [], direct: async () => false, box, relay, hours: { box: BOX_TTL_HOURS, relay: casesCaps.value.relayHours } }));
-  }
+  await sendBack(c);
   return r;
+}
+
+/** A closed case goes back to the kiosk it was started on (for a dependency: the device holding the case that needs it). */
+async function sendBack(c: Case) {
+  if (!c.starter_device || c.starter_device === (await thisDevice()).id) return;
+  const a = await deviceActor();
+  const { box, relay } = mailboxes();
+  const e = caseEnvelope(c, await localCaseStore.events(c.id), { device: c.starter_device }, { id: a.id, name: a.name, device: a.device! }, casesCaps.value.relayHours);
+  await saveDelivery(c.id, await deliver(e, c.links?.parent ? `the device with ${c.links.parent.ref}` : "the kiosk it was started on", { online: [], direct: async () => false, box, relay, hours: { box: BOX_TTL_HOURS, relay: casesCaps.value.relayHours } }));
 }
 export async function queueOnDevice() {
   return service.list(await deviceActor());

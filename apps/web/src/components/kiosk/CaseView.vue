@@ -6,6 +6,7 @@ import MediaThumbs from "./MediaThumbs.vue";
 // finisher or an administrator may decline it with a reason, which the person who started it reads.
 import { summarizeRun, type RunState } from "@sekaran-ind/yaxb-core/journeys";
 import type { ServiceHandler } from "@sekaran-ind/yaxb-core/journeys";
+import { render } from "@sekaran-ind/yaxb-journeys";
 import { ArrowLeft, Check, CheckCircle2, Loader2, MessageSquare, Play, RotateCcw, Send, XCircle } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 import JourneyPanel from "./JourneyPanel.vue";
@@ -63,7 +64,13 @@ const c = computed(() => detail.value?.case ?? null);
 /** A visitor's case is theirs by its reference; everyone else uses its id. */
 const key = computed(() => (c.value && detail.value?.actor.starter && c.value.started_by.startsWith("guest:") ? c.value.ref : (c.value?.id ?? props.caseKey)));
 const closed = computed(() => c.value?.status === "done" || c.value?.status === "declined");
-const waitingLabel = computed(() => (c.value?.waiting_step ? (c.value.journey.steps[c.value.waiting_step]?.label ?? c.value.waiting_step) : ""));
+// A screen's title may use what the request was given ({{context.uses.part}}, DEP-2) or its answers.
+const waitingLabel = computed(() => {
+  const x = c.value;
+  if (!x?.waiting_step) return "";
+  const label = x.journey.steps[x.waiting_step]?.label ?? x.waiting_step;
+  return label.includes("{{") ? String(render(label, { answers: x.run.answers, steps: x.run.steps, context: x.links?.inputs ? { uses: x.links.inputs } : {} }) ?? label) : label;
+});
 /** The answers so far, as the journey shows them (passwords are never stored). */
 const run = computed(() => {
   const x = c.value;
@@ -138,6 +145,7 @@ const standing = computed(() => {
 const holder = computed(() => {
   const x = c.value;
   if (!x) return "";
+  if (x.status === "waiting" && x.links?.child) return x.links.child.service_title;
   if (x.status === "waiting") return x.waiting_role ? roleName(x.waiting_role) : "The person who started it";
   return x.finish_roles.map(roleName).join(" or ");
 });
@@ -147,7 +155,7 @@ function who(e: { actor_id: string; actor_name: string }): string {
   return e.actor_id.startsWith("guest:") ? "Visitor" : e.actor_name;
 }
 
-const KIND: Record<string, string> = { note: "wrote", finished: "marked it done", declined: "declined it", reassigned: "reassigned it" };
+const KIND: Record<string, string> = { note: "wrote", finished: "marked it done", declined: "declined it", reassigned: "reassigned it", dependency: "noted" };
 
 // Kept on devices (LIB-43..45): how far this device's last hand-over got, and send it again.
 const lastDelivery = computed(() => detail.value?.deliveries?.[0] ?? null);
@@ -197,6 +205,20 @@ const when = (iso: string) => new Date(iso).toLocaleString([], { dateStyle: "med
         <p class="text-xs text-gray-500">{{ c.service_title }} · Reference <span class="font-mono font-medium text-ink">{{ c.ref }}</span></p>
         <h3 class="text-lg font-semibold text-ink">{{ c.journey_title }}</h3>
         <p class="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-600"><RequestStatus :status="c.status" /> {{ standing }}</p>
+        <!-- Dependencies (DEP-1, DEP-2): what this request waits for, or which request it was started for and what it was given. -->
+        <p v-if="c.links?.child" class="mt-2 rounded-lg bg-mist px-3 py-2 text-sm text-ink">
+          Waiting for {{ c.links.child.service_title }}: request <span class="font-mono font-semibold">{{ c.links.child.ref }}</span>.
+          <template v-if="c.links.child.due_at"> It stops waiting {{ new Date(c.links.child.due_at).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) }}.</template>
+        </p>
+        <div v-if="c.links?.parent" class="mt-2 space-y-1 rounded-lg bg-mist px-3 py-2 text-sm text-ink">
+          <p>For {{ c.links.parent.service_title }} (request <span class="font-mono font-semibold">{{ c.links.parent.ref }}</span>), which carries on when this is done.</p>
+          <dl v-if="c.links.inputs && Object.keys(c.links.inputs).length" class="grid grid-cols-[auto_1fr] gap-x-3 text-xs">
+            <template v-for="(v, k) in c.links.inputs" :key="k">
+              <dt class="text-gray-500">{{ k }}</dt>
+              <dd class="break-words text-ink">{{ typeof v === "string" ? v : JSON.stringify(v) }}</dd>
+            </template>
+          </dl>
+        </div>
       </div>
 
       <!-- What this person can do now: one primary (Carry on, or Mark it done); Decline is quiet and last. -->

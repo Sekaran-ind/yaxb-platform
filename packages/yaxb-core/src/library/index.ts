@@ -38,6 +38,7 @@ import {
   ROLE_ID,
   VISITOR_ROLE,
   type BundleProblem,
+  type Journey,
   type Role,
 } from "@sekaran-ind/yaxb-journeys";
 import { z } from "zod";
@@ -340,6 +341,15 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
     }
     const own = checkDocument(yaml, [], await compileOptions());
     const org = own.bundle.organisations[0];
+    const usesAny = own.bundle.journeys.some((j) => Object.values(j.steps).some((st) => st.uses));
+    if (!org && usesAny) {
+      // DEP-4: the services it uses are published, start with a role's screen, and nothing loops back.
+      const { services } = await api.published([], { all: true });
+      const opts = await compileOptions();
+      const chunk = { text: yaml.replace(/\r\n?/g, "\n"), line: 1 };
+      const deps = dependencyProblems(own.bundle.services[0]?.id ?? "", own.bundle.journeys, services.map((x) => ({ id: x.id, title: x.title, journeys: compileBundle(x.yaml, opts).journeys })));
+      return [...own.problems, ...deps.map((message): BundleProblem => ({ level: "error", line: problemLine(chunk, message), kind: "service" as never, id: own.bundle.services[0]?.id ?? "", message }))].sort((a, b) => a.line - b.line);
+    }
     if (!org) return own.problems;
     // An organisation is checked against the published services and who is staffed (ORG-5).
     const { services } = await api.published([], { all: true });
@@ -863,4 +873,43 @@ export function createMemoryLibraryStore(): LibraryStore {
       revs.push(copy(r));
     },
   };
+}
+
+/**
+ * DEP-4: a service's dependencies, checked against the published catalogue: each used service and
+ * journey is published; its journey starts with a screen a role answers (nobody else can start it);
+ * and following `uses:` from this service never comes back to it.
+ */
+export function dependencyProblems(self: string, journeys: readonly Journey[], published: readonly { id: string; title: string; journeys: readonly Journey[] }[]): string[] {
+  const out: string[] = [];
+  const usesOf = (js: readonly Journey[]) => js.flatMap((j) => Object.values(j.steps).flatMap((st) => (st.uses ? [st.uses] : [])));
+  for (const j of journeys)
+    for (const [sid, st] of Object.entries(j.steps)) {
+      if (!st.uses) continue;
+      const at = `journey '${j.id}' screen '${sid}'`;
+      if (st.uses.service === self) {
+        out.push(`${at}: uses its own service '${self}'`);
+        continue;
+      }
+      const target = published.find((x) => x.id === st.uses!.service);
+      const tj = target?.journeys.find((x) => x.id === st.uses!.journey);
+      if (!target) out.push(`${at}: uses '${st.uses.service}', which isn't published`);
+      else if (!tj) out.push(`${at}: '${target.title}' has no journey '${st.uses.journey}'`);
+      else if (tj.steps[tj.start]?.ask !== undefined && !tj.steps[tj.start]?.role) out.push(`${at}: '${target.title}' (${tj.id}) starts with the requester's own screen, so another service can't use it`);
+    }
+  // A loop: from what this service uses, can we reach this service again?
+  const seen = new Set<string>();
+  const queue = usesOf(journeys).map((u) => u.service);
+  while (queue.length) {
+    const id = queue.shift()!;
+    if (id === self) {
+      out.push(`its dependencies go round in a circle back to '${self}'`);
+      break;
+    }
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const p = published.find((x) => x.id === id);
+    if (p) queue.push(...usesOf(p.journeys).map((u) => u.service));
+  }
+  return out;
 }

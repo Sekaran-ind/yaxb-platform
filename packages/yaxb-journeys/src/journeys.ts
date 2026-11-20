@@ -26,6 +26,10 @@
 //       guard: { call, with, within, reason }  condition) holds, or a service answers yes within
 //                                       `within` ms; otherwise the person sees `reason` and stays.
 //                                       A call's answer is kept in `steps["guard:<id>"]` (RTN-11).
+//       uses: { service, journey, timeout, fallback }   DEP-1: another service's journey runs as a
+//                                       request of its own (a child case) with only this step's
+//                                       `with:` values; the run waits here until it ends, its outcome
+//                                       then in `steps.<id>`. `timeout` (hours) goes to `fallback`.
 //
 // Service names are dotted: `agent.ask`, `offline.summarize`, `notebook.remember`. The core
 // doesn't know them; the surface passes handlers to createRunner, and compileJourney can be told
@@ -42,6 +46,11 @@ export * from "./questionnaires.js";
 export * from "./roles.js";
 
 export type Branch = { if?: string; to: string };
+/** A dependency (DEP-1): a service's journey run as a request of its own; `timeout` hours lead to `fallback`. */
+export type StepUses = { service: string; journey: string; timeout?: number; fallback?: string };
+/** What a finished dependency left in `steps.<id>` (DEP-1): its request, how it ended, its result. */
+export type UsesResult = { case: string; status: "done" | "declined" | "timed_out"; result?: { title: string; text: string; ok: boolean; outcome?: string | null } | null };
+export const USES_MAX_HOURS = 24 * 90;
 /** A guard hook (RTN-9): a condition, or a service's yes or no within a time limit. */
 export type StepGuard = { allow?: string; call?: string; with?: unknown; within?: number; reason: string };
 /** The longest a guard's call may take, and the default. */
@@ -83,6 +92,8 @@ export type Step = {
   questionnaire?: string;
   /** RTN-9: what must hold, or answer yes, before this step's answers are taken. */
   guard?: StepGuard;
+  /** DEP-1: the service this step needs; the run waits for it (its `with:` values are all it gets). */
+  uses?: StepUses;
   /** The questionnaire's pages, by field id (absent for a step with its own fields). */
   sections?: StepSection[];
 };
@@ -115,7 +126,7 @@ export type Journey = {
 };
 
 const JOURNEY_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "category", "roles", "flow", "level", "start", "steps"]);
-const STEP_KEYS = new Set(["ask", "fields", "questionnaire", "service", "with", "onError", "decide", "final", "result", "next", "label", "stage", "icon", "submitLabel", "role", "after", "level", "guard"]);
+const STEP_KEYS = new Set(["ask", "fields", "questionnaire", "service", "with", "onError", "decide", "final", "result", "next", "label", "stage", "icon", "submitLabel", "role", "after", "level", "guard", "uses"]);
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 /** An outcome id: lower-case words joined by '-', optionally dotted (registration.approved). */
 export const OUTCOME_ID = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*$/;
@@ -210,8 +221,9 @@ export function journeyProblems(doc: unknown, { services, questionnaires = [], r
     const s = raw as Record<string, unknown>;
     for (const k of Object.keys(s)) if (!STEP_KEYS.has(k)) problems.push(`${at}: unknown key '${k}'`);
     // ask, then service, then decide may combine (decide is the step's way out); final stands alone.
-    const kinds = ["ask", "service", "decide", "final"].filter((k) => s[k] !== undefined || (k === "ask" && s.questionnaire !== undefined));
-    if (kinds.length === 0) problems.push(`${at} needs one of ask, service, decide, final`);
+    const kinds = ["ask", "service", "decide", "final", "uses"].filter((k) => s[k] !== undefined || (k === "ask" && s.questionnaire !== undefined));
+    if (kinds.length === 0) problems.push(`${at} needs one of ask, service, decide, final, uses`);
+    if (s.uses !== undefined) problems.push(...usesProblems(at, s.uses, kinds.length > 1, parallel, (id) => Object.hasOwn(all, id)));
     if (s.final !== undefined && kinds.length > 1) problems.push(`${at}: a final step can't also ${kinds.filter((k) => k !== "final").join(" or ")}`);
     if (s.decide !== undefined && s.next !== undefined) problems.push(`${at}: use decide or next, not both`);
     if (s.questionnaire !== undefined) {
@@ -226,6 +238,7 @@ export function journeyProblems(doc: unknown, { services, questionnaires = [], r
       else if (services && !services.includes(s.service)) problems.push(`${at}: no service '${s.service}'`);
       checkTemplate(at, s.with);
     }
+    if (s.uses !== undefined) checkTemplate(at, s.with);
     if (s.role !== undefined) {
       if (typeof s.role !== "string" || !ROLE_ID.test(s.role)) problems.push(`${at}: role is a role id (lower-case words joined by '-')`);
       else if (s.role === VISITOR_ROLE) problems.push(`${at}: leave role out for the person who started the journey`);
@@ -353,8 +366,8 @@ export function journeyRolesNeeded(journey: Pick<Journey, "roles" | "steps">): R
 export type RunState = {
   status: RunStatus;
   current: string | null;
-  /** The step someone else answers (status "waiting"): its role, or null for the person who started it. */
-  waiting: { step: string; role: string | null } | null;
+  /** The step someone else answers (status "waiting"): its role, or null for the person who started it; `uses`: waiting for another service's request (DEP-1). */
+  waiting: { step: string; role: string | null; uses?: StepUses } | null;
   /** The step that needs a stronger sign-in (status "step_up"), and the level it needs (IDN-32). */
   stepUp?: { step: string; level: number } | null;
   /** The step waiting for the visitor (status "asking"). */
@@ -411,5 +424,21 @@ function guardProblems(at: string, g: unknown, asks: boolean, parallel: boolean,
   }
   if (x.within !== undefined && (typeof x.within !== "number" || !Number.isInteger(x.within) || x.within < 100 || x.within > GUARD_MAX_MS)) out.push(`${at}: guard: within is milliseconds, 100 to ${GUARD_MAX_MS}`);
   if (typeof x.reason !== "string" || !x.reason.trim() || x.reason.length > 300) out.push(`${at}: guard: reason is what the person sees when it stops them (up to 300 characters)`);
+  return out;
+}
+
+/** What's wrong with a step's `uses` (DEP-1, DEP-3). Whether the service and journey exist is the catalogue's check. */
+function usesProblems(at: string, u: unknown, combined: boolean, parallel: boolean, hasStep: (id: string) => boolean): string[] {
+  const out: string[] = [];
+  if (!u || typeof u !== "object" || Array.isArray(u)) return [`${at}: uses is { service, journey }`];
+  const x = u as Record<string, unknown>;
+  for (const k of Object.keys(x)) if (!["service", "journey", "timeout", "fallback"].includes(k)) out.push(`${at}: uses: unknown key '${k}'`);
+  if (combined) out.push(`${at}: a step that uses another service does nothing else`);
+  if (parallel) out.push(`${at}: uses works in a journey that runs in sequence`);
+  if (typeof x.service !== "string" || !ROLE_ID.test(x.service)) out.push(`${at}: uses.service is the id of the service it needs`);
+  if (typeof x.journey !== "string" || !ROLE_ID.test(x.journey)) out.push(`${at}: uses.journey is the id of that service's journey`);
+  if (x.timeout !== undefined && (typeof x.timeout !== "number" || !Number.isInteger(x.timeout) || x.timeout < 1 || x.timeout > USES_MAX_HOURS)) out.push(`${at}: uses.timeout is hours, 1 to ${USES_MAX_HOURS}`);
+  if ((x.timeout === undefined) !== (x.fallback === undefined)) out.push(`${at}: uses.timeout and uses.fallback go together: where the journey goes when it waits too long`);
+  else if (x.fallback !== undefined && (typeof x.fallback !== "string" || !hasStep(x.fallback))) out.push(`${at}: uses.fallback: no step '${String(x.fallback)}'`);
   return out;
 }

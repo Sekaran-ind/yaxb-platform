@@ -37,6 +37,11 @@ export const EVENT_KINDS = [
   // A connector's operation was called (CNX-8): the connector's entry is the service, the operation
   // the journey; how long it took and whether it worked. Never what was sent or answered.
   "connector.called",
+  // Dependencies (DEP-5): a screen started another service's request (step: the screen), it waited
+  // too long, and went to its fallback; on the case that needed it.
+  "dependency.started",
+  "dependency.timed_out",
+  "dependency.fallback",
   "routine.started",
   "routine.action",
   "routine.finished",
