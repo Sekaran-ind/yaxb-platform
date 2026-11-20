@@ -215,10 +215,11 @@ journeys:
     it("is seeded once with the kiosk's own services, published", async () => {
       const svc = setup();
       const seeds = kioskContent.catalogue.map((c) => c.yaml);
-      expect((await svc.seed(seeds)).sort()).toEqual(["hall", "repairs", "visits"]);
+      expect((await svc.seed(seeds)).sort()).toEqual(["attendance", "hall", "repairs", "visits"]);
       expect(await svc.seed(seeds)).toEqual([]);
       const pub = await svc.published();
       expect(pub.services.map((s) => [s.id, s.journeys.map((j) => j.id)]).sort()).toEqual([
+        ["attendance", ["check-in"]],
         ["hall", ["book-hall"]],
         ["repairs", ["report-repair"]],
         ["visits", ["visit-check-in"]],
@@ -228,7 +229,7 @@ journeys:
       const visits = pub.services.find((s) => s.id === "visits")!.entry_id;
       await svc.setEntryArchived(admin, visits, true);
       expect(await svc.seed(seeds)).toEqual([]);
-      expect((await svc.published()).services.map((s) => s.id).sort()).toEqual(["hall", "repairs"]);
+      expect((await svc.published()).services.map((s) => s.id).sort()).toEqual(["attendance", "hall", "repairs"]);
     });
 
     it("keeps libraries for members to organise, and archives them", async () => {

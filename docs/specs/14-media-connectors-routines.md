@@ -29,12 +29,12 @@ FaceOps is rebuilt as an Attendance service on Anjal for Business, not ported. M
 
 | ID | Requirement | Status |
 |---|---|---|
-| ATT-1 | A check-in journey with QR or PIN. Each check-in is an event with an outcome (in, out, late). | Planned |
-| ATT-2 | Departments and shifts are synced service data on the business's box (SYN). | Planned |
-| ATT-3 | A roster view over the events, weekly and monthly, beside the service dashboard. | Planned |
-| ATT-4 | A grid view where a manager edits the roster like a spreadsheet, with export to CSV. | Planned |
-| ATT-5 | A one-time import of Airtable's CSV export (employees, departments, shifts) into the box. No Airtable account stays in the loop. | Planned |
-| ATT-6 | An optional location check with a geofence per site, storing only "inside site X" (VIS-8). | Planned |
+| ATT-1 | A check-in journey with QR or PIN. Each check-in is an event with an outcome (in, out, late). Built: the check-in journey with a PIN (seed `content/catalogue/attendance.service.yaml`, handler `attendance.check`); each check is a `journey.outcome` event (`attendance.in`, `.late`, `.out`) with the employee as actor. Each employee has a card QR on the roster; scanning it waits for a camera reader. | Partly built |
+| ATT-2 | Departments and shifts are synced service data on the business's box (SYN). Built: the roster (departments, shifts, employees) is service data `attendance-roster`, synced through the box (`trackWrite`, newer `updated_at` wins). | Built |
+| ATT-3 | A roster view over the events, weekly and monthly, beside the service dashboard. Built: For staff → Attendance → Report (this week, last week, this month; first in, last out, late) from the service's events, with CSV. | Built |
+| ATT-4 | A grid view where a manager edits the roster like a spreadsheet, with export to CSV. Built: For staff → Attendance → Roster, a grid of employees, departments and shifts, with export to CSV. | Built |
+| ATT-5 | A one-time import of Airtable's CSV export (employees, departments, shifts) into the box. No Airtable account stays in the loop. Dropped (2026-11-20): there is no Airtable data to import. | Dropped |
+| ATT-6 | An optional location check with a geofence per site, storing only "inside site X" (VIS-8). Built: an optional geofence per site; the event keeps only `site:<id>` or `outside`. | Built |
 | ATT-7 | Attendance totals can be exported to Tally as payroll entries (CNX-4). | Planned |
 
 ## Face verification

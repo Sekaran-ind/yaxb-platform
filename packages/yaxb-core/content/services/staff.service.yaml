@@ -7,6 +7,7 @@ order: 90
 items:
   - { key: staff-work, label: My work, summary: "Requests for your roles, questions and answers to check", icon: inbox, staff: work }
   - { key: staff-dashboards, label: Service dashboards, summary: "How each service's journeys go, and the activity log", icon: gauge, staff: dashboards }
+  - { key: staff-attendance, label: Attendance, summary: "The roster, PINs, and who came in and when", icon: clipboard-list, staff: attendance }
   - { key: staff-quality, label: Answer quality, summary: "F1, precision, recall and accuracy per notebook", icon: gauge, staff: quality }
   - { key: staff-review, label: Review answers, summary: Rate answers and their sources, icon: message-square, staff: review }
   - { key: staff-moderation, label: Moderation queue, summary: Escalated questions and session feedback, icon: search, staff: moderation }

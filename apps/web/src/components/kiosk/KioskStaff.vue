@@ -18,9 +18,10 @@ import QualityDashboard from "@/components/moderation/QualityDashboard.vue";
 import TeamPanel from "@/components/team/TeamPanel.vue";
 import MyWork from "@/components/moderation/MyWork.vue";
 import ServiceDashboard from "@/components/moderation/ServiceDashboard.vue";
+import AttendanceStaff from "@/components/moderation/AttendanceStaff.vue";
 import { useWidth } from "@/composables/width";
 
-const COMPONENTS = { work: MyWork, dashboards: ServiceDashboard, quality: QualityDashboard, review: AnswerReviews, moderation: CurateTimeline, team: TeamPanel, profile: ModeratorProfile, admin: AdminPanel } as const;
+const COMPONENTS = { work: MyWork, dashboards: ServiceDashboard, attendance: AttendanceStaff, quality: QualityDashboard, review: AnswerReviews, moderation: CurateTimeline, team: TeamPanel, profile: ModeratorProfile, admin: AdminPanel } as const;
 type Section = keyof typeof COMPONENTS;
 const isSection = (s: unknown): s is Section => typeof s === "string" && s in COMPONENTS;
 

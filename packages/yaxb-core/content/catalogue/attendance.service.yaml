@@ -1,0 +1,51 @@
+# Seeded into the Service Catalogue (LIB-21): attendance (ATT-1..6), rebuilt on Anjal. Staff check in
+# and out at the front desk with their PIN; the roster (departments, shifts, employees) is the
+# business's service data on its box, kept by managers under For staff → Attendance. Each check-in
+# is the service's event with an outcome (in, late, out).
+kind: service
+id: attendance
+title: Attendance
+summary: Check in and out with your PIN; managers see who came in, and when.
+icon: clipboard-list
+order: 50
+roles:
+  - { id: manager, label: Manager, description: Keeps the roster and reads the attendance reports }
+journeys:
+  - id: check-in
+    title: Check in or out
+    summary: Your PIN, and whether you're arriving or leaving.
+    icon: clipboard-list
+    category: attendance
+    screens:
+      - id: who
+        title: Your PIN
+        ask: Are you arriving or leaving? Type your PIN.
+        submitLabel: Check
+        questions:
+          - id: kind
+            type: select
+            label: Arriving or leaving
+            required: true
+            default: in
+            options:
+              - { value: in, label: Arriving }
+              - { value: out, label: Leaving }
+          - { id: pin, type: password, label: Your PIN, required: true, placeholder: 4 to 6 digits }
+      - id: check
+        title: Checking
+        service: attendance.check
+        with: { kind: "{{answers.who.kind}}", pin: "{{answers.who.pin}}" }
+        onError: continue
+      - id: checked
+        decide:
+          - { if: "steps.check.error", to: again }
+          - { to: done }
+      - id: again
+        title: Not recognised
+        ask: "That PIN isn't on the roster. Try again, or ask a manager."
+        submitLabel: Try again
+        questions:
+          - { id: retry, type: boolean, label: Another try, default: true }
+        next: who
+      - id: done
+        result: { title: "{{steps.check.title}}", text: "{{steps.check.text}}" }

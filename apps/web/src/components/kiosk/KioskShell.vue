@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { checkOutcome, insideSite, whoChecks } from "@sekaran-ind/yaxb-core/attendance";
+import { roster } from "@/composables/attendance";
+import { recordEvent } from "@/composables/service-events";
 import { mediaHost } from "@/composables/media";
 import { isMediaRef } from "@sekaran-ind/yaxb-core/journeys";
 // The kiosk. Three layouts from one config (yaxb-core content/screens.yaml):
@@ -787,6 +790,29 @@ const builtInServices: Record<string, ServiceHandler> = {
     await identity.reload();
     const m = identity.me.value;
     return m.signedIn ? { signedIn: true, name: m.account.display_name ?? "", spaces: mySpaces.value.length, open: m.space?.space_name ?? null } : { signedIn: false };
+  },
+  // Attendance (ATT-1, ATT-6): a check-in against this business's roster, on the device (offline at
+  // the front desk). The event carries the outcome and the employee's roster id; with sites in the
+  // roster, only which site it was inside (never where).
+  "attendance.check": async (input, { journey }) => {
+    const i = input as { kind?: unknown; pin?: unknown; qr?: unknown };
+    const kind = i.kind === "out" ? "out" : "in";
+    const who = await whoChecks(roster.value, { pin: typeof i.pin === "string" ? i.pin : undefined, qr: typeof i.qr === "string" ? i.qr : undefined });
+    if (!who) throw new Error("That PIN isn't on the roster.");
+    const at = new Date();
+    const outcome = checkOutcome(roster.value, who, kind, at);
+    let site: string | null = null;
+    if (roster.value.sites.length && navigator.geolocation) {
+      const pos = await new Promise<GeolocationPosition | null>((res) => navigator.geolocation.getCurrentPosition(res, () => res(null), { timeout: 5000, maximumAge: 60_000 }));
+      if (pos) site = roster.value.sites.find((x) => insideSite(x, pos.coords.latitude, pos.coords.longitude))?.id ?? "outside";
+    }
+    recordEvent(entryOfJourney(journey.id), { journey: journey.id, kind: "journey.outcome", run: crypto.randomUUID(), outcome, actor: who.id, step: site ? `site:${site}` : null });
+    const time = at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const first = who.name.split(/\s+/)[0];
+    return {
+      title: kind === "out" ? `Goodbye, ${first}` : `Welcome, ${first}`,
+      text: `${kind === "out" ? "Checked out" : "Checked in"} at ${time}${outcome === "attendance.late" ? ", after your shift's start" : ""}${site === "outside" ? ". This device isn't at one of your sites" : ""}.`,
+    };
   },
   // Media (MED-6): read a photo or write down a voice note, on this device. Input: the field's answer.
   "media.read": async (input) => {
