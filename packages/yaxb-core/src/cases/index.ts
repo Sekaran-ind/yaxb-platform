@@ -15,7 +15,15 @@
 // often shared, so a visitor's cases are never listed: a visitor opens theirs by its reference
 // ("R-7KQ4MX", shown when they hand it over), like a parcel's tracking code, and acts on it as the
 // person who started it. Members open cases by id from their work queue.
-import { ASSURANCE_LEVELS, canInitiate, levelNeeded, mayAnswer, replay, type Journey, type RunActor, type RunSnapshot } from "@sekaran-ind/yaxb-journeys/journeys";
+//
+// Dependencies (DEP-1..3): a screen with `uses: { service, journey }` makes the case wait while that
+// service's journey runs as a case of its own (a child), started by the system with only the
+// screen's `with:` values (`links.inputs`, read by the child's journey as {{context.uses.x}}). The
+// version of the used journey is pinned when the parent starts (`links.pins`). When the child is
+// closed, how it ended goes into the parent's run (steps.<screen>) and the parent carries on; a
+// `timeout` past its `due_at` puts `timed_out` there instead, which leads to the screen's fallback.
+import { ASSURANCE_LEVELS, canInitiate, levelNeeded, mayAnswer, replay, type Journey, type RunActor, type RunSnapshot, type UsesResult } from "@sekaran-ind/yaxb-journeys/journeys";
+import { render } from "@sekaran-ind/yaxb-journeys/journeys";
 import { resolveForRequester, type Organisation } from "@sekaran-ind/yaxb-journeys";
 import { z } from "zod";
 
@@ -67,12 +75,31 @@ export type Case = {
   /** One member it is assigned to (a moderator's reassignment), instead of everyone with the role. */
   assignee?: string | null;
   assignee_name?: string | null;
+  /** DEP-1..3: the case this one is a dependency of, the one it waits for, its inputs, its pinned journeys. */
+  links?: CaseLinks | null;
 };
+
+/** One end of a dependency (DEP-1). */
+export type CaseLink = { id: string; ref: string; step: string; service_title: string; journey_title: string };
+export type CaseLinks = {
+  /** This case was started for that case's screen. */
+  parent?: CaseLink | null;
+  /** This case waits for that one; past `due_at` it stops waiting (DEP-3). */
+  child?: (CaseLink & { due_at: string | null }) | null;
+  /** DEP-2: what the parent's screen shared (its `with:` values), and nothing else. */
+  inputs?: Record<string, unknown> | null;
+  /** DEP-3: per screen that uses another service, its journey as published when this case started. */
+  pins?: Record<string, CaseJourney>;
+};
+/** The context a case's journey runs in: a dependency's inputs as `context.uses`. */
+export const contextOf = (c: Pick<Case, "links">) => (c.links?.inputs ? { uses: c.links.inputs } : {});
+/** Who starts a dependency: the system, for the case that needs it. */
+export const SYSTEM_CASE_ACTOR = (parent: Pick<Case, "id" | "service_title">): CaseActor => ({ id: `case:${parent.id}`, name: parent.service_title, roles: [], admin: false });
 
 /** A case in a list: everything but the run and the journey. */
 export type CaseSummary = Omit<Case, "run" | "journey">;
 
-export type CaseEventKind = "started" | "answered" | "note" | "finished" | "declined" | "reassigned";
+export type CaseEventKind = "started" | "answered" | "note" | "finished" | "declined" | "reassigned" | "dependency";
 
 /** One line of a case's thread. */
 export type CaseEvent = { id: string; case_id: string; at: string; actor_id: string; actor_name: string; kind: CaseEventKind; step: string | null; text: string | null };
@@ -126,6 +153,10 @@ export type CaseOptions = {
    * starter's unit, fixed when the case starts and kept with it.
    */
   organisation?: () => Promise<Organisation | null>;
+  /** DEP-1: a published service's journey by the service's own id (what `uses:` names). */
+  journeyForService?(service: string, journey: string): Promise<CaseJourney | null>;
+  /** DEP-5: a dependency started, timed out (and went to its fallback), or ended. */
+  onDependency?: (kind: "dependency.started" | "dependency.timed_out" | "dependency.fallback" | "dependency.ended", parent: Case, child: Case | null) => Promise<void> | void;
 };
 
 const REF_CHARS = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -161,15 +192,18 @@ function storable(journey: Journey, run: RunSnapshot): RunSnapshot {
   return { ...run, answers };
 }
 
-export const summaryOf = ({ run: _r, journey: _j, ...rest }: Case): CaseSummary => rest;
+/** A case in a list: no run, no journey, and no pinned journeys. */
+export const summaryOf = ({ run: _r, journey: _j, ...rest }: Case): CaseSummary => (rest.links?.pins ? { ...rest, links: { ...rest.links, pins: undefined } } : rest);
 
 /** May this person see the case? Its starter, an administrator, or a member with a role it names. */
 export const mayView = (c: Pick<Case, "started_by" | "roles">, a: CaseActor) => a.admin || c.started_by === a.id || c.roles.some((r) => a.roles.includes(r));
 
 /** Is it this person's turn? */
-export function isTurnOf(c: Pick<Case, "status" | "waiting_role" | "started_by" | "finish_roles" | "assignee">, a: CaseActor): boolean {
+export function isTurnOf(c: Pick<Case, "status" | "waiting_role" | "started_by" | "finish_roles" | "assignee" | "links">, a: CaseActor): boolean {
   // Assigned to one member: theirs (an administrator may still close it).
   if (c.assignee && c.status !== "done" && c.status !== "declined") return c.assignee === a.id || (c.status === "to_finish" && a.admin);
+  // Waiting for another service's request (DEP-1): nobody's turn here.
+  if (c.status === "waiting" && c.links?.child) return false;
   if (c.status === "waiting") return c.waiting_role ? a.roles.includes(c.waiting_role) : c.started_by === a.id;
   if (c.status === "to_finish") return a.admin || c.finish_roles.some((r) => a.roles.includes(r));
   return false;
@@ -195,8 +229,108 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
       const finish = (journey.roles?.complete ?? []).filter((r) => r !== "visitor");
       return { status: (finish.length ? "to_finish" : "done") as CaseStatus, waiting_step: null, waiting_role: null, result: s.result };
     }
-    const step = s.prompt!.step;
+    const step = s.prompt?.step ?? s.waiting?.step ?? s.current!;
     return { status: "waiting" as CaseStatus, waiting_step: step, waiting_role: journey.steps[step]?.role ?? null, result: null };
+  }
+  /** Is the case waiting at a screen that uses another service (DEP-1)? */
+  const usesAt = (c: Pick<Case, "status" | "waiting_step" | "journey">) => (c.status === "waiting" && c.waiting_step ? (c.journey.steps[c.waiting_step]?.uses ?? null) : null);
+
+  /** DEP-3: the journeys a journey's dependencies run, as published now (pinned when the case starts). */
+  async function pinsFor(journey: Journey): Promise<Record<string, CaseJourney>> {
+    const pins: Record<string, CaseJourney> = {};
+    for (const [sid, st] of Object.entries(journey.steps)) {
+      if (!st.uses) continue;
+      const found = options.journeyForService ? await options.journeyForService(st.uses.service, st.uses.journey) : null;
+      if (!found) throw new CaseError(`This journey needs "${st.uses.service}" (${st.uses.journey}), which isn't published.`, 422);
+      pins[sid] = found;
+    }
+    return pins;
+  }
+
+  /**
+   * DEP-1: start the request a waiting screen needs, as a case of its own with only the screen's
+   * `with:` values. Returns the parent, now linked to it, and the child; null when nothing to start.
+   */
+  async function depend(parent: Case, device: string | null): Promise<{ parent: Case; child: Case } | null> {
+    const uses = usesAt(parent);
+    if (!uses || parent.links?.child) return null;
+    const step = parent.waiting_step!;
+    const pin = parent.links?.pins?.[step] ?? (await pinsFor({ ...parent.journey, steps: { [step]: parent.journey.steps[step]! } }))[step]!;
+    const inputs = (render(parent.journey.steps[step]!.with ?? {}, { answers: parent.run.answers, steps: parent.run.steps, context: contextOf(parent) }) ?? {}) as Record<string, unknown>;
+    const r = await replay(pin.journey, { answers: {}, steps: {} }, { uses: inputs });
+    if (!r.ok) throw new CaseError(r.problems[0] ?? "The service it needs can't start.", 422);
+    const at = position(pin.journey, r);
+    if (at.status === "waiting" && at.waiting_role === null) throw new CaseError(`"${pin.service_title}" starts with the requester's own screens, so another service can't use it.`, 422);
+    const t = now();
+    let ref = newRef();
+    for (let i = 0; i < 5 && (await store.byRef(ref)); i++) ref = newRef();
+    const sys = SYSTEM_CASE_ACTOR(parent);
+    const child: Case = {
+      id: id(),
+      ref,
+      entry_id: pin.entry_id,
+      service_id: pin.service_id,
+      service_title: pin.service_title,
+      journey_id: pin.journey.id,
+      journey_title: pin.journey.title,
+      revision: pin.revision,
+      ...at,
+      finish_roles: (pin.journey.roles?.complete ?? []).filter((x) => x !== "visitor"),
+      roles: rolesOf(pin.journey),
+      started_by: sys.id,
+      started_by_name: parent.service_title,
+      // On devices, the closed child goes back to the device holding the parent.
+      starter_device: device,
+      assignee: null,
+      assignee_name: null,
+      created_at: t,
+      updated_at: t,
+      closed_at: null,
+      run: { current: r.state.current, answers: {}, steps: {}, trail: r.state.trail },
+      journey: pin.journey,
+      links: { parent: { id: parent.id, ref: parent.ref, step, service_title: parent.service_title, journey_title: parent.journey_title }, inputs },
+    };
+    const due = uses.timeout ? new Date(Date.parse(t) + uses.timeout * 3_600_000).toISOString() : null;
+    const linked: Case = { ...parent, updated_at: t, links: { ...parent.links, child: { id: child.id, ref, step, service_title: pin.service_title, journey_title: pin.journey.title, due_at: due } } };
+    await store.put(child);
+    await event(child, sys, "started", null, null);
+    await store.put(linked);
+    await event(linked, sys, "dependency", step, `Waiting for ${pin.service_title}: ${ref}`);
+    await options.onDependency?.("dependency.started", linked, child);
+    return { parent: linked, child };
+  }
+
+  /**
+   * DEP-1, DEP-3: a parent's dependency ended (closed, or past its time): how it ended goes into the
+   * parent's run at that screen, and the parent carries on (and may start its next dependency).
+   */
+  async function resume(parent: Case, outcome: UsesResult, child: Case | null, device: string | null): Promise<{ parent: Case; spawned: Case[] }> {
+    const step = parent.links!.child!.step;
+    const steps = { ...parent.run.steps, [step]: outcome };
+    const r = await replay(parent.journey, { answers: parent.run.answers, steps }, contextOf(parent));
+    if (!r.ok) throw new CaseError(r.problems[0] ?? "The case can't carry on.");
+    const at = position(parent.journey, r);
+    const t = now();
+    const next: Case = { ...parent, ...at, updated_at: t, closed_at: at.status === "done" ? t : null, run: storable(parent.journey, { current: r.state.current, answers: parent.run.answers, steps, trail: r.state.trail }), links: { ...parent.links, child: null } };
+    await store.put(next);
+    const sys = SYSTEM_CASE_ACTOR(parent);
+    const said = outcome.status === "timed_out" ? `Stopped waiting for ${parent.links!.child!.service_title} (${outcome.case})` : `${parent.links!.child!.service_title} ${outcome.status === "done" ? "finished" : "declined"} ${outcome.case}${outcome.result?.title ? `: ${outcome.result.title}` : ""}`;
+    await event(next, sys, "dependency", step, said);
+    if (outcome.status === "timed_out") {
+      await options.onDependency?.("dependency.timed_out", next, child);
+      if (next.journey.steps[step]?.uses?.fallback) await options.onDependency?.("dependency.fallback", next, child);
+    } else await options.onDependency?.("dependency.ended", next, child);
+    const more = await depend(next, device);
+    return more ? { parent: more.parent, spawned: [more.child] } : { parent: next, spawned: [] };
+  }
+
+  /** A closed child: resume its parent if the parent still waits for it (and is kept here). */
+  async function childClosed(child: Case, device: string | null): Promise<{ parent: Case; spawned: Case[] } | null> {
+    const link = child.links?.parent;
+    if (!link || (child.status !== "done" && child.status !== "declined")) return null;
+    const parent = await store.get(link.id);
+    if (!parent || parent.links?.child?.id !== child.id) return null;
+    return resume(parent, { case: child.ref, status: child.status, result: child.result }, child, device);
   }
 
   /** A case by id (members) or reference, and who the actor is on it: a visitor with the reference of a visitor's case is its starter. */
@@ -220,7 +354,7 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
      * Hand a run over: the starter has answered their screens and the journey now needs someone
      * else (a screen another role answers, or roles that finish it).
      */
-    async start(a: CaseActor, input: unknown): Promise<{ case: CaseSummary }> {
+    async start(a: CaseActor, input: unknown): Promise<{ case: CaseSummary; spawned: Case[] }> {
       const p = parse(caseStartSchema, input);
       sized(p);
       const found = await options.journeyFor(p.entry, p.journey);
@@ -237,7 +371,9 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
       const low = tooLowFor(journey, r.answered, a);
       if (low) throw low;
       const at = position(journey, r);
-      if (at.status === "waiting" && at.waiting_role === null) throw new CaseError("Finish your part of the journey first.");
+      const pins = await pinsFor(journey);
+      const waitsForService = at.status === "waiting" && Boolean(journey.steps[at.waiting_step!]?.uses);
+      if (at.status === "waiting" && at.waiting_role === null && !waitsForService) throw new CaseError("Finish your part of the journey first.");
       if (at.status === "done") throw new CaseError("This journey ends here: there is nothing to hand over.");
       const t = now();
       let ref = newRef();
@@ -264,14 +400,16 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
         closed_at: null,
         run: storable(journey, { current: r.state.current, answers: p.answers, steps: p.steps, trail: r.state.trail }),
         journey,
+        links: Object.keys(pins).length ? { pins } : null,
       };
       await store.put(c);
       await event(c, a, "started", null, r.answered.map((s) => journey.steps[s]?.label ?? s).join(", ") || null);
-      return { case: summaryOf(c) };
+      const dep = await depend(c, a.device ?? null);
+      return { case: summaryOf(dep?.parent ?? c), spawned: dep ? [dep.child] : [] };
     },
 
     /** Answer the screens that are this person's turn, from where the case stopped. */
-    async act(actor: CaseActor, key: string, input: unknown): Promise<{ case: CaseSummary }> {
+    async act(actor: CaseActor, key: string, input: unknown): Promise<{ case: CaseSummary; spawned: Case[]; resumed: CaseSummary | null }> {
       const p = parse(caseActSchema, input);
       const { c, a } = await load(key, actor);
       if (c.status !== "waiting" || !isTurnOf(c, a)) throw new CaseError("It isn't your turn on this case.", 409);
@@ -283,7 +421,7 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
       const steps = { ...c.run.steps };
       for (const [k, v] of Object.entries(p.steps)) if (!Object.hasOwn(steps, k)) steps[k] = v;
       sized({ answers, steps });
-      const r = await replay(c.journey, { answers, steps });
+      const r = await replay(c.journey, { answers, steps }, contextOf(c));
       if (!r.ok) throw new CaseError(r.problems[0] ?? "The answers don't fit the journey.");
       const me = runActor(c, a);
       const fresh = r.answered.filter((s) => !Object.hasOwn(c.run.answers, s));
@@ -305,7 +443,10 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
       };
       await store.put(next);
       await event(next, a, "answered", fresh[0] ?? null, fresh.map((s) => c.journey.steps[s]?.label ?? s).join(", "));
-      return { case: summaryOf(next) };
+      // It now waits for another service (DEP-1), or, as a dependency, it ended with nobody to close it.
+      const dep = await depend(next, actor.device ?? null);
+      const back = at.status === "done" ? await childClosed(next, actor.device ?? null) : null;
+      return { case: summaryOf(dep?.parent ?? next), spawned: [...(dep ? [dep.child] : []), ...(back?.spawned ?? [])], resumed: back ? summaryOf(back.parent) : null };
     },
 
     /**
@@ -341,7 +482,7 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
     },
 
     /** Close a case: a finisher when the journey has ended, or decline it (a finisher or an administrator) at any time. */
-    async finish(actor: CaseActor, key: string, input: unknown): Promise<{ case: CaseSummary }> {
+    async finish(actor: CaseActor, key: string, input: unknown): Promise<{ case: CaseSummary; resumed: CaseSummary | null; spawned: Case[] }> {
       const p = parse(caseFinishSchema, input);
       const { c, a } = await load(key, actor);
       if (c.status === "done" || c.status === "declined") throw new CaseError("This case is closed already.", 409);
@@ -353,7 +494,40 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
       const next: Case = { ...c, status: p.decision, updated_at: t, closed_at: t };
       await store.put(next);
       await event(next, a, p.decision === "done" ? "finished" : "declined", null, p.note ?? null);
-      return { case: summaryOf(next) };
+      // A dependency closed (DEP-1): the case that needed it carries on.
+      const back = await childClosed(next, actor.device ?? null);
+      return { case: summaryOf(next), resumed: back ? summaryOf(back.parent) : null, spawned: back?.spawned ?? [] };
+    },
+
+    /**
+     * A dependency closed elsewhere and arrived here (devices): resume the case waiting for it, when
+     * that case is kept here. Null otherwise.
+     */
+    async childClosed(childId: string, device: string | null = null): Promise<{ case: CaseSummary; spawned: Case[] } | null> {
+      const child = await store.get(childId);
+      const back = child ? await childClosed(child, device) : null;
+      return back ? { case: summaryOf(back.parent), spawned: back.spawned } : null;
+    },
+
+    /**
+     * DEP-3: stop waiting for dependencies past their time; each parent goes to its screen's fallback.
+     * Run by the work queue and the Worker's sweep. Returns the cases that moved on.
+     */
+    async expire(at: Date = options.now?.() ?? new Date()): Promise<Case[]> {
+      const moved: Case[] = [];
+      for (const s of await store.list({ open: true, limit: CASES_IN_LIST })) {
+        const due = s.links?.child?.due_at;
+        if (!due || due > at.toISOString()) continue;
+        const parent = await store.get(s.id);
+        if (!parent?.links?.child) continue;
+        const child = await store.get(parent.links.child.id);
+        const r = await resume(parent, { case: parent.links.child.ref, status: "timed_out" }, child, null);
+        if (child && child.status !== "done" && child.status !== "declined") {
+          await store.addEvent({ id: id(), case_id: child.id, at: now(), actor_id: SYSTEM_CASE_ACTOR(parent).id, actor_name: parent.service_title, kind: "note", step: null, text: `${parent.service_title} (${parent.ref}) stopped waiting for this.` });
+        }
+        moved.push(r.parent);
+      }
+      return moved;
     },
 
     /**
@@ -362,6 +536,7 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
      */
     async list(a: CaseActor): Promise<{ mine: CaseSummary[]; started: CaseSummary[]; others: CaseSummary[] }> {
       if (a.guest) return { mine: [], started: [], others: [] };
+      await this.expire().catch(() => undefined);
       const open = await store.list({ open: true, limit: CASES_IN_LIST });
       const own = await store.list({ open: false, startedBy: a.id, limit: CASES_IN_LIST });
       const seen = new Set<string>();

@@ -395,7 +395,8 @@ export function designFromDoc(doc: Record<string, unknown>): { design: ServiceDe
       const kinds = (["ask", "service", "decide", "final"] as const).filter((k) =>
         k === "ask" ? s.questions !== undefined || s.ask !== undefined : k === "final" ? s.result !== undefined : s[k] !== undefined,
       );
-      if (kinds.length > 1) unsupported.push(`${str(j.id)}/${str(s.id)}`);
+      // A screen that uses another service (DEP-1) is edited as YAML for now.
+      if (kinds.length > 1 || s.uses !== undefined) unsupported.push(`${str(j.id)}/${str(s.id)}`);
       const result = (s.result ?? {}) as Record<string, unknown>;
       const next = s.next;
       return {

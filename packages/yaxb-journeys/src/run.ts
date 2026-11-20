@@ -16,6 +16,9 @@
 //                           condition, or a service's yes or no within its time limit. A no (or
 //                           no answer in time) puts the step back to asking with the reason; a
 //                           call's answer is kept in steps["guard:<id>"], which replay reads back.
+//   uses (DEP-1, DEP-3)     a step that needs another service waits (`depending`, status "waiting"
+//                           with `waiting.uses`) until the host records how that request ended in
+//                           steps[<id>] and resumes; a `timed_out` one goes to `fallback`.
 //
 // The API is the one the surfaces always had (createRunner: start, answer, snapshot, resume,
 // continueAs, stop, plus focus), so the kiosk, the preview, hand-overs and the server's replay all
@@ -74,7 +77,8 @@ export function createRunner(
     context = {},
     onChange,
     actor: firstActor,
-  }: { services?: Record<string, ServiceHandler>; context?: Scope; onChange?: (s: RunState) => void; actor?: RunActor } = {},
+    known = {},
+  }: { services?: Record<string, ServiceHandler>; context?: Scope; onChange?: (s: RunState) => void; actor?: RunActor; known?: Record<string, unknown> } = {},
 ) {
   let who = firstActor;
   const tasks = journeyTasks(journey);
@@ -209,6 +213,20 @@ export function createRunner(
           return { trail: trailOf(c, step, true), result: { title: String(r.title ?? journey.title), text: String(r.text ?? ""), ok, outcome } };
         }),
       };
+    if (step.uses) {
+      const ran = ({ context: c }: { context: Ctx }) => Object.hasOwn(c.steps, id);
+      const timedOut = ({ context: c }: { context: Ctx }) => (c.steps[id] as { status?: string } | undefined)?.status === "timed_out";
+      const fallback = step.uses.fallback;
+      return {
+        id: key(id),
+        initial: "enter",
+        states: {
+          enter: { always: [{ guard: ran, target: "route", actions: set(({ context: c }: { context: Ctx }) => ({ trail: trailOf(c, step, !timedOut({ context: c })) })) }, { target: "depending" }] },
+          depending: { on: { RECHECK: { target: "enter" } } },
+          route: { always: [...(fallback && journey.steps[fallback] ? [{ guard: timedOut, target: target(fallback) }] : []), ...routeOf(step)] },
+        },
+      };
+    }
     const asks = step.ask !== undefined;
     return {
       id: key(id),
@@ -291,7 +309,8 @@ export function createRunner(
       };
     }
     const first = parallel ? (initial && !tasks.includes(initial) && journey.steps[initial] ? key(initial) : "tasks") : key(initial && journey.steps[initial] ? initial : journey.start);
-    const ctx: Ctx = { answers: {}, steps: {}, trail: [], result: null, error: null, failedAt: null, done: [], hops: 0, refused: null, ...restored };
+    // `known`: how the run's dependencies ended (DEP-1), so a uses step that has its answer goes on.
+    const ctx: Ctx = { answers: {}, steps: { ...known }, trail: [], result: null, error: null, failedAt: null, done: [], hops: 0, refused: null, ...restored };
     return createMachine({ id: `run-${journey.id}`, initial: first, context: ctx, states } as never);
   }
 
@@ -322,6 +341,7 @@ export function createRunner(
     const id = top.replace(/^s_/, "");
     if (sub === "asking") return { ...base, status: "asking", current: id, prompt: promptOf(id), refused: c.refused?.step === id ? c.refused : null };
     if (sub === "waiting") return { ...base, status: "waiting", current: id, waiting: { step: id, role: journey.steps[id]?.role ?? null } };
+    if (sub === "depending") return { ...base, status: "waiting", current: id, waiting: { step: id, role: null, uses: journey.steps[id]!.uses } };
     if (sub === "stepup") return { ...base, status: "step_up", current: id, stepUp: { step: id, level: levelNeeded(journey, journey.steps[id]!) } };
     return { ...base, status: "running", current: id };
   }
@@ -467,7 +487,9 @@ export async function replay(
     return out;
   };
   const names = [...new Set(Object.values(journey.steps).flatMap((s) => [...(s.service ? [s.service] : []), ...(s.guard?.call ? [s.guard.call] : [])]))];
-  const runner = createRunner(journey, { services: Object.fromEntries(names.map((n) => [n, recorded])), context });
+  // How its dependencies ended (DEP-1) is known up front: a uses step with its answer goes on.
+  const known = Object.fromEntries(Object.entries(journey.steps).flatMap(([id, st]) => (st.uses && Object.hasOwn(run.steps, id) ? [[id, run.steps[id]]] : [])));
+  const runner = createRunner(journey, { services: Object.fromEntries(names.map((n) => [n, recorded])), context, known });
   let state = await runner.start();
   const answered: string[] = [];
   for (let i = 0; i < MAX_HOPS && state.status === "asking" && state.prompt; i++) {

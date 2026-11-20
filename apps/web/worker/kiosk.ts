@@ -91,6 +91,20 @@ export function cases(env: Bindings): CaseService {
       },
       // The published organisation: approvals for the requester's manager (ORG-3).
       organisation: async () => (await (await catalogue(env)).published([], { all: true })).organisation,
+      // DEP-1: what a `uses:` names, by the service's own id.
+      async journeyForService(service, journey) {
+        const { services } = await (await catalogue(env)).published([], { all: true });
+        const s = services.find((x) => x.id === service);
+        const j = s && compileBundle(s.yaml, { services: JOURNEY_SERVICES }).journeys.find((x) => x.id === journey);
+        return s && j ? { journey: j, entry_id: s.entry_id, service_id: s.id, service_title: s.title, revision: s.revision } : null;
+      },
+      // DEP-5: dependency events on the case that needed it, when its service keeps its events here.
+      async onDependency(kind, parent) {
+        if (kind === "dependency.ended") return;
+        const { services } = await (await catalogue(env)).published([], { all: true });
+        if (services.find((x) => x.entry_id === parent.entry_id)?.storage !== "server") return;
+        await serviceEvents(env).add([{ id: crypto.randomUUID(), service: parent.entry_id, journey: parent.journey_id, kind, step: parent.links?.child?.step ?? parent.waiting_step, role: null, run: parent.id, at: new Date().toISOString(), ms: null, ok: kind === "dependency.started" ? null : false, actor: null, outcome: null }]);
+      },
     }),
   );
 }

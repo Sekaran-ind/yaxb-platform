@@ -234,7 +234,7 @@ function designFromYaml(): boolean {
   else if (p.doc.journeys === undefined) why = "This service has no journeys inside it, so it can only be edited as YAML.";
   else {
     const r = designFromDoc(p.doc);
-    if (r.unsupported.length) why = `Screens ${r.unsupported.join(", ")} combine several kinds, which only YAML can edit.`;
+    if (r.unsupported.length) why = `Screens ${r.unsupported.join(", ")} combine several kinds or use another service, which only YAML edits for now.`;
     else design.value = r.design;
   }
   designNote.value = why;

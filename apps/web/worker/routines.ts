@@ -34,7 +34,7 @@ import { dohResolver } from "@sekaran-ind/yaxb-core/web/pages";
 import type { LibraryEntry } from "@sekaran-ind/yaxb-core/library";
 import { currentEdition, db, dbFor, EDITIONS, withEdition } from "./edition";
 import { settings, type Bindings } from "./env";
-import { catalogue, connectorCalled, connectorSecrets, currentTenant, serviceEvents, tenantContext } from "./kiosk";
+import { cases, catalogue, connectorCalled, connectorSecrets, currentTenant, serviceEvents, tenantContext } from "./kiosk";
 
 const DAY = 86_400_000;
 /** At most this many routine runs from one batch of events. */
@@ -281,6 +281,8 @@ export async function sweep(env: Bindings, now = new Date()): Promise<number> {
     const { results } = await database
       .prepare("SELECT DISTINCT tenant_id FROM library_entries WHERE kind = 'routine' AND published_yaml IS NOT NULL AND status != 'archived'")
       .all<{ tenant_id: string }>();
+    // DEP-3: dependencies past their time, in this edition's central cases.
+    await withEdition(edition, () => cases(env).expire(now)).catch((e) => console.error(JSON.stringify({ msg: "case expiry failed", edition, error: e instanceof Error ? e.message.slice(0, 200) : "unknown" })));
     for (const { tenant_id } of results) {
       try {
         runs += (await withEdition(edition, () => tenantContext.run(tenant_id, () => sweepTenant(env, now)))).length;
