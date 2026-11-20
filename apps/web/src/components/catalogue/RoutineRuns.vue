@@ -1,11 +1,21 @@
 <script setup lang="ts">
 // A published routine's runs (RTN-4), newest first, from its routine.* events: when, what set it
 // off, how it ended, and each action's number, type and whether it worked. Never the words sent.
+// A routine with a webhook offers its signing key to administrators.
 import { Loader2, RotateCcw } from "@lucide/vue";
 import { ref } from "vue";
 import { api } from "@/lib/api";
 
-const props = defineProps<{ entryId: string }>();
+const props = defineProps<{ entryId: string; manage?: boolean; webhook?: boolean }>();
+/** The webhook signing key (RTN-8), for whoever sets up the receiving end: shown on asking, audited. */
+const key = ref<{ key: string; header: string; signs: string } | null>(null);
+async function showKey() {
+  try {
+    key.value = await api<{ key: string; header: string; signs: string }>(`/api/routines/${props.entryId}/signing-key`);
+  } catch (e) {
+    error.value = (e as Error).message;
+  }
+}
 type Run = { id: string; at: string; trigger: string; status: string; steps: { step: string; ok: boolean }[] };
 const runs = ref<Run[] | null>(null);
 const error = ref<string | null>(null);
@@ -28,7 +38,7 @@ const STATUS: Record<string, [string, string]> = {
   paused: ["Paused", "text-gray-500"],
   running: ["Running", "text-gray-500"],
 };
-const ACTION: Record<string, string> = { message: "message", summary: "summary", connector: "connector", record: "record" };
+const ACTION: Record<string, string> = { message: "message", summary: "summary", connector: "connector", webhook: "webhook", record: "record" };
 const stepText = (s: string) => {
   const [n, type] = s.split("-");
   return `${n}. ${ACTION[type ?? ""] ?? type}`;
@@ -61,5 +71,11 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { day: "nu
         </tr>
       </tbody>
     </table>
+    <div v-if="manage && webhook" class="space-y-2 rounded-xl bg-mist p-3 text-sm">
+      <p class="text-ink">Its webhooks are signed. The receiving end checks <code>{{ key?.header ?? "X-Anjal-Signature" }}</code> against this key.</p>
+      <p v-if="key" class="font-mono text-xs break-all text-ink">{{ key.key }}</p>
+      <p v-if="key" class="text-xs text-gray-500">The signature is the {{ key.signs }}. Keep the key private, like a password.</p>
+      <button v-else type="button" class="btn-light h-8 px-3 text-sm" @click="showKey">Show the signing key</button>
+    </div>
   </section>
 </template>

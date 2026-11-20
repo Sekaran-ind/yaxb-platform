@@ -157,6 +157,7 @@ async function copy() {
         :invalid="invalid"
       />
       <p v-if="problems.length" role="alert" class="yj-alert">{{ problems.join(" ") }}</p>
+      <p v-if="state?.refused" role="alert" class="yj-alert">{{ state.refused.reason }}</p>
       <div class="yj-section-foot"><button type="submit" class="yj-btn yj-btn-primary">{{ state.prompt.submitLabel ?? "Continue" }}</button></div>
     </form>
 

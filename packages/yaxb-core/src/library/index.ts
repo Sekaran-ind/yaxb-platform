@@ -683,6 +683,60 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
       return added;
     },
 
+    /**
+     * A ready-made routine switched on or off (RTN-12: a family's switches, no YAML). On publishes it
+     * at once (the administrator who switches it is its approval); off archives it. Administrators only.
+     */
+    async switchRoutine(a: LibraryActor, yaml: string, on: boolean): Promise<LibraryEntry | null> {
+      need(a, "manage");
+      const r = parseRoutine(yaml);
+      if (!r.ok) throw new LibraryError(r.problems.join(" "));
+      const existing = (await store.entries()).find((e) => e.kind === "routine" && e.doc_id === r.routine.id) ?? null;
+      const at = now();
+      if (!on) {
+        if (!existing || existing.status === "archived") return existing;
+        const off = { ...existing, status: "archived" as const, updated_at: at, updated_by_name: a.name };
+        await store.putEntry(off);
+        return off;
+      }
+      if (existing) {
+        if (existing.status === "accepted" && existing.published_yaml === yaml) return existing;
+        const revision = existing.published_yaml === yaml ? existing.revision : existing.revision + 1;
+        const back = { ...existing, status: "accepted" as const, yaml, published_yaml: yaml, revision, published_revision: revision, reviewed_by: a.id, reviewed_by_name: a.name, reviewed_at: at, updated_at: at, updated_by_name: a.name };
+        await store.putEntry(back);
+        if (revision !== existing.revision) await store.addRevision({ entry_id: back.id, revision, yaml, at, by_id: a.id, by_name: a.name, note: "Switched on" });
+        return back;
+      }
+      const l = await defaultLibrary(a);
+      const e: LibraryEntry = {
+        id: crypto.randomUUID(),
+        library_id: l.id,
+        kind: "routine",
+        doc_id: r.routine.id,
+        title: r.routine.title,
+        yaml,
+        status: "accepted",
+        revision: 1,
+        published_yaml: yaml,
+        published_revision: 1,
+        owner_id: a.id,
+        owner_name: a.name,
+        submitted_by: a.id,
+        submitted_by_name: a.name,
+        submitted_at: at,
+        reviewed_by: a.id,
+        reviewed_by_name: a.name,
+        reviewed_at: at,
+        review_note: "A ready-made routine, switched on.",
+        created_at: at,
+        updated_at: at,
+        updated_by_name: a.name,
+      };
+      await store.putEntry(e);
+      await store.addRevision({ entry_id: e.id, revision: 1, yaml, at, by_id: a.id, by_name: a.name, note: "Switched on" });
+      return e;
+    },
+
     /** Everything waiting for a review, across active libraries. */
     async reviewQueue(a: LibraryActor) {
       if (!permissionsOf(a).view) return [];

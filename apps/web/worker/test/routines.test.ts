@@ -7,12 +7,14 @@ import { ADMIN_ACTOR_ID, type LibraryActor } from "@sekaran-ind/yaxb-core/librar
 import type { ServiceEvent } from "@sekaran-ind/yaxb-core/metrics";
 import { withEdition } from "../edition";
 import { catalogue, serviceEvents } from "../kiosk";
-import { fireEvents, routineStore, sweep, sweepTenant } from "../routines";
+import { decideApproval, fireEvents, routineStore, sweep, sweepTenant } from "../routines";
+import { FAMILY_ROUTINES } from "@sekaran-ind/yaxb-core/routines";
 
 const admin: LibraryActor = { id: ADMIN_ACTOR_ID, name: "Administrator", roles: ["administrator"], admin: true };
 const reviewer: LibraryActor = { id: "r1", name: "Revathi", roles: ["reviewer"], admin: false };
 const env = () => ({ SESSION_SECRET: "x".repeat(40), DB: sqliteD1(), DB_FAMILY: sqliteD1(), DB_BUSINESS: sqliteD1(), DB_COMMUNITY: sqliteD1() }) as never;
 const inBusiness = <T>(fn: () => Promise<T>) => withEdition("business", fn);
+const inFamily = <T>(fn: () => Promise<T>) => withEdition("family", fn);
 
 async function publish(e: never, yaml: string) {
   const lib = await catalogue(e);
@@ -86,4 +88,47 @@ describe("routines on the server", () => {
     expect(await sweep(e, new Date(monday.getTime() + 60_000))).toBe(1);
     expect(await sweep(e, new Date(monday.getTime() + 120_000))).toBe(0);
   });
+
+  it("keeps an action for approval; approved, it is sent and logged with its run; decided once (RTN-6)", () =>
+    inBusiness(async () => {
+      const e = env();
+      const routine = await publish(e, ROUTINE_STARTERS.find((s) => s.id === "late-alert")!.yaml.replace('text: "A late check-in', 'approve: owner, text: "A late check-in'));
+      await fireEvents(e, [event(await attendanceEntry(e), "attendance.late")]);
+      expect(await routineStore(e).notices("default", ["manager"])).toEqual([]);
+      const [a] = await routineStore(e).approvals("default", ["owner"]);
+      expect(a).toMatchObject({ type: "message", role: "owner", payload: { to: "manager" } });
+      const out = await decideApproval(e, a!.id, "approved", "Asha");
+      expect(out?.sent).toMatchObject({ ok: true });
+      expect(await routineStore(e).notices("default", ["manager"])).toHaveLength(1);
+      expect(await decideApproval(e, a!.id, "declined", "Ravi")).toBeNull();
+      const [run] = runsFromEvents(await serviceEvents(e).list(routine.id));
+      expect(run!.steps.map((s) => s.step)).toEqual(["1-message", "1-message"]);
+    }));
+
+  it("in Family, switches publish ready-made routines, and outside sends wait for a parent (RTN-12)", () =>
+    inFamily(async () => {
+      const e = env();
+      const lib = await catalogue(e);
+      const f = FAMILY_ROUTINES.find((x) => x.id === "family-sunday")!;
+      await lib.switchRoutine(admin, f.yaml, true);
+      expect((await lib.publishedRoutines()).map((r) => r.routine.id)).toEqual(["family-sunday"]);
+      await lib.switchRoutine(admin, f.yaml, false);
+      expect(await lib.publishedRoutines()).toEqual([]);
+      await lib.switchRoutine(admin, f.yaml, true);
+      expect((await lib.publishedRoutines()).map((r) => r.routine.id)).toEqual(["family-sunday"]);
+      await expect(lib.switchRoutine(reviewer, f.yaml, true)).rejects.toThrow();
+
+      // A routine with a webhook: in Family it waits for a parent, whatever it says.
+      await publish(e, `kind: routine
+id: tell-grandma
+title: Tell grandma
+on: { schedule: { every: day, at: "09:00" } }
+actions:
+  - webhook: { url: "https://hooks.example.com/grandma" }
+`);
+      const nine = nextScheduled({ every: "day", at: "09:00" }, new Date());
+      const runs = await sweepTenant(e, new Date(nine.getTime() + 60_000));
+      expect(runs.map((r) => [r.routine, r.status])).toContainEqual(["tell-grandma", "done"]);
+      expect((await routineStore(e).approvals("default", ["administrator"])).map((a) => a.type)).toEqual(["webhook"]);
+    }));
 });

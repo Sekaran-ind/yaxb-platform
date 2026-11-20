@@ -20,12 +20,13 @@
 // the business's own clock (`utc_offset` minutes, India's by default). Nothing pays (RTN-13): an action
 // whose handler reads like a payment is refused when the routine is checked, and again when it runs.
 import { load } from "js-yaml";
+import { checkResolved, urlProblem, type Resolve } from "../web/pages.js";
 import { conditionProblem, holds, render, type Scope } from "@sekaran-ind/yaxb-journeys/journeys";
 import { EVENT_KINDS, type EventKind, type ServiceEvent, type ServiceMetrics } from "../metrics/index.js";
 
 export const ROUTINE_EVERY = ["hour", "day", "week", "month"] as const;
 export const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
-export const ROUTINE_ACTIONS = ["message", "summary", "connector", "record"] as const;
+export const ROUTINE_ACTIONS = ["message", "summary", "connector", "webhook", "record"] as const;
 export type RoutineActionType = (typeof ROUTINE_ACTIONS)[number];
 
 export type ScheduleTrigger = { every: (typeof ROUTINE_EVERY)[number]; at?: string; minute?: number; on?: (typeof WEEKDAYS)[number] | number };
@@ -33,11 +34,19 @@ export type EventTrigger = { service: string; kind: EventKind; journey?: string;
 export type DateTrigger = { service: string; date: string; before: number; at: string };
 export type RoutineTrigger = { schedule: ScheduleTrigger } | { event: EventTrigger } | { date: DateTrigger };
 
+/**
+ * `approve`: the role whose member approves this action before it goes out (RTN-6). Until then it
+ * waits in that role's My work; the run goes on without its result.
+ */
 export type RoutineAction =
-  | { type: "message"; to: string; text: string }
+  | { type: "message"; to: string; text: string; approve?: string }
   | { type: "summary"; service: string; days: number; as?: string }
-  | { type: "connector"; call: string; with: Record<string, unknown>; as?: string }
+  | { type: "connector"; call: string; with: Record<string, unknown>; as?: string; approve?: string }
+  | { type: "webhook"; url: string; with: Record<string, unknown>; approve?: string }
   | { type: "record"; outcome: string };
+/** The actions that send something and so may wait for a person's approval. */
+export type SendingAction = Extract<RoutineAction, { approve?: string }>;
+const sends = (a: RoutineAction): a is SendingAction => a.type === "message" || a.type === "connector" || a.type === "webhook";
 
 export type Routine = {
   kind: "routine";
@@ -131,13 +140,20 @@ function compileAction(raw: unknown, i: number, problems: string[]): RoutineActi
   if (!isObj(a)) return void problems.push(`${at}: ${type} is a mapping`), null;
   const as = a.as;
   if (as !== undefined && (typeof as !== "string" || !AS.test(as))) problems.push(`${at}: as is a short name (lower-case, _)`);
+  const approve = a.approve;
+  if (approve !== undefined) {
+    if (!["message", "connector", "webhook"].includes(type)) problems.push(`${at}: only a message, a connector call or a webhook waits for approval`);
+    else if (typeof approve !== "string" || !/^[a-z][a-z0-9-]{0,31}$/.test(approve)) problems.push(`${at}: approve is the role whose member approves it`);
+    else if (as !== undefined) problems.push(`${at}: an action that waits for approval can't keep its result (as)`);
+  }
+  const ap = typeof approve === "string" && approve ? { approve } : {};
   switch (type) {
     case "message": {
       if (typeof a.to !== "string" || !/^[a-z][a-z0-9-]{0,31}$/.test(a.to)) problems.push(`${at}: message.to is a role's id`);
       const p = templateProblem(`${at}: message.text`, a.text);
       if (p) problems.push(p);
       else if (String(a.text).length > 1000) problems.push(`${at}: message.text is at most 1000 characters`);
-      return { type, to: String(a.to), text: String(a.text ?? "") };
+      return { type, to: String(a.to), text: String(a.text ?? ""), ...ap };
     }
     case "summary": {
       if (typeof a.service !== "string" || !ID.test(a.service)) problems.push(`${at}: summary.service is the service's id`);
@@ -149,7 +165,22 @@ function compileAction(raw: unknown, i: number, problems: string[]): RoutineActi
       if (typeof a.call !== "string" || !HANDLER.test(a.call)) problems.push(`${at}: connector.call is connector.<id>.<operation>`);
       else if (looksLikePayment(a.call)) problems.push(`${at}: a routine never pays or moves money (${a.call}); a person does that`);
       if (a.with !== undefined && !isObj(a.with)) problems.push(`${at}: connector.with is a mapping`);
-      return { type, call: String(a.call), with: isObj(a.with) ? a.with : {}, ...(typeof as === "string" ? { as } : {}) };
+      return { type, call: String(a.call), with: isObj(a.with) ? a.with : {}, ...(typeof as === "string" ? { as } : {}), ...ap };
+    }
+    case "webhook": {
+      // A signed POST of facts to an address the business chose (RTN-8). The address passes the SSRF guard when it is sent.
+      const url = typeof a.url === "string" ? a.url : "";
+      let u: URL | null = null;
+      try {
+        u = new URL(url);
+      } catch {
+        /* below */
+      }
+      if (!u || u.protocol !== "https:" || u.username || u.password) problems.push(`${at}: webhook.url is an https address`);
+      else if (looksLikePayment(u.pathname)) problems.push(`${at}: a routine never pays or moves money; a person does that`);
+      if (a.with !== undefined && !isObj(a.with)) problems.push(`${at}: webhook.with is a mapping`);
+      if (as !== undefined) problems.push(`${at}: a webhook keeps no result`);
+      return { type, url, with: isObj(a.with) ? a.with : {}, ...ap };
     }
     case "record": {
       if (typeof a.outcome !== "string" || !OUTCOME.test(a.outcome)) problems.push(`${at}: record.outcome is an outcome id like alert.sent`);
@@ -302,8 +333,21 @@ export interface RoutineHandlers {
   message(role: string, text: string): Promise<void>;
   summary(service: string, days: number): Promise<{ text: string }>;
   connector(handler: string, input: Record<string, unknown>): Promise<unknown>;
+  /** A signed POST of the routine's facts (RTN-8). */
+  webhook(url: string, body: Record<string, unknown>): Promise<void>;
   record(outcome: string): Promise<void>;
+  /** Keep an action for a person to approve (RTN-6). */
+  approval(role: string, pending: PendingAction): Promise<void>;
 }
+
+/** An action waiting for approval: what it will send, rendered when the routine ran (RTN-6). */
+export type PendingAction = {
+  action: number;
+  type: SendingAction["type"];
+  /** What it does, in words, for the person approving. */
+  summary: string;
+  payload: { to?: string; text?: string; call?: string; input?: Record<string, unknown>; url?: string; body?: Record<string, unknown> };
+};
 export type RoutineStep = { action: number; type: RoutineActionType; ok: boolean; note: string };
 export type RoutineRun = {
   id: string;
@@ -342,7 +386,9 @@ export const dryRunHandlers: RoutineHandlers = {
   message: async () => {},
   summary: async (service, days) => ({ text: `(the summary of ${service} over ${days} days)` }),
   connector: async (handler) => ({ preview: true, handler }),
+  webhook: async () => {},
   record: async () => {},
+  approval: async () => {},
 };
 
 const describe = (a: RoutineAction, scope: Scope): string => {
@@ -353,10 +399,50 @@ const describe = (a: RoutineAction, scope: Scope): string => {
       return `Summarise ${a.service} over the last ${a.days} days${a.as ? ` (kept as ${a.as})` : ""}`;
     case "connector":
       return `Call ${a.call} with ${JSON.stringify(render(a.with, scope))}`;
+    case "webhook":
+      return `Send ${JSON.stringify(render(a.with, scope))} to ${new URL(a.url).host}`;
     case "record":
       return `Record the outcome ${a.outcome}`;
   }
 };
+
+/** What a webhook carries: the routine and run, the event's facts, and its own `with` (RTN-8). */
+export function webhookBody(r: Routine, input: RoutineInput, runId: string, extra: Record<string, unknown>): Record<string, unknown> {
+  const e = input.event;
+  return {
+    routine: r.id,
+    run: runId,
+    at: input.at.toISOString(),
+    trigger: input.trigger,
+    ...(e ? { event: { kind: e.kind, service: e.service, journey: e.journey, outcome: e.outcome ?? null, step: e.step ?? null, at: e.at } } : {}),
+    data: extra,
+  };
+}
+
+/** An approved action's step, sent now (RTN-6), under the same rules as in the run. */
+export async function sendPending(p: PendingAction, handlers: RoutineHandlers, opts: { settings?: RoutineSettings; usage?: RoutineUsage; use?: RunOptions["use"]; operationLabel?: RunOptions["operationLabel"] } = {}): Promise<RoutineStep> {
+  const settings = opts.settings ?? DEFAULT_ROUTINE_SETTINGS;
+  const usage = opts.usage ?? emptyUsage("");
+  const step = (ok: boolean, note: string): RoutineStep => ({ action: p.action, type: p.type, ok, note });
+  if (settings.paused) return step(false, "Routines are paused for this business.");
+  try {
+    if (p.type === "message") {
+      if (usage.messages >= settings.limits.messagesPerDay) return step(false, "The day's limit on messages is reached.");
+      await opts.use?.("messages");
+      await handlers.message(p.payload.to ?? "", (p.payload.text ?? "").slice(0, 1000));
+      return step(true, `message to ${p.payload.to}`);
+    }
+    const label = p.type === "connector" ? opts.operationLabel?.(p.payload.call ?? "") : undefined;
+    if (looksLikePayment(p.payload.call ?? "") || looksLikePayment(p.payload.url ? new URL(p.payload.url).pathname : "") || (label && looksLikePayment(label))) throw new Error("A routine never pays or moves money; a person does that.");
+    if (usage.connector_calls >= settings.limits.connectorCallsPerDay) return step(false, "The day's limit on connector calls is reached.");
+    await opts.use?.("connector_calls");
+    if (p.type === "connector") await handlers.connector(p.payload.call ?? "", p.payload.input ?? {});
+    else await handlers.webhook(p.payload.url ?? "", p.payload.body ?? {});
+    return step(true, p.type === "connector" ? `called ${p.payload.call}` : `sent to ${new URL(p.payload.url ?? "").host}`);
+  } catch (e) {
+    return step(false, (e as Error).message.slice(0, 200));
+  }
+}
 
 export type RunOptions = {
   dry?: boolean;
@@ -366,6 +452,8 @@ export type RunOptions = {
   use?: (what: "runs" | "messages" | "connector_calls") => Promise<void> | void;
   /** The connector operation's label, to refuse payments a handler's name doesn't show (RTN-13). */
   operationLabel?: (handler: string) => string | undefined;
+  /** A role that must approve an action its routine didn't mark (RTN-12: a family's outside sends wait for a parent). */
+  mustApprove?: (a: SendingAction) => string | null;
   id?: string;
 };
 
@@ -391,8 +479,20 @@ export async function runRoutine(r: Routine, input: RoutineInput, handlers: Rout
   }
   for (const [i, a] of r.actions.entries()) {
     const step = (ok: boolean, note: string) => run.steps.push({ action: i + 1, type: a.type, ok, note });
-    run.preview?.push(describe(a, scope()));
+    const approver = sends(a) ? (a.approve ?? opts.mustApprove?.(a) ?? null) : null;
+    run.preview?.push(approver ? `${describe(a, scope())} (after ${approver} approves it)` : describe(a, scope()));
     try {
+      if (approver && sends(a)) {
+        // RTN-6: kept, rendered now, for a member of that role; limits count when it is sent.
+        const payload: PendingAction["payload"] =
+          a.type === "message" ? { to: a.to, text: String(render(a.text, scope())).slice(0, 1000) }
+          : a.type === "connector" ? { call: a.call, input: render(a.with, scope()) as Record<string, unknown> }
+          : { url: a.url, body: webhookBody(r, input, run.id, render(a.with, scope()) as Record<string, unknown>) };
+        if (a.type === "connector" && (looksLikePayment(a.call) || looksLikePayment(opts.operationLabel?.(a.call) ?? ""))) throw new Error("A routine never pays or moves money; a person does that.");
+        await handlers.approval(approver, { action: i + 1, type: a.type, summary: describe(a, scope()).slice(0, 400), payload });
+        step(true, `waiting for ${approver} to approve`);
+        continue;
+      }
       if (a.type === "message") {
         if (over("messages", settings.limits.messagesPerDay)) return { ...run, status: "limited", reason: "The day's limit on messages is reached." };
         const text = String(render(a.text, scope())).slice(0, 1000);
@@ -411,6 +511,11 @@ export async function runRoutine(r: Routine, input: RoutineInput, handlers: Rout
         const out = await handlers.connector(a.call, render(a.with, scope()) as Record<string, unknown>);
         if (a.as) results[a.as] = out;
         step(true, `called ${a.call}`);
+      } else if (a.type === "webhook") {
+        if (over("connector_calls", settings.limits.connectorCallsPerDay)) return { ...run, status: "limited", reason: "The day's limit on connector calls is reached." };
+        if (!dry) usage.connector_calls++, await opts.use?.("connector_calls");
+        await handlers.webhook(a.url, webhookBody(r, input, run.id, render(a.with, scope()) as Record<string, unknown>));
+        step(true, `sent to ${new URL(a.url).host}`);
       } else {
         await handlers.record(a.outcome);
         step(true, `recorded ${a.outcome}`);
@@ -484,13 +589,52 @@ export interface RoutineStore {
   putSettings(tenant: string, s: RoutineSettings): Promise<void>;
   usage(tenant: string, day: string): Promise<RoutineUsage>;
   use(tenant: string, day: string, what: "runs" | "messages" | "connector_calls"): Promise<void>;
+  /** RTN-6: actions waiting for a member of a role to approve them. */
+  addApproval(a: RoutineApproval): Promise<void>;
+  approvals(tenant: string, roles: readonly string[], opts?: { limit?: number }): Promise<RoutineApproval[]>;
+  /** Decide an open approval once; the approval as it was, or null when it wasn't open. */
+  decideApproval(tenant: string, id: string, decision: "approved" | "declined", by: string, at: string): Promise<RoutineApproval | null>;
 }
+
+/** An action kept for approval (RTN-6). `routine_id` is the routine's entry; `run_id` the run it came from. */
+export type RoutineApproval = PendingAction & {
+  id: string;
+  tenant_id: string;
+  routine_id: string;
+  routine_title: string;
+  run_id: string;
+  role: string;
+  created_at: string;
+  decision: "approved" | "declined" | null;
+  decided_by: string | null;
+  decided_at: string | null;
+};
+/** An approval nobody decides is dropped after this many days. */
+export const APPROVAL_DAYS = 14;
 
 export function createMemoryRoutineStore(): RoutineStore {
   const notices: RoutineNotice[] = [];
   const settings = new Map<string, RoutineSettings>();
   const usage = new Map<string, RoutineUsage>();
+  const approvals: RoutineApproval[] = [];
   return {
+    async addApproval(a) {
+      approvals.push(structuredClone(a));
+    },
+    async approvals(tenant, roles, { limit = 100 } = {}) {
+      return approvals
+        .filter((a) => a.tenant_id === tenant && roles.includes(a.role) && !a.decision)
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))
+        .slice(0, limit)
+        .map((a) => structuredClone(a));
+    },
+    async decideApproval(tenant, id, decision, by, at) {
+      const a = approvals.find((x) => x.tenant_id === tenant && x.id === id && !x.decision);
+      if (!a) return null;
+      const before = structuredClone(a);
+      Object.assign(a, { decision, decided_by: by, decided_at: at });
+      return before;
+    },
     async addNotice(n) {
       notices.push({ ...n });
     },
@@ -554,3 +698,96 @@ actions:
 `,
   },
 ];
+
+// ---- a family's switches (RTN-12) ----------------------------------------------------------------------
+
+/**
+ * Ready-made routines a family switches on, with no YAML. Each messages the parents (the family
+ * space's administrators), so nothing leaves the family; FAMILY_APPROVER makes any outside send
+ * wait for a parent all the same.
+ */
+export const FAMILY_ROUTINES: readonly { id: string; title: string; summary: string; yaml: string }[] = [
+  {
+    id: "family-sunday",
+    title: "Sunday family check",
+    summary: "Every Sunday at 6 in the evening, a note to the parents to look at the week ahead together.",
+    yaml: `kind: routine
+id: family-sunday
+title: Sunday family check
+summary: Every Sunday at 6 in the evening, a note to the parents to look at the week ahead together.
+on:
+  schedule: { every: week, on: sun, at: "18:00" }
+actions:
+  - message: { to: administrator, text: "Sunday check: look at the week ahead together: school, appointments, birthdays and who is where." }
+`,
+  },
+  {
+    id: "family-bills",
+    title: "Bills at the start of the month",
+    summary: "On the 1st of every month at 9, a reminder to the parents about the month's bills.",
+    yaml: `kind: routine
+id: family-bills
+title: Bills at the start of the month
+summary: On the 1st of every month at 9, a reminder to the parents about the month's bills.
+on:
+  schedule: { every: month, on: 1, at: "09:00" }
+actions:
+  - message: { to: administrator, text: "A new month: electricity, water, phone, gas and school fees are due soon." }
+`,
+  },
+  {
+    id: "family-school",
+    title: "School-day evening note",
+    summary: "Sunday to Thursday at 8 in the evening, a note to the parents to check bags, homework and tomorrow's uniform.",
+    yaml: `kind: routine
+id: family-school
+title: School-day evening note
+summary: Sunday to Thursday at 8 in the evening, a note to the parents to check bags, homework and tomorrow's uniform.
+on:
+  schedule: { every: day, at: "20:00" }
+when: "now.weekday != 'fri' && now.weekday != 'sat'"
+actions:
+  - message: { to: administrator, text: "For tomorrow: school bags, homework and uniform." }
+`,
+  },
+];
+
+/** RTN-12: in Family, anything a routine sends outside (a connector call, a webhook) waits for a parent. */
+export const FAMILY_APPROVER = (a: SendingAction): string | null => (a.type === "message" ? null : "administrator");
+
+// ---- signed webhooks (RTN-8) ---------------------------------------------------------------------------
+
+const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
+async function hmac(key: string, text: string) {
+  const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(key), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return hex(await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(text)));
+}
+/** A routine's webhook signing key, derived from the server's secret: the same each time, never stored. */
+export const webhookKey = (secret: string, scope: string) => hmac(secret, `routine-webhook|${scope}`);
+/** The signature a receiver checks: HMAC-SHA256 (hex) of "<timestamp>.<body>" with the routine's key. */
+export const webhookSignature = (key: string, timestamp: string, body: string) => hmac(key, `${timestamp}.${body}`);
+
+export const WEBHOOK_TIMEOUT_MS = 10_000;
+/**
+ * POST a webhook (server only): the address passes the SSRF guard (its host resolved first), no
+ * redirect is followed, and it waits WEBHOOK_TIMEOUT_MS at most. Signed with X-Anjal-Timestamp and
+ * X-Anjal-Signature ("sha256=<hex>"). A non-2xx answer is a failure; the answer itself isn't kept.
+ */
+export async function sendWebhook(url: string, body: Record<string, unknown>, key: string, { fetchImpl = fetch, resolve, now = () => new Date() }: { fetchImpl?: typeof fetch; resolve?: Resolve; now?: () => Date } = {}): Promise<void> {
+  const problem = urlProblem(url);
+  if (problem) throw new Error(problem);
+  if (new URL(url).protocol !== "https:") throw new Error("A webhook goes to an https address.");
+  await checkResolved(new URL(url).hostname, resolve);
+  const text = JSON.stringify(body);
+  const timestamp = String(Math.floor(now().getTime() / 1000));
+  const res = await fetchImpl(url, {
+    method: "POST",
+    redirect: "manual",
+    headers: { "Content-Type": "application/json", "User-Agent": "Anjal-Routines/1", "X-Anjal-Timestamp": timestamp, "X-Anjal-Signature": `sha256=${await webhookSignature(key, timestamp, text)}` },
+    body: text,
+    signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
+  }).catch((e: Error) => {
+    throw new Error(e.name === "TimeoutError" ? "The webhook took too long to answer." : "The webhook's address couldn't be reached.");
+  });
+  if (res.status < 200 || res.status >= 300) throw new Error(`The webhook answered ${res.status}.`);
+}

@@ -149,6 +149,8 @@ export type StepForm = {
   after: string;
   /** ask: how sure the kiosk must be of who answers it (IDN-33), when more than the journey's; null: the journey's. */
   level: number | null;
+  /** ask: its guard (RTN-9) as YAML, kept as written; "" for none. */
+  guardYaml: string;
 };
 
 export type JourneyForm = {
@@ -187,6 +189,7 @@ export const newStep = (id = "", kind: StepKind = "ask"): StepForm => ({
   resultOutcome: "",
   after: "",
   level: null,
+  guardYaml: "",
 });
 
 export const newJourneyForm = (id = ""): JourneyForm => {
@@ -412,6 +415,7 @@ export function designFromDoc(doc: Record<string, unknown>): { design: ServiceDe
         branches: (Array.isArray(s.decide) ? s.decide : Array.isArray(next) ? next : []).map((b: Branch) => ({ ...(b?.if !== undefined ? { if: str(b.if) } : {}), to: str(b?.to) })),
         after: Array.isArray(s.after) ? (s.after as unknown[]).map(str).join(", ") : "",
         level: typeof s.level === "number" ? s.level : null,
+        guardYaml: s.guard === undefined ? "" : yamlOf(s.guard),
         resultTitle: str(result.title),
         resultText: str(result.text),
         resultOk: result.ok === undefined ? "" : str(result.ok),
@@ -464,7 +468,7 @@ export function designToDoc(d: ServiceDesign): { ok: true; doc: Record<string, u
       const after = task ? s.after.split(/[\s,]+/).filter(Boolean) : [];
       const base = { id: s.id.trim(), title: s.label.trim(), stage: s.stage.trim(), icon: s.icon.trim() };
       let screen: Record<string, unknown>;
-      if (s.kind === "ask") screen = { ...base, ask: s.ask.trim(), questions: parse(at, s.fieldsYaml, "list") ?? [], submitLabel: s.submitLabel.trim(), role: s.role.trim(), next: then, after: after.length ? after : undefined, level: s.level && s.level > (j.level ?? 0) ? s.level : undefined };
+      if (s.kind === "ask") screen = { ...base, ask: s.ask.trim(), questions: parse(at, s.fieldsYaml, "list") ?? [], submitLabel: s.submitLabel.trim(), role: s.role.trim(), next: then, after: after.length ? after : undefined, level: s.level && s.level > (j.level ?? 0) ? s.level : undefined, guard: s.guardYaml.trim() ? parse(at, s.guardYaml, "mapping") : undefined };
       else if (s.kind === "service") screen = { ...base, service: s.service.trim(), with: parse(at, s.withYaml, "mapping"), onError: s.onError === "continue" ? "continue" : undefined, next: then, after: after.length ? after : undefined };
       else if (s.kind === "decide") screen = { ...base, decide: branches(s.branches) };
       else {

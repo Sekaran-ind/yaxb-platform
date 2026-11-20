@@ -22,6 +22,10 @@
 //       label / stage / icon            the step's line in the progress list
 //       level: 0..4                     how sure the kiosk must be of who answers (IDN-30); the
 //                                       journey's own `level` holds for every step
+//       guard: { allow, reason }        RTN-9: an ask step's answers are taken only when `allow` (a
+//       guard: { call, with, within, reason }  condition) holds, or a service answers yes within
+//                                       `within` ms; otherwise the person sees `reason` and stays.
+//                                       A call's answer is kept in `steps["guard:<id>"]` (RTN-11).
 //
 // Service names are dotted: `agent.ask`, `offline.summarize`, `notebook.remember`. The core
 // doesn't know them; the surface passes handlers to createRunner, and compileJourney can be told
@@ -38,6 +42,13 @@ export * from "./questionnaires.js";
 export * from "./roles.js";
 
 export type Branch = { if?: string; to: string };
+/** A guard hook (RTN-9): a condition, or a service's yes or no within a time limit. */
+export type StepGuard = { allow?: string; call?: string; with?: unknown; within?: number; reason: string };
+/** The longest a guard's call may take, and the default. */
+export const GUARD_MAX_MS = 10_000;
+export const GUARD_DEFAULT_MS = 5_000;
+/** Where a guard's answer is kept with the run, so replaying it never calls the hook again (RTN-11). */
+export const guardKey = (step: string) => `guard:${step}`;
 
 export type Step = {
   id: string;
@@ -70,6 +81,8 @@ export type Step = {
   after?: string[];
   /** The questionnaire this ask step uses; its questions are in `fields`. */
   questionnaire?: string;
+  /** RTN-9: what must hold, or answer yes, before this step's answers are taken. */
+  guard?: StepGuard;
   /** The questionnaire's pages, by field id (absent for a step with its own fields). */
   sections?: StepSection[];
 };
@@ -102,7 +115,7 @@ export type Journey = {
 };
 
 const JOURNEY_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "category", "roles", "flow", "level", "start", "steps"]);
-const STEP_KEYS = new Set(["ask", "fields", "questionnaire", "service", "with", "onError", "decide", "final", "result", "next", "label", "stage", "icon", "submitLabel", "role", "after", "level"]);
+const STEP_KEYS = new Set(["ask", "fields", "questionnaire", "service", "with", "onError", "decide", "final", "result", "next", "label", "stage", "icon", "submitLabel", "role", "after", "level", "guard"]);
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 /** An outcome id: lower-case words joined by '-', optionally dotted (registration.approved). */
 export const OUTCOME_ID = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*$/;
@@ -224,6 +237,7 @@ export function journeyProblems(doc: unknown, { services, questionnaires = [], r
       if (!isLevel(s.level)) problems.push(`${at}: ${LEVEL_PROBLEM}`);
       else if (s.ask === undefined && s.questionnaire === undefined) problems.push(`${at}: only a step with questions needs a level`);
     }
+    if (s.guard !== undefined) problems.push(...guardProblems(at, s.guard, s.ask !== undefined || s.questionnaire !== undefined, parallel, services, checkTemplate));
     if (s.after !== undefined) {
       if (!parallel) problems.push(`${at}: after is for parallel journeys (flow: parallel)`);
       else if (!taskIds.has(id)) problems.push(`${at}: only a task (a step that asks or runs a service) waits with after`);
@@ -277,7 +291,8 @@ export function compileJourney(source: string | object, options: JourneyOptions 
 
 // ---- running --------------------------------------------------------------------------------------
 
-export type ServiceHandler = (input: unknown, ctx: { journey: Journey; step: Step; scope: Scope; signal?: AbortSignal }) => Promise<unknown>;
+/** `guard`: the call is the step's guard hook (RTN-9), not its service. */
+export type ServiceHandler = (input: unknown, ctx: { journey: Journey; step: Step; scope: Scope; signal?: AbortSignal; guard?: boolean }) => Promise<unknown>;
 
 /** step_up (IDN-32): the person may answer the step but must sign in more strongly first. */
 export type RunStatus = "idle" | "asking" | "waiting" | "step_up" | "running" | "done" | "failed";
@@ -352,6 +367,8 @@ export type RunState = {
   error: string | null;
   /** flow: parallel (JRN-46): every task and where it stands, while the tasks are open. */
   tasks?: TaskState[];
+  /** RTN-9: the asking step's last answers were stopped by its guard, with the reason the person sees. */
+  refused?: { step: string; reason: string } | null;
 };
 
 /** A parallel journey's task: waiting for others (pending), ready to work on, being asked, waiting for its role, running, or done. */
@@ -373,3 +390,26 @@ export function progressOf(journey: Pick<Journey, "steps">, trail: RunState["tra
 // The runner (createRunner, replay, journeyTasks, afterTasks) runs every journey on its XState
 // machine: see run.ts.
 export * from "./run.js";
+
+/** What's wrong with a step's guard (RTN-9). */
+function guardProblems(at: string, g: unknown, asks: boolean, parallel: boolean, services: readonly string[] | undefined, checkTemplate: (at: string, v: unknown) => void): string[] {
+  const out: string[] = [];
+  if (!g || typeof g !== "object" || Array.isArray(g)) return [`${at}: guard is { allow, reason } or { call, with, reason }`];
+  const x = g as Record<string, unknown>;
+  for (const k of Object.keys(x)) if (!["allow", "call", "with", "within", "reason"].includes(k)) out.push(`${at}: guard: unknown key '${k}'`);
+  if (!asks) out.push(`${at}: only a step with questions has a guard`);
+  if (parallel) out.push(`${at}: a guard works in a journey that runs in sequence`);
+  if ((x.allow === undefined) === (x.call === undefined)) out.push(`${at}: a guard has allow (a condition) or call (a service), one of them`);
+  if (x.allow !== undefined) {
+    const p = typeof x.allow === "string" ? conditionProblem(x.allow) : "allow is a condition";
+    if (p) out.push(`${at}: guard: ${p}`);
+  }
+  if (x.call !== undefined) {
+    if (typeof x.call !== "string" || !SERVICE.test(x.call)) out.push(`${at}: guard: call must be a dotted name like connector.stock.check`);
+    else if (services && !services.includes(x.call)) out.push(`${at}: guard: no service '${x.call}'`);
+    checkTemplate(`${at} guard`, x.with);
+  }
+  if (x.within !== undefined && (typeof x.within !== "number" || !Number.isInteger(x.within) || x.within < 100 || x.within > GUARD_MAX_MS)) out.push(`${at}: guard: within is milliseconds, 100 to ${GUARD_MAX_MS}`);
+  if (typeof x.reason !== "string" || !x.reason.trim() || x.reason.length > 300) out.push(`${at}: guard: reason is what the person sees when it stops them (up to 300 characters)`);
+  return out;
+}

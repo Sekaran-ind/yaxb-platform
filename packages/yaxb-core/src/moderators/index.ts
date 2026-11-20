@@ -131,6 +131,10 @@ export const AUDIT_ACTIONS = {
   "connector.secret_removed": "Connector secret removed",
   "routine.settings": "Routines paused, resumed or limited",
   "routine.run_now": "Routine run by hand",
+  "routine.approved": "Routine's action approved",
+  "routine.declined": "Routine's action declined",
+  "routine.switched": "Family routine switched on or off",
+  "routine.signing_key": "Routine's webhook signing key shown",
 } as const;
 export type AuditAction = keyof typeof AUDIT_ACTIONS;
 

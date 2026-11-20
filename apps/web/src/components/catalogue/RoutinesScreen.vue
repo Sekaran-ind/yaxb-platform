@@ -37,7 +37,7 @@ void load();
 /** Routines not published yet (drafts, in review, rejected), from the catalogue's entries. */
 const drafts = computed(() => props.entries.filter((e) => (e.kind as string) === "routine" && e.status !== "archived" && !data.value?.routines.some((r) => r.entry_id === e.id)));
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
-const ACTIONS: Record<string, string> = { message: "a message", summary: "a summary", connector: "a connector call", record: "an outcome" };
+const ACTIONS: Record<string, string> = { message: "a message", summary: "a summary", connector: "a connector call", webhook: "a webhook", record: "an outcome" };
 const doesText = (a: string[]) => [...new Set(a)].map((x) => ACTIONS[x] ?? x).join(", ");
 
 async function act(key: string, fn: () => Promise<string | void>) {
@@ -77,7 +77,7 @@ const save = (paused: boolean) =>
 <template>
   <section aria-label="Routines" class="max-w-4xl space-y-4">
     <p class="text-sm text-gray-600">
-      A routine does something on its own: at a time (every Monday at 9), on a service's date, or when something happens in a service (a late check-in). It can message a role, summarise a service, call a connector or record an outcome. It never pays anything. Administrators and automators write them; a reviewer approves each, like a service.
+      A routine does something on its own: at a time (every Monday at 9), on a service's date, or when something happens in a service (a late check-in). It can message a role, summarise a service, call a connector, send a signed webhook or record an outcome; anything it sends can wait for a person's approval. It never pays anything. Administrators and automators write them; a reviewer approves each, like a service.
     </p>
     <p v-if="error" role="alert" class="text-sm text-red-800">{{ error }}</p>
     <p v-if="notice" role="status" class="rounded-lg bg-mist px-3 py-2 text-sm text-ink">{{ notice }}</p>
