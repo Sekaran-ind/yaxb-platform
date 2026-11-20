@@ -3,11 +3,16 @@
 // (the paid plan); with none, nothing leaves the device. Events are facts (which journey and screen,
 // when, how long, the role it went to; a staff member's name for their own actions), never answers.
 // They queue here and go every few seconds, and when the page is hidden; a failed send keeps them.
+// An event a published routine waits for (a late check-in, RTN-1) also goes to the server's
+// /api/routines/events when its service doesn't keep its events there: it isn't kept, it only sets
+// the routine off. Services that keep events on the server set routines off as they arrive.
 import { newEvent, type EventKind, type ServiceEvent } from "@sekaran-ind/yaxb-core/metrics";
-import { catalogue, kioskViewer } from "@/composables/library";
+import { catalogue, kioskViewer, publishedRoutineTriggers } from "@/composables/library";
 import { settings } from "@/composables/settings";
 
 const queue: ServiceEvent[] = [];
+/** Events for routines, from services that don't keep events on the server. */
+const forRoutines: ServiceEvent[] = [];
 const MAX_QUEUE = 500;
 
 /** Where this service keeps its events: none, box or server. */
@@ -16,11 +21,25 @@ export const storageOf = (entryId: string | null) => (entryId ? (catalogue.value
 /** Record one fact about a service's journey (nothing happens for a service without storage). */
 /** `actor`: who an attendance check-in is for (their roster id, never a name); otherwise a signed-in staff member's own action. */
 export function recordEvent(entryId: string | null, e: { journey: string; kind: EventKind; run: string; step?: string | null; role?: string | null; ms?: number | null; ok?: boolean | null; outcome?: string | null; staff?: boolean; actor?: string }) {
-  if (!entryId || storageOf(entryId) === "none") return;
+  if (!entryId) return;
+  const storage = storageOf(entryId);
+  const routine = storage !== "server" && awaited(entryId, e);
+  if (storage === "none" && !routine) return;
   const { staff, actor, ...rest } = e;
-  queue.push(newEvent({ ...rest, service: entryId, ms: rest.ms === undefined || rest.ms === null ? null : Math.max(0, Math.round(rest.ms)), actor: actor ?? (staff && kioskViewer.value.member ? (kioskViewer.value.name ?? null) : null) }));
+  const event = newEvent({ ...rest, service: entryId, ms: rest.ms === undefined || rest.ms === null ? null : Math.max(0, Math.round(rest.ms)), actor: actor ?? (staff && kioskViewer.value.member ? (kioskViewer.value.name ?? null) : null) });
+  if (storage !== "none") queue.push(event);
+  if (routine) forRoutines.push(event);
   if (queue.length > MAX_QUEUE) queue.splice(0, queue.length - MAX_QUEUE);
+  if (forRoutines.length > MAX_QUEUE) forRoutines.splice(0, forRoutines.length - MAX_QUEUE);
   schedule();
+}
+
+/** Whether a published routine waits for this event (its service by id, kind, journey, outcome). */
+function awaited(entryId: string, e: { journey: string; kind: string; outcome?: string | null }) {
+  const triggers = publishedRoutineTriggers.value;
+  if (!triggers.length) return false;
+  const id = catalogue.value.find((s) => s.entry_id === entryId)?.id;
+  return triggers.some((t) => t.event.service === id && t.event.kind === e.kind && (!t.event.journey || t.event.journey === e.journey) && (!t.event.outcome || t.event.outcome === e.outcome));
 }
 
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -49,7 +68,20 @@ async function send(storage: string, events: ServiceEvent[]): Promise<boolean> {
 
 /** Send what is queued, by where each service keeps its events. */
 export async function flush() {
-  if (!queue.length) return;
+  if (forRoutines.length) {
+    const batch = forRoutines.splice(0, 200);
+    try {
+      const res = await fetch("/api/routines/events", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(batch), keepalive: true });
+      // Refused (not a batch, or too many): dropped; offline or rate limited: kept for the next try.
+      if (!res.ok && (res.status === 429 || res.status >= 500)) forRoutines.unshift(...batch);
+    } catch {
+      forRoutines.unshift(...batch);
+    }
+  }
+  if (!queue.length) {
+    if (forRoutines.length) schedule();
+    return;
+  }
   const batch = queue.splice(0, 200);
   const byStorage = new Map<string, ServiceEvent[]>();
   for (const e of batch) {

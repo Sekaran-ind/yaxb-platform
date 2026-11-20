@@ -78,6 +78,7 @@ Decided 2026-11-19, built in the PR "One address for every edition" (SUR-14). On
   - Step 6: QR hand-off (IDN-19).
 - **Organisation:** business identity numbers (ORG-6, 7), and ORG-4 weighted by case events.
 - **Everything below** under "Wave 2: where to start" that isn't listed as done here.
+- **When routines are deployed** (built 2026-11-20, RTN-1..5, 7, 13): `deploy` applies migration 0019 to every edition's database, and the Cron Trigger (`*/15 * * * *`) starts with the Worker. The Monday summary needs the service to keep its records on the server (the paid plan); the late check-in alert works with any storage, because kiosks forward the events it waits for. Hooks (RTN-6, 8, 9, 11, 12) are the next PR.
 
 **Order decided 2026-11-19:** one address first (above), then identity steps 2 to 6, the email assistant, media, connectors and routines, and the foundations. **Editions (EDN-6..10, EDN-30..35, households across devices) are deferred.** The vocabulary tool waits for the owner's word-list source.
 

@@ -67,19 +67,19 @@ Today connectors are MCP servers the operator lists in `MCP_SERVERS`, the same f
 
 | ID | Requirement | Status |
 |---|---|---|
-| RTN-1 | A `kind: routine` document holds a trigger (schedule, event, webhook or date), a condition (the existing expression language) and actions: start a journey or case, call a connector, message a role, run the agent with a restricted tool list, or record an event. | Planned |
-| RTN-2 | Schedules run on Cron Triggers with one Durable Object alarm per tenant, and on the box when offline. | Planned |
-| RTN-3 | A new routine first runs as a dry run with the stand-in handlers and shows what it would have done. | Planned |
-| RTN-4 | Every run is logged as events (started, each action, finished, failed), so the dashboard shows routines beside journeys. | Planned |
-| RTN-5 | Per-tenant limits on runs per day, model spend and messages sent, with a switch that pauses every routine. | Planned |
+| RTN-1 | A `kind: routine` document holds a trigger (schedule, event, webhook or date), a condition (the existing expression language) and actions: start a journey or case, call a connector, message a role, run the agent with a restricted tool list, or record an event. | Partly built (2026-11-20): schedule, event and date triggers; `when`; message, summary, connector and record actions. Webhooks, journeys or cases and the agent wait |
+| RTN-2 | Schedules run on Cron Triggers with one Durable Object alarm per tenant, and on the box when offline. | Partly built (2026-11-20): a Cron Trigger every 15 minutes sweeps every edition's businesses (no Durable Object alarm needed yet); the box offline waits |
+| RTN-3 | A new routine first runs as a dry run with the stand-in handlers and shows what it would have done. | Built (2026-11-20) |
+| RTN-4 | Every run is logged as events (started, each action, finished, failed), so the dashboard shows routines beside journeys. | Built (2026-11-20) |
+| RTN-5 | Per-tenant limits on runs per day, model spend and messages sent, with a switch that pauses every routine. | Built (2026-11-20): runs, messages and connector calls per day, and the pause switch; model spend waits for the agent action |
 | RTN-6 | An action that sends outside the business (a message, an email, a connector write) can require a person's approval, which is a case for that role. | Planned |
-| RTN-7 | Only administrators, or a new `automator` role, may publish routines, and a reviewer approves them like services. | Planned |
+| RTN-7 | Only administrators, or a new `automator` role, may publish routines, and a reviewer approves them like services. | Built (2026-11-20) |
 | RTN-8 | Notify hooks run after the fact on the existing event kinds, with declarative actions or a signed outgoing webhook. | Planned |
 | RTN-9 | Guard hooks may stop a step with a reason the person sees, using a safe condition or a yes-or-no connector call within a time limit. | Planned |
 | RTN-10 | Transform hooks run sandboxed code (an isolate per tenant), with no network except named connectors and with strict limits. | Parked |
 | RTN-11 | What a guard or transform returns is stored with the case, so replaying the case never calls the hook again. | Planned |
 | RTN-12 | Families get ready-made routines from a list of switches, with no YAML. A family routine never messages anyone outside the family without a parent's approval. Transform hooks are not offered in Family or Community. | Planned |
-| RTN-13 | Nothing pays automatically. | Planned (as a rule) |
+| RTN-13 | Nothing pays automatically. | Built (2026-11-20): a connector call whose handler or label looks like a payment is refused |
 
 ## Dependencies between departments and businesses
 

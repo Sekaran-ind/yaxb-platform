@@ -131,6 +131,10 @@
       "types": "./dist/attendance/index.d.ts",
       "default": "./dist/attendance/index.js"
     },
+    "./routines": {
+      "types": "./dist/routines/index.d.ts",
+      "default": "./dist/routines/index.js"
+    },
     "./connectors": {
       "types": "./dist/connectors/index.d.ts",
       "default": "./dist/connectors/index.js"

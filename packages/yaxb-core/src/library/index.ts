@@ -20,6 +20,7 @@
 // The ADMIN_TOKEN holder may do everything.
 import { SERVICE_STORAGE, type ServiceStorage } from "../metrics/index.js";
 import { connectorHandlers, connectorSecrets, parseConnector, type Connector } from "../connectors/index.js";
+import { parseRoutine, ROUTINE_AUTHORS, type Routine } from "../routines/index.js";
 import {
   canInitiate,
   checkDocument,
@@ -47,7 +48,8 @@ import { auditEvent, type AuditAction, type AuditEvent } from "../moderators/ind
  * (ORG-1: units, roles, reporting lines and sites), reviewed and published the same way.
  */
 /** connector (CNX-2): a REST API in YAML whose operations are journey handlers; administrators only. */
-export const ENTRY_KINDS = ["service", "organisation", "connector"] as const;
+/** routine (RTN-7): work the kiosk does on its own; administrators and automators write them. */
+export const ENTRY_KINDS = ["service", "organisation", "connector", "routine"] as const;
 export type EntryKind = (typeof ENTRY_KINDS)[number];
 export const ENTRY_STATUSES = ["draft", "in_review", "accepted", "rejected", "archived"] as const;
 export type EntryStatus = (typeof ENTRY_STATUSES)[number];
@@ -156,6 +158,8 @@ export const permissionsOf = (a: LibraryActor) => ({
 });
 export type LibraryPermissions = ReturnType<typeof permissionsOf>;
 const owns = (a: LibraryActor, e: Pick<LibraryEntry, "owner_id">) => Boolean(e.owner_id && e.owner_id === a.id);
+/** Who writes, changes and submits routines (RTN-7): administrators and automators. */
+export const writesRoutines = (a: LibraryActor) => !a.guest && (a.admin || a.roles.some((r) => (ROUTINE_AUTHORS as readonly string[]).includes(r)));
 export const canSee = (a: LibraryActor, e: LibraryEntry) => permissionsOf(a).view || owns(a, e);
 export const canChange = (a: LibraryActor, e: LibraryEntry) => permissionsOf(a).edit || owns(a, e);
 
@@ -271,6 +275,17 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
         return r.ok ? [{ entry: e, connector: r.connector }] : [];
       });
   }
+  /** The published routines (RTN-1), compiled, with their entries. A reviewer accepted each. */
+  async function publishedRoutines(entries?: LibraryEntry[]): Promise<{ entry: LibraryEntry; routine: Routine }[]> {
+    const libs = await store.libraries();
+    const active = new Set(libs.filter((l) => l.status === "active").map((l) => l.id));
+    return (entries ?? (await store.entries()))
+      .filter((e) => e.kind === "routine" && active.has(e.library_id) && e.status !== "archived" && e.published_yaml)
+      .flatMap((e) => {
+        const r = parseRoutine(e.published_yaml!);
+        return r.ok ? [{ entry: e, routine: r.routine }] : [];
+      });
+  }
   // A journey may use a published connector's operations like built-in handlers (CNX-6).
   const compileOptions = async () => ({
     services: options.services ? [...options.services, ...(await publishedConnectors()).flatMap((c) => connectorHandlers(c.connector))] : undefined,
@@ -319,6 +334,10 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
       const r = parseConnector(yaml);
       return r.ok ? [] : r.problems.map((message): BundleProblem => ({ level: "error", line: 1, kind: "connector" as never, id: d.id, message }));
     }
+    if (!("error" in d) && d.kind === "routine") {
+      const r = parseRoutine(yaml);
+      return r.ok ? [] : r.problems.map((message): BundleProblem => ({ level: "error", line: 1, kind: "routine" as never, id: d.id, message }));
+    }
     const own = checkDocument(yaml, [], await compileOptions());
     const org = own.bundle.organisations[0];
     if (!org) return own.problems;
@@ -339,10 +358,11 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
     if (!yaml.trim()) throw new LibraryError("The service is empty.");
     const d = readDocument(yaml);
     if ("error" in d) throw new LibraryError(d.error);
-    if (d.kind !== "service" && d.kind !== "organisation" && d.kind !== "connector") throw new LibraryError("The document needs kind: service (or kind: organisation, or kind: connector).");
+    if (d.kind !== "service" && d.kind !== "organisation" && d.kind !== "connector" && d.kind !== "routine") throw new LibraryError("The document needs kind: service (or kind: organisation, connector or routine).");
     const kind = d.kind as EntryKind;
     const entries = await store.entries();
     if (kind === "connector" && a && !permissionsOf(a).manage) throw new LibraryError("Only an administrator adds a connector.", 403);
+    if (kind === "routine" && a && !writesRoutines(a)) throw new LibraryError("Only an administrator or an automator writes routines.", 403);
     if (kind === "organisation") {
       if (a && !permissionsOf(a).manage) throw new LibraryError("Only an administrator designs the organisation.", 403);
       const other = entries.find((x) => x.id !== self && x.kind === "organisation" && x.status !== "archived");
@@ -357,6 +377,8 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
     store,
     permissionsOf,
     catalogue,
+    publishedRoutines,
+    publishedConnectors,
 
     /** The organisation templates for an edition (ORG-2), without their YAML. */
     templates(edition?: TemplateEdition | null) {
@@ -547,6 +569,7 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
     async submit(a: LibraryActor, id: string) {
       const e = await getEntry(a, id);
       mustChange(a, e);
+      if (e.kind === "routine" && !writesRoutines(a)) throw new LibraryError("Only an administrator or an automator submits a routine.", 403);
       if (e.status !== "draft" && e.status !== "rejected") throw new LibraryError(e.status === "in_review" ? "It is already in review." : `A ${e.status} service can't be submitted: save a change first.`, 409);
       const errors = (await problemsOf(e.yaml)).filter((p) => p.level === "error");
       if (errors.length) throw new LibraryError(`Fix ${errors.length === 1 ? "this problem" : `these ${errors.length} problems`} first: ${errors.map((p) => p.message).join("; ")}`);
@@ -725,7 +748,12 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
         operations: c.operations.map((o) => ({ id: o.id, label: o.label ?? o.id, method: o.method, handler: `connector.${c.id}.${o.id}` })),
         secrets: connectorSecrets(c),
       }));
-      return { roles, services, organisation, connectors };
+      // Routines set off by an event (RTN-1): kiosks forward a service's matching events to the server
+      // when the service keeps them elsewhere. Their triggers only, never their actions.
+      const routines = (await publishedRoutines(entries)).flatMap(({ entry, routine: r }) =>
+        "event" in r.on ? [{ entry_id: entry.id, id: r.id, title: r.title, event: r.on.event }] : [],
+      );
+      return { roles, services, organisation, connectors, routines };
     },
   };
   return api;

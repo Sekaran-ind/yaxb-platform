@@ -32,6 +32,12 @@ export const EVENT_KINDS = [
   // Media (MED-11): a photo or voice note kept, and read on the device. Never the media itself.
   "media.captured",
   "media.read",
+  // Routines (RTN-4): a run started (step: its trigger), each action (step: "<n>-<type>", ok), and
+  // how it ended (step: its status). The routine's entry is the service; its id the journey.
+  "routine.started",
+  "routine.action",
+  "routine.finished",
+  "routine.failed",
 ] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 
