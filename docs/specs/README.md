@@ -1,6 +1,6 @@
 # YAXB Kiosk: requirements specifications
 
-These documents describe what the YAXB kiosk must do, for the people who decide what it does and the people who build and test it. They state requirements and how to check them, not how the code is organised; for that, see [CLAUDE.md](../../CLAUDE.md) and the package READMEs.
+These documents describe what the YAXB kiosk must do, for the people who decide what it does and the people who build and test it. They state requirements and how to check them, not how the code is organised; for that, see [docs/architecture/](../architecture/) and the package READMEs.
 
 | # | Specification | Covers |
 |---|---|---|
