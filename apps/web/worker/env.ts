@@ -24,6 +24,10 @@ const schema = z.object({
   MAILCHIMP_API_KEY: z.string().regex(/-[a-z]{2}\d+$/, "expected a Mailchimp key ending in -<dc>").optional(),
   MAILCHIMP_AUDIENCE_ID: z.string().optional(),
   KIOSK_BOX_ORIGINS: z.string().optional(),
+  /** Map tiles' origin when not OpenStreetMap's (VIS-1), such as https://tiles.example.com; added to the CSP. */
+  TILE_ORIGIN: z.url({ protocol: /^https$/ }).optional(),
+  /** A Nominatim-compatible geocoder for place search (VIS-2); OpenStreetMap's by default. */
+  PLACES_URL: z.url({ protocol: /^https$/ }).optional(),
   /**
    * The edition for an address that names none (SUR-14): one Worker serves every address, and each
    * request's edition is the open space's, else the address's (family.anjalai.cc), else this; unset:

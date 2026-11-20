@@ -1,6 +1,7 @@
 # Seeded into the Service Catalogue (LIB-21): an example of a photo field (MED-1..4). The photo is kept
 # on this device and on the box, apart from the request, which carries only a reference to it;
-# maintenance staff see it from the box when they open the request.
+# maintenance staff see it from the box when they open the request. The place on the map (VIS-5)
+# is optional: a point, never the device's position unless the person asks for it.
 kind: service
 id: repairs
 title: Repairs
@@ -24,6 +25,7 @@ journeys:
         questions:
           - { id: photo, type: photo, label: A photo of it, required: true, keep: box }
           - { id: where, type: text, label: Where it is, required: true, placeholder: "e.g. Block B, second floor" }
+          - { id: spot, type: location, label: On the map (if it helps) }
           - { id: what, type: textarea, label: What's wrong }
       - id: done
         result: { title: "Sent to maintenance", text: "They have your photo and where it is. Keep the reference to see how it goes.", outcome: repair-reported }

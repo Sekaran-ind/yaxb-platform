@@ -13,6 +13,6 @@ export default defineConfig({
     target: "es2022",
     sourcemap: true,
     lib: { entry: fileURLToPath(new URL("./vue/index.ts", import.meta.url)), formats: ["es"], fileName: "index", cssFileName: "style" },
-    rolldownOptions: { external: ["vue", /^@sekaran-ind\/yaxb-journeys/, "js-yaml", "xstate", /^@xstate\//, /^@codemirror\//, /^@lezer\//] },
+    rolldownOptions: { external: ["vue", /^@sekaran-ind\/yaxb-journeys/, "js-yaml", "xstate", /^@xstate\//, /^@codemirror\//, /^@lezer\//, /^leaflet/, /^@turf\//] },
   },
 });

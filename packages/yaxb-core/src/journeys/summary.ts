@@ -175,6 +175,13 @@ function display(field: Field, value: unknown): string {
       const read = list.map((p) => p.text?.trim()).filter(Boolean).join(" · ");
       return `${list.length} photo${list.length === 1 ? "" : "s"}${read ? `: ${read}` : ""}`;
     }
+    case "location": {
+      // A place: its coordinates, rounded to about 100 m in summaries.
+      const v = value as { latitude?: number; longitude?: number } | null;
+      return v && typeof v.latitude === "number" && typeof v.longitude === "number" ? `A place on the map (${v.latitude.toFixed(3)}, ${v.longitude.toFixed(3)})` : "";
+    }
+    case "area":
+      return value ? "An area drawn on the map" : "";
     case "audio": {
       const list = Array.isArray(value) ? (value as { text?: string }[]) : [];
       if (!list.length) return "";
