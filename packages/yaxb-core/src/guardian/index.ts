@@ -64,7 +64,8 @@ export function sensitivityOf(f: Pick<Field, "type" | "label" | "description" | 
   // Any voice recording raises the sensitivity (MED-8).
   if (f.type === "audio") out.add("voice");
   if (f.entity === "email" || f.entity === "phone") out.add("contact");
-  if (f.entity === "location") out.add("location");
+  // A place picked or drawn on the map (VIS-5) says where someone is or lives.
+  if (f.entity === "location" || f.type === "location" || f.type === "area") out.add("location");
   if (f.entity === "money") out.add("money");
   for (const [kind, re] of SENSITIVE) if (re.test(text)) out.add(kind);
   if (f.entity === "money" && !/\b(card|bank|account|upi|iban|cvv)\b/i.test(text)) out.delete("money"); // an amount, not account details

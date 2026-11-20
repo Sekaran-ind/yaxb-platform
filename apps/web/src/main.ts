@@ -1,4 +1,5 @@
-import { ICONS_KEY, MEDIA_KEY } from "@sekaran-ind/yaxb-journeys/vue";
+import { GEO_KEY, ICONS_KEY, MEDIA_KEY } from "@sekaran-ind/yaxb-journeys/vue";
+import { geoHost } from "@/composables/geo";
 import { mediaHost } from "@/composables/media";
 import { createApp } from "vue";
 import { iconFor } from "./lib/icons";
@@ -16,4 +17,5 @@ import "./composables/settings";
 installNativeFetch();
 // The yaxb-journeys components draw YAML icon names with the site's icons.
 // Photo fields keep their photos on this device and the box (MED-1), read on the device (MED-5).
-createApp(App).provide(ICONS_KEY, iconFor).provide(MEDIA_KEY, mediaHost).use(router).mount("#app");
+// Place and area fields search through the Worker and never locate the device under the child lock (VIS-8).
+createApp(App).provide(ICONS_KEY, iconFor).provide(MEDIA_KEY, mediaHost).provide(GEO_KEY, geoHost).use(router).mount("#app");

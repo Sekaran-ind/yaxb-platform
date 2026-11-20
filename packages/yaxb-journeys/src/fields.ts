@@ -22,11 +22,17 @@
 // most 300); `transcribe: device` turns it into text on the device, kept beside it (MED-3). Its answer
 // is a list of one MediaRef, like a photo's.
 //
+// A `location` field (VIS-5) is a point, picked on the map, found by place search or, only when the
+// person taps "Use my location", the device's position (VIS-8: asked once, never tracked). Its
+// answer is a schema.org GeoCoordinates. An `area` field is a region drawn by tapping its corners,
+// a schema.org GeoShape. Both are geo.ts's shapes.
+//
 // A `password` field is a masked input. Slot filling never fills it (from speech or the model), and
 // run summaries show it masked; it is still in `answers`, so a result template could show it.
 import { conditionPaths, conditionProblem, holds, type Scope } from "./expressions.js";
+import { isGeoCoordinates, isGeoShape } from "./geo.js";
 
-export const FIELD_TYPES = ["text", "textarea", "password", "select", "boolean", "number", "date", "source", "language", "photo", "audio"] as const;
+export const FIELD_TYPES = ["text", "textarea", "password", "select", "boolean", "number", "date", "source", "language", "photo", "audio", "location", "area"] as const;
 /** Media fields keep their media apart from the record (MED-1). */
 export const MEDIA_FIELD_TYPES = ["photo", "audio"] as const;
 export const MEDIA_TRANSCRIBES = ["device", "none"] as const;
@@ -143,6 +149,8 @@ export function fieldProblem(field: Field, value: unknown): string | null {
     if (!Array.isArray(value) || !value.every(isMediaRef)) return `${field.label} must be a voice note recorded here.`;
     if (value.length > 1) return `${field.label}: one voice note.`;
   }
+  if (field.type === "location" && !isGeoCoordinates(value)) return `${field.label} must be a place on the map.`;
+  if (field.type === "area" && !isGeoShape(value)) return `${field.label} must be an area drawn on the map (at least three corners).`;
   if (field.type === "photo") {
     if (!Array.isArray(value) || !value.every(isMediaRef)) return `${field.label} must be photos taken here.`;
     if (value.length > (field.max ?? 1)) return `${field.label}: at most ${field.max ?? 1} photo${(field.max ?? 1) === 1 ? "" : "s"}.`;

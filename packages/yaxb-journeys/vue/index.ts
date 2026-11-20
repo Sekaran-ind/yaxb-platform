@@ -1,3 +1,4 @@
+import { defineAsyncComponent } from "vue";
 // @sekaran-ind/yaxb-journeys/vue: Vue 3 components for Service → Journey → Questionnaire.
 // Import the styles once: import "@sekaran-ind/yaxb-journeys/style.css".
 import "./style.css";
@@ -24,4 +25,9 @@ export { default as StructureTree } from "./StructureTree.vue";
 export { default as YamlEditor } from "./YamlEditor.vue";
 export { ICONS_KEY, provideIcons, useIcons, type IconResolver } from "./icons";
 export { default as MediaCapture } from "./MediaCapture.vue";
+// Maps (VIS-1, VIS-5): each loads Leaflet in its own chunk.
+export const GeoPicker = defineAsyncComponent(() => import("./GeoPicker.vue"));
+export const MapView = defineAsyncComponent(() => import("./MapView.vue"));
+export type { MapPlace } from "./MapView.vue";
+export { DEFAULT_VIEW, GEO_KEY, OSM_TILES, provideGeo, useGeo, type GeoHost, type PlaceHit } from "./geo";
 export { MEDIA_KEY, mediaRefOf, PHOTO_MAX_BYTES, PHOTO_MAX_SIDE, provideMedia, shrinkPhoto, useMedia, type MediaHost } from "./media";

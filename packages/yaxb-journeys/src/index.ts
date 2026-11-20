@@ -9,6 +9,7 @@ export * from "./nested.js";
 export * from "./consent.js";
 export * from "./machine.js";
 export * from "./ethics.js";
+export * from "./geo.js";
 
 export * from "./organisation.js";
 export * from "./templates.js";

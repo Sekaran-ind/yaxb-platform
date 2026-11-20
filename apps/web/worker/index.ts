@@ -303,6 +303,41 @@ app.post("/api/sources/web", async (c) => {
   }
 });
 
+// ---- place search (VIS-2) -------------------------------------------------------------------------------
+
+/** Nominatim asks for at most one request a second from an application: one at a time per isolate. */
+let lastPlaceSearch = 0;
+const PLACE_CACHE_SECONDS = 7 * 86_400;
+/**
+ * A place by name or address, for the map fields: through the Worker to OpenStreetMap's Nominatim
+ * (or PLACES_URL, a compatible geocoder), cached per business for a week and kept within its usage
+ * policy. Only the words searched for are sent, with a generic client name; never who asked.
+ */
+app.get("/api/places/search", async (c) => {
+  // A read-only GET (browsers send no Origin on same-origin GETs); other sites can't read it (CORS), and each session is limited.
+  const q = (c.req.query("q") ?? "").trim().replace(/\s+/g, " ").slice(0, 200);
+  if (q.length < 3) return jsonError(c, 422, "Type at least three letters.");
+  const key = new Request(`https://places.cache/${encodeURIComponent(currentEdition())}/${encodeURIComponent(currentTenant())}?q=${encodeURIComponent(q.toLowerCase())}`);
+  const cache = (globalThis as unknown as { caches?: { default?: Cache } }).caches?.default;
+  const hit = cache ? await cache.match(key) : undefined;
+  if (hit) return c.json(await hit.json());
+  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, `places:${await clientId(c)}`))) return jsonError(c, 429, "Too many searches. Please wait a minute.");
+  const wait = lastPlaceSearch + 1000 - Date.now();
+  if (wait > 0) await new Promise((r) => setTimeout(r, Math.min(wait, 1000)));
+  lastPlaceSearch = Date.now();
+  const url = new URL(settings(c.env).PLACES_URL || "https://nominatim.openstreetmap.org/search");
+  for (const [k, v] of Object.entries({ q, format: "jsonv2", limit: "5", countrycodes: "in", "accept-language": "en" })) url.searchParams.set(k, v);
+  const res = await fetch(url, { headers: { Accept: "application/json", "User-Agent": "Anjal-Kiosk/1 (+https://anjalai.cc)" }, signal: AbortSignal.timeout(8000) }).catch(() => null);
+  if (!res?.ok) return jsonError(c, 502, "The place search didn't answer. Tap the map instead.");
+  const raw = (await res.json().catch(() => [])) as { lat?: string; lon?: string; display_name?: string }[];
+  const items = raw
+    .map((h) => ({ lat: Number(h.lat), lng: Number(h.lon), label: String(h.display_name ?? "").slice(0, 200) }))
+    .filter((h) => Number.isFinite(h.lat) && Number.isFinite(h.lng));
+  const body = { items };
+  if (cache) c.executionCtx.waitUntil(cache.put(key, new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json", "Cache-Control": `max-age=${PLACE_CACHE_SECONDS}` } })));
+  return c.json(body);
+});
+
 // ---- approved sites (SIT-1..6) ---------------------------------------------------------------------------
 
 /** Where this request stands for the approved list: its edition, its business (none for a family) and region. */
@@ -1766,7 +1801,8 @@ function securityHeaders(env: Bindings, url: URL): Record<string, string> {
     "default-src 'self'",
     "script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
+    // Map tiles (VIS-1): OpenStreetMap's, or the provider TILE_ORIGIN names.
+    `img-src 'self' data: blob: https://tile.openstreetmap.org${settings(env).TILE_ORIGIN ? ` ${settings(env).TILE_ORIGIN}` : ""}`,
     "font-src 'self'",
     `connect-src 'self' ${modelHosts}${box ? ` ${box}` : ""}`,
     "worker-src 'self' blob:",
