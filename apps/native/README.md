@@ -40,4 +40,4 @@ Build with `VITE_API_BASE=http://localhost:3000`, serve the bundle with `npx vit
 
 ## Build the APK on GitHub
 
-`.github/workflows/android.yml` builds a debug APK on every push to `main` (and on pull requests that touch the app, or by hand from the Actions tab). Download it from the run's **Artifacts** (`yaxb-kiosk-android-debug`) and install it on a test phone. Set the kiosk server as the repository variable `VITE_API_BASE` first; without it the app has no server.
+`.github/workflows/android.yml` builds a debug APK after every merge to `main` (or by hand from the Actions tab), as clinux-diary and clinux-pro do; pull requests don't build it. Download it from the run's **Artifacts** (`yaxb-kiosk-android-debug`) and install it on a test phone. It talks to `https://anjalai.cc` unless the repository variable `VITE_API_BASE` names another kiosk server.

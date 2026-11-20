@@ -3,21 +3,15 @@ name: Android
 # artifacts, to install on a test phone. Built here because the native toolchain (JDK, Android SDK)
 # isn't on the dev machines. Follows clinux-diary's and clinux-pro's android.yml.
 #
-# The app sends /api calls to the kiosk server at VITE_API_BASE (PLT-11). Set it as a repository
-# variable (Settings → Secrets and variables → Actions → Variables), e.g. https://yaxb-web.<account>.workers.dev.
-# Without it the APK still builds, but only the on-device features work.
+# The app sends /api calls to the kiosk server at VITE_API_BASE (PLT-11): https://anjalai.cc unless the
+# repository variable VITE_API_BASE says otherwise (Settings → Secrets and variables → Actions →
+# Variables), as clinux-pro defaults to its production services.
+#
+# It runs after a merge to main (and by hand), not on pull requests: PRs merge once the local tests
+# pass, and the Android build and check on main come before any deploy.
 on:
   push:
     branches: [main]
-  pull_request:
-    paths:
-      - 'apps/native/**'
-      - 'apps/web/src/**'
-      - 'apps/web/vite.config.ts'
-      - 'apps/web/package.json'
-      - 'packages/**'
-      - 'package-lock.json'
-      - '.github/workflows/android.yml'
   workflow_dispatch:
 jobs:
   apk:
@@ -25,7 +19,7 @@ jobs:
     permissions:
       contents: read
     env:
-      VITE_API_BASE: ${{ vars.VITE_API_BASE }}
+      VITE_API_BASE: ${{ vars.VITE_API_BASE || 'https://anjalai.cc' }}
       # onnxruntime-node (a dev dependency for the embedding scripts) would download its CUDA build,
       # whose release asset is gone (404); the APK never uses it.
       ONNXRUNTIME_NODE_INSTALL_CUDA: skip
@@ -36,9 +30,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Check the server address
-        if: env.VITE_API_BASE == ''
-        run: echo "::warning::VITE_API_BASE is not set; the app will have no kiosk server. Set it as a repository variable."
       - name: Build the packages (yaxb-journeys, then yaxb-core)
         run: npm run build:core
       - name: Build the kiosk web bundle in native mode
