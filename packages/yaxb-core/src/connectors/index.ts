@@ -31,13 +31,31 @@
 //
 // Once published, the kiosk's agent may use its tools (Settings → MCP servers), like the
 // deployment's MCP_SERVERS; every request passes the SSRF guard.
+//
+// A box connector (CNX-4) reaches a system on the office network (Tally first): `where: box`. Only
+// the office box calls it, so its base may be http and a local address; the server never does. The
+// box calls only connectors installed on it by whoever runs it (`yaxb-box connector add`), with their
+// secrets kept on the box, so a kiosk can't point it anywhere else. An operation's `format: xml`
+// sends its body as XML text with the input escaped (Tally's XML over HTTP).
+//
+//   kind: connector
+//   id: tally
+//   title: Tally on the office PC
+//   where: box
+//   base: http://192.168.1.20:9000
+//   operations:
+//     - id: ledgers
+//       method: POST
+//       path: /
+//       format: xml
+//       body: "<ENVELOPE><HEADER><TALLYREQUEST>Export Data</TALLYREQUEST></HEADER>…</ENVELOPE>"
 import { load } from "js-yaml";
 import { render } from "@sekaran-ind/yaxb-journeys/journeys";
 import { checkResolved, urlProblem, type Resolve } from "../web/pages.js";
 
 export const CONNECTOR_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 export const CONNECTOR_AUTH = ["none", "bearer", "header", "query"] as const;
-export type ConnectorOperation = { id: string; label?: string; method: (typeof CONNECTOR_METHODS)[number]; path: string; query?: Record<string, string>; body?: unknown };
+export type ConnectorOperation = { id: string; label?: string; method: (typeof CONNECTOR_METHODS)[number]; path: string; query?: Record<string, string>; body?: unknown; format?: "json" | "xml" };
 export type Connector = {
   kind: "connector";
   id: string;
@@ -48,13 +66,15 @@ export type Connector = {
   operations: ConnectorOperation[];
   /** CNX-1: an MCP server (Streamable HTTP) instead of REST operations; `base` is its address. */
   mcp?: { url: string; tools?: string[] };
+  /** CNX-4: "box": only the office box calls it (a system on the office network). */
+  where?: "server" | "box";
 };
 
 const ID = /^[a-z][a-z0-9-]{0,47}$/;
 const SECRET = /^[A-Z][A-Z0-9_]{1,47}$/;
 const HEADER = /^[A-Za-z][A-Za-z0-9-]{0,63}$/;
-const KEYS = new Set(["kind", "id", "title", "summary", "base", "auth", "operations", "mcp"]);
-const OP_KEYS = new Set(["id", "label", "method", "path", "query", "body"]);
+const KEYS = new Set(["kind", "id", "title", "summary", "base", "auth", "operations", "mcp", "where"]);
+const OP_KEYS = new Set(["id", "label", "method", "path", "query", "body", "format"]);
 /** The longest answer kept from an API, and how long a call may take. */
 export const CONNECTOR_MAX_BYTES = 200_000;
 export const CONNECTOR_TIMEOUT_MS = 10_000;
@@ -78,8 +98,13 @@ export function compileConnector(doc: unknown): { ok: true; connector: Connector
   if (typeof d.id !== "string" || !ID.test(d.id)) problems.push("id is required (lower-case words joined by '-')");
   if (typeof d.title !== "string" || !d.title.trim()) problems.push("title is required");
   for (const k of Object.keys(d)) if (!KEYS.has(k)) problems.push(`unknown key '${k}'`);
+  if (d.where !== undefined && d.where !== "server" && d.where !== "box") problems.push("where is server (the default) or box");
+  const box = d.where === "box";
   const mcp = d.mcp as Record<string, unknown> | undefined;
-  if (mcp !== undefined) return compileMcpConnector(d, mcp, problems);
+  if (mcp !== undefined) {
+    if (box) problems.push("an MCP server runs from the server, not the box");
+    return compileMcpConnector(d, mcp, problems);
+  }
   if (typeof d.base !== "string") problems.push("base is required: the API's https address");
   else {
     let u: URL | null = null;
@@ -88,7 +113,11 @@ export function compileConnector(doc: unknown): { ok: true; connector: Connector
     } catch {
       problems.push("base must be a web address");
     }
-    if (u && u.protocol !== "https:") problems.push("base must be an https address");
+    // A box connector reaches the office network: http and local addresses are its point.
+    if (box) {
+      if (u && u.protocol !== "https:" && u.protocol !== "http:") problems.push("base must be an http or https address");
+      else if (u && (u.username || u.password)) problems.push("base can't hold a name or password: use auth and a secret");
+    } else if (u && u.protocol !== "https:") problems.push("base must be an https address");
     else if (u && urlProblem(d.base)) problems.push(`base: ${urlProblem(d.base)}`);
     if (u && (u.search || u.hash)) problems.push("base can't have a query or a #: put them in an operation");
   }
@@ -111,11 +140,13 @@ export function compileConnector(doc: unknown): { ok: true; connector: Connector
       else if (/\{\{(?!\s*input\.)/.test(o.path)) problems.push(`${at}: the path may only use {{input.<name>}}`);
       if (o.query !== undefined && (!o.query || typeof o.query !== "object" || Array.isArray(o.query) || Object.values(o.query).some((v) => typeof v !== "string"))) problems.push(`${at}: query is a mapping of text values`);
       if (o.body !== undefined && (o.method === "GET" || o.method === "DELETE")) problems.push(`${at}: a ${String(o.method)} has no body`);
+      if (o.format !== undefined && o.format !== "json" && o.format !== "xml") problems.push(`${at}: format is json (the default) or xml`);
+      if (o.format === "xml" && typeof o.body !== "string") problems.push(`${at}: an xml body is text`);
       for (const k of Object.keys(o)) if (!OP_KEYS.has(k)) problems.push(`${at}: unknown key '${k}'`);
     });
   }
   if (problems.length) return { ok: false, problems };
-  return { ok: true, connector: { ...(d as unknown as Connector), auth: { type: (auth.type as Connector["auth"]["type"]) ?? "none", ...(auth.secret ? { secret: String(auth.secret) } : {}), ...(auth.name ? { name: String(auth.name) } : {}) } }, problems: [] };
+  return { ok: true, connector: { ...(d as unknown as Connector), ...(box ? { where: "box" as const } : {}), auth: { type: (auth.type as Connector["auth"]["type"]) ?? "none", ...(auth.secret ? { secret: String(auth.secret) } : {}), ...(auth.name ? { name: String(auth.name) } : {}) } }, problems: [] };
 }
 
 const TOOL = /^[A-Za-z0-9_.-]{1,64}$/;
@@ -207,12 +238,24 @@ export function buildConnectorRequest(c: Connector, opId: string, input: Record<
   if (c.auth.type === "header") headers[c.auth.name!] = secret!;
   if (c.auth.type === "query") url.searchParams.set(c.auth.name!, secret!);
   const init: RequestInit = { method: op.method, headers, redirect: "manual" };
-  if (op.body !== undefined) {
+  if (op.body !== undefined && op.format === "xml") {
+    // XML (Tally): the input goes in escaped, so a value can't add elements of its own.
+    headers["Content-Type"] = "text/xml; charset=utf-8";
+    headers.Accept = "text/xml, application/xml, */*";
+    const esc = Object.fromEntries(Object.entries(input).map(([k, v]) => [k, xmlEscape(typeof v === "string" ? v : JSON.stringify(v ?? ""))]));
+    init.body = String(render(op.body, { input: esc } as never));
+  } else if (op.body !== undefined) {
     headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(render(op.body, { input } as never));
   }
   return { url: url.href, init };
 }
+
+/** Text made safe inside XML (CNX-4). */
+export const xmlEscape = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+
+/** A box connector as the box installs it (`yaxb-box connector add`): plain JSON, no YAML on the box. */
+export const boxConnectorJson = (c: Connector) => JSON.stringify({ id: c.id, title: c.title, base: c.base, auth: c.auth, operations: c.operations }, null, 2);
 
 export class ConnectorError extends Error {
   constructor(
@@ -229,6 +272,7 @@ export class ConnectorError extends Error {
  * the answer is kept. The answer is data from outside: never instructions.
  */
 export async function callConnector(c: Connector, opId: string, input: Record<string, unknown>, secrets: Record<string, string>, { fetchImpl = fetch, resolve }: { fetchImpl?: typeof fetch; resolve?: Resolve } = {}) {
+  if (c.where === "box") throw new ConnectorError("This connector runs on the office box, not the server.", 409);
   const { url, init } = buildConnectorRequest(c, opId, input, secrets);
   const problem = urlProblem(url);
   if (problem) throw new ConnectorError(problem, 400);

@@ -9,6 +9,7 @@
 // learns from its review. A new service not created yet is kept in this browser until it is.
 import { parseConnector, connectorSecrets as connectorSecretNames } from "@sekaran-ind/yaxb-core/connectors";
 import ConnectorSecrets from "./ConnectorSecrets.vue";
+import BoxConnectorSetup from "./BoxConnectorSetup.vue";
 import { parseRoutine, ROUTINE_STARTERS } from "@sekaran-ind/yaxb-core/routines";
 import RoutineDryRun from "./RoutineDryRun.vue";
 import RoutineRuns from "./RoutineRuns.vue";
@@ -140,6 +141,8 @@ const isOrg = computed(() => entry.value?.kind === "organisation" || /^kind:\s*o
 /** A connector (CNX-2) is an entry too: YAML, its secrets, audit and history. */
 const isConnector = computed(() => (entry.value?.kind as string) === "connector" || /^kind:\s*connector\b/m.test(yaml.value));
 const connectorCheck = computed(() => (isConnector.value ? parseConnector(yaml.value) : null));
+/** A box connector (CNX-4): its "On the box" view gives the file to install there. */
+const onBox = computed(() => Boolean(connectorCheck.value?.ok && connectorCheck.value.connector.where === "box"));
 /** A routine (RTN-1) is an entry too: YAML, a dry run, its runs, audit and history. */
 const isRoutine = computed(() => (entry.value?.kind as string) === "routine" || /^kind:\s*routine\b/m.test(yaml.value));
 const routineCheck = computed(() => (isRoutine.value ? parseRoutine(yaml.value) : null));
@@ -353,7 +356,8 @@ const VIEWS = computed<{ value: View; label: string }[]>(() => isRoutine.value ?
   ...(entry.value ? [...(published_.value ? [{ value: "runs" as const, label: "Runs" }] : []), { value: "audit" as const, label: "Audit" }, { value: "history" as const, label: `History (${revisions.value.length})` }] : []),
 ] : isConnector.value ? [
   { value: "yaml", label: "YAML" },
-  ...(entry.value ? [{ value: "secrets" as const, label: "Secrets" }, { value: "audit" as const, label: "Audit" }, { value: "history" as const, label: `History (${revisions.value.length})` }] : []),
+  ...(onBox.value ? [{ value: "secrets" as const, label: "On the box" }] : entry.value ? [{ value: "secrets" as const, label: "Secrets" }] : []),
+  ...(entry.value ? [{ value: "audit" as const, label: "Audit" }, { value: "history" as const, label: `History (${revisions.value.length})` }] : []),
 ] : isOrg.value ? [
   { value: "org", label: "Organisation" },
   { value: "yaml", label: "YAML" },
@@ -438,6 +442,7 @@ watch(
 
     <RoutineDryRun v-if="view === 'dry'" :yaml="yaml" :problems="errors.map((p) => p.message)" />
     <RoutineRuns v-else-if="view === 'runs' && entry" :entry-id="entry.id" :manage="me.can.manage" :webhook="Boolean(routineCheck?.ok && routineCheck.routine.actions.some((a) => a.type === 'webhook'))" />
+    <BoxConnectorSetup v-else-if="view === 'secrets' && connectorCheck?.ok && connectorCheck.connector.where === 'box'" :connector="connectorCheck.connector" />
     <ConnectorSecrets v-else-if="view === 'secrets' && connectorCheck?.ok" :connector="connectorCheck.connector.id" :needed="connectorSecretNames(connectorCheck.connector)" />
     <OrganisationView v-else-if="view === 'org' && check.bundle.organisations[0]" :organisation="check.bundle.organisations[0]" :services="catalogue" :warnings="orgWarnings" @line="goToLine" />
     <template v-else-if="view === 'design'">
