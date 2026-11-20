@@ -25,6 +25,9 @@
 //   GET    /v1/media/:hash                                 the photo, with its type
 //   POST   /v1/events  (body: [event])                   a service's events (MET-2): facts, never answers
 //   GET    /v1/events?service=&since=                    a service's events, oldest first
+//   GET    /v1/connectors                                 box connectors installed here (CNX-4): ids, titles, operations
+//   POST   /v1/connectors/:id/:op  { input }              call one on the office network → { ok, status, ms, untrusted, data }
+//          (installed and given secrets only from the box's own command line: `yaxb-box connector …`)
 //
 // Auth: `Authorization: Bearer <a box token from the site>` (IDN-42, verified offline: trust.js), or
 // the older shared `Bearer <YAXB_BOX_TOKEN>`, compared in constant time. Bearer tokens, not
@@ -37,6 +40,7 @@ import { createServer as createHttpsServer } from 'node:https';
 import { dirname, join } from 'node:path';
 import { COLLECTIONS, ID, NAMESPACE, openDb } from './db.js';
 import { createSiteLink, verifyBoxToken } from './trust.js';
+import { callBoxConnector, ConnectorError } from './connectors.js';
 
 export const VERSION = '0.1.0';
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
@@ -312,6 +316,24 @@ export function createBoxServer(config, { db = openDb(config.dbPath), link = cre
         const service = url.searchParams.get('service') || '';
         if (!ID.test(service)) throw new HttpError(400, 'Which service?');
         return send(res, 200, { items: db.eventsList(service, url.searchParams.get('since') || '', Math.min(Number(url.searchParams.get('limit') || 10000), 10000)) });
+      }
+      throw new HttpError(405, 'Method not allowed.');
+    }
+    if (resource === 'connectors') {
+      if (!a && req.method === 'GET') {
+        return send(res, 200, { items: db.connectorList().map((c) => ({ id: c.id, title: c.title, host: new URL(c.base).host, operations: c.operations.map((o) => ({ id: o.id, label: o.label ?? o.id, method: o.method })), secrets: db.connectorSecretNames(c.id).map((x) => x.name), installed_at: c.installed_at })) });
+      }
+      if (a && b && req.method === 'POST') {
+        const c = ID.test(a) ? db.connectorGet(a) : null;
+        if (!c) throw new HttpError(404, 'That connector isn\'t installed on this box.');
+        const body = await readJson(req);
+        const input = plainObject(body?.input) ? body.input : {};
+        try {
+          return send(res, 200, await callBoxConnector(c, b, input, db.connectorSecrets(a), config.fetch ?? fetch));
+        } catch (e) {
+          if (e instanceof ConnectorError) throw new HttpError(e.status, e.message);
+          throw e;
+        }
       }
       throw new HttpError(405, 'Method not allowed.');
     }

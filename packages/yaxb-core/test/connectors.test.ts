@@ -1,7 +1,7 @@
 // Connectors (CNX-2..8): a REST API in YAML; requests built on the server with the secret; the SSRF
 // guard; answers as untrusted data.
 import { describe, expect, it } from "vitest";
-import { buildConnectorRequest, callConnector, connectorHandlers, connectorSecrets, parseConnector, parseConnectorHandler, mcpServerOfConnector, guardedFetch } from "../src/connectors/index.js";
+import { buildConnectorRequest, callConnector, connectorHandlers, connectorSecrets, parseConnector, parseConnectorHandler, mcpServerOfConnector, guardedFetch, boxConnectorJson } from "../src/connectors/index.js";
 import { createD1ConnectorSecretStore } from "../src/stores/d1.js";
 import { sqliteD1 } from "./sqlite-d1.js";
 
@@ -135,5 +135,38 @@ auth: { type: bearer, secret: DOCS_TOKEN }
     expect(fetched).toBe(0);
     const ok = guardedFetch(async () => ["93.184.216.34"], (async (_u: string, init: RequestInit) => (fetched++, new Response(init.redirect ?? ""))) as unknown as typeof fetch);
     expect(await (await ok("https://mcp.example.com/mcp", { method: "POST" })).text()).toBe("error");
+  });
+});
+
+describe("a box connector (CNX-4)", () => {
+  const TALLY = `kind: connector
+id: tally
+title: Tally on the office PC
+where: box
+base: http://192.168.1.20:9000
+operations:
+  - id: ledger
+    method: POST
+    path: /
+    format: xml
+    body: "<ENVELOPE><NAME>{{input.name}}</NAME></ENVELOPE>"
+`;
+  it("may be http on the office network, and sends XML with the input escaped", () => {
+    const r = parseConnector(TALLY);
+    if (!r.ok) throw new Error(r.problems.join());
+    expect(r.connector.where).toBe("box");
+    const req = buildConnectorRequest(r.connector, "ledger", { name: "A & B </NAME><X>" }, {});
+    expect(req.init.body).toBe("<ENVELOPE><NAME>A &amp; B &lt;/NAME&gt;&lt;X&gt;</NAME></ENVELOPE>");
+    expect((req.init.headers as Record<string, string>)["Content-Type"]).toMatch(/text\/xml/);
+    expect(JSON.parse(boxConnectorJson(r.connector))).toMatchObject({ id: "tally", base: "http://192.168.1.20:9000", operations: [{ id: "ledger", format: "xml" }] });
+  });
+  it("is never called by the server; a server connector stays https and public", async () => {
+    const r = parseConnector(TALLY);
+    if (!r.ok) throw new Error(r.problems.join());
+    await expect(callConnector(r.connector, "ledger", {}, {})).rejects.toThrow(/office box/);
+    const server = parseConnector(TALLY.replace("where: box\n", ""));
+    expect(server.ok ? "" : server.problems.join()).toMatch(/https/);
+    const both = parseConnector(TALLY.replace("base: http://192.168.1.20:9000\n", "mcp: { url: https://mcp.example.com/mcp }\n").replace(/operations:[\s\S]*/, ""));
+    expect(both.ok ? "" : both.problems.join()).toMatch(/runs from the server, not the box/);
   });
 });

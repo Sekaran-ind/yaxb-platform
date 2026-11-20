@@ -82,6 +82,19 @@ const MIGRATIONS = [
      data BLOB NOT NULL,
      created_at TEXT NOT NULL
    );`,
+  // Box connectors (CNX-4): installed by whoever runs the box, with their secrets kept here.
+  `CREATE TABLE connectors (
+     id TEXT PRIMARY KEY,
+     body TEXT NOT NULL,
+     installed_at TEXT NOT NULL
+   );
+   CREATE TABLE connector_secrets (
+     connector_id TEXT NOT NULL,
+     name TEXT NOT NULL,
+     value TEXT NOT NULL,
+     set_at TEXT NOT NULL,
+     PRIMARY KEY (connector_id, name)
+   );`,
 ];
 
 export function openDb(path) {
@@ -297,6 +310,20 @@ export function openDb(path) {
       for (const e of events) s.evPut.run(e.id, e.service, e.at, JSON.stringify(e));
     },
     eventsList: (service, since = '', limit = 10000) => s.evList.all(service, since, limit).map((r) => JSON.parse(r.body)),
+    /** Box connectors (CNX-4): installed ones, and their secrets (never sent anywhere but their own system). */
+    connectorPut: (c) => db.prepare('INSERT INTO connectors (id, body, installed_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET body = excluded.body, installed_at = excluded.installed_at').run(c.id, JSON.stringify(c), new Date().toISOString()),
+    connectorGet: (id) => {
+      const r = db.prepare('SELECT body FROM connectors WHERE id = ?').get(id);
+      return r ? JSON.parse(r.body) : null;
+    },
+    connectorList: () => db.prepare('SELECT body, installed_at FROM connectors ORDER BY id').all().map((r) => ({ ...JSON.parse(r.body), installed_at: r.installed_at })),
+    connectorRemove: (id) => {
+      db.prepare('DELETE FROM connector_secrets WHERE connector_id = ?').run(id);
+      return db.prepare('DELETE FROM connectors WHERE id = ?').run(id).changes > 0;
+    },
+    connectorSecretPut: (id, name, value) => db.prepare('INSERT INTO connector_secrets (connector_id, name, value, set_at) VALUES (?, ?, ?, ?) ON CONFLICT(connector_id, name) DO UPDATE SET value = excluded.value, set_at = excluded.set_at').run(id, name, value, new Date().toISOString()),
+    connectorSecrets: (id) => Object.fromEntries(db.prepare('SELECT name, value FROM connector_secrets WHERE connector_id = ?').all(id).map((r) => [r.name, r.value])),
+    connectorSecretNames: (id) => db.prepare('SELECT name, set_at FROM connector_secrets WHERE connector_id = ?').all(id),
     close: () => db.close(),
   };
 }

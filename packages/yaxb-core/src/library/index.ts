@@ -799,6 +799,8 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
         title: c.title,
         summary: c.summary ?? null,
         host: new URL(c.base).host,
+        /** CNX-4: "box": kiosks call it through the office box, never the server. */
+        where: c.where ?? "server",
         operations: c.operations.map((o) => ({ id: o.id, label: o.label ?? o.id, method: o.method, handler: `connector.${c.id}.${o.id}` })),
         secrets: connectorSecrets(c),
       }));

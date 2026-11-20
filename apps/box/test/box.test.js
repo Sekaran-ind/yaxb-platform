@@ -205,3 +205,55 @@ test('keeps a photo by its hash, and refuses one that doesn\'t match (MED-1)', a
   assert.equal((await fetch(`${base}/v1/media/${'1'.repeat(64)}`, { headers: { Authorization: `Bearer ${TOKEN}` } })).status, 404);
   assert.equal((await fetch(`${base}/v1/media/${hash}`)).status, 401, 'needs the token');
 });
+
+test('calls only installed connectors on the office network, with secrets kept on the box (CNX-4)', async () => {
+  const { createServer } = await import('node:http');
+  const { checkConnector, buildRequest } = await import('../src/connectors.js');
+  const seen = [];
+  const office = createServer((req, res) => {
+    let body = '';
+    req.on('data', (d) => (body += d));
+    req.on('end', () => {
+      seen.push({ url: req.url, auth: req.headers.authorization, type: req.headers['content-type'], body });
+      res.writeHead(200, { 'Content-Type': 'text/xml' });
+      res.end('<ENVELOPE><LEDGER>Cash</LEDGER></ENVELOPE>');
+    });
+  });
+  await new Promise((r) => office.listen(0, '127.0.0.1', r));
+  const port = office.address().port;
+  try {
+    // Not installed: refused, whatever the kiosk says.
+    assert.equal((await call('/v1/connectors/tally/ledgers', { method: 'POST', body: { input: {} } })).status, 404);
+    const c = checkConnector({
+      id: 'tally',
+      title: 'Tally',
+      base: `http://127.0.0.1:${port}`,
+      auth: { type: 'bearer', secret: 'TALLY_KEY' },
+      operations: [{ id: 'ledgers', method: 'POST', path: '/', format: 'xml', body: '<ENVELOPE><NAME>{{input.name}}</NAME></ENVELOPE>' }],
+    });
+    box.db.connectorPut(c);
+    // Its secret isn't set yet.
+    assert.equal((await call('/v1/connectors/tally/ledgers', { method: 'POST', body: { input: { name: 'x' } } })).status, 412);
+    box.db.connectorSecretPut('tally', 'TALLY_KEY', 'k1');
+    const r = await call('/v1/connectors/tally/ledgers', { method: 'POST', body: { input: { name: 'A & B <x>' } } });
+    assert.equal(r.status, 200);
+    const out = await r.json();
+    assert.equal(out.ok, true);
+    assert.equal(out.untrusted, true);
+    assert.match(String(out.data), /Cash/);
+    assert.equal(seen[0].auth, 'Bearer k1');
+    assert.match(seen[0].type, /text\/xml/);
+    // The input is escaped: it can't add elements of its own.
+    assert.equal(seen[0].body, '<ENVELOPE><NAME>A &amp; B &lt;x&gt;</NAME></ENVELOPE>');
+    // The listing shows secrets' names only.
+    const list = await (await call('/v1/connectors')).json();
+    assert.deepEqual(list.items[0].secrets, ['TALLY_KEY']);
+    assert.ok(!JSON.stringify(list).includes('k1'));
+    // A path can't leave the connector's address.
+    const r2 = buildRequest({ ...c, operations: [{ id: 'x', method: 'GET', path: '/{{input.p}}' }] }, 'x', { p: '/@evil.example.com' }, { TALLY_KEY: 'k' });
+    assert.equal(new URL(r2.url).host, `127.0.0.1:${port}`);
+    assert.throws(() => checkConnector({ id: 'bad', title: 'B', base: 'file:///etc/passwd', operations: [{ id: 'a', method: 'GET', path: '/' }] }), /http or https/);
+  } finally {
+    office.close();
+  }
+});

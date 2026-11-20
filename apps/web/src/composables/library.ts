@@ -36,7 +36,7 @@ export type CatalogueService = {
 export type Staffing = "ready" | "invited" | "nobody";
 type Viewer = { roles: string[]; member: boolean; admin: boolean; id?: string; name?: string };
 /** A published connector (CNX-2): what it does and the secrets it needs (never their values). */
-export type PublishedConnector = { entry_id: string; id: string; title: string; summary: string | null; host: string; operations: { id: string; label: string; method: string; handler: string }[]; secrets: string[] };
+export type PublishedConnector = { entry_id: string; id: string; title: string; summary: string | null; host: string; operations: { id: string; label: string; method: string; handler: string }[]; secrets: string[]; where?: "server" | "box" };
 /** A published routine set off by an event (RTN-1): kiosks forward the events it waits for. */
 export type RoutineTriggerRow = { entry_id: string; id: string; title: string; event: { service: string; kind: string; journey?: string; outcome?: string } };
 type Published = { roles: Role[]; services: CatalogueService[]; organisation?: Organisation | null; connectors?: PublishedConnector[]; routines?: RoutineTriggerRow[]; staffing?: Record<string, Staffing>; viewer?: Viewer };

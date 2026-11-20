@@ -52,7 +52,7 @@ import KioskFrame from "@/components/site/KioskFrame.vue";
 import { NATIVE } from "@/lib/platform";
 import { endSession, restricted, sessionEnds } from "@/composables/restricted";
 import { serviceDocuments } from "@/composables/notebook";
-import { loadedServices } from "@/composables/library";
+import { loadedServices, publishedConnectors } from "@/composables/library";
 import ProfilePicker from "@/components/account/ProfilePicker.vue";
 import SpacePicker from "@/components/account/SpacePicker.vue";
 import { JOURNEY_RESTART_MS, justOpened, useIdentity } from "@/composables/identity";
@@ -920,11 +920,15 @@ const builtInServices: Record<string, ServiceHandler> = {
  * adds the secret and calls the API; the browser never sees the secret. The answer is data from
  * outside, kept as the step's result for later screens (never instructions).
  */
-const connectorCall: ServiceHandler = async (input, { step, signal }) => {
-  const [, id, op] = String(step.service).split(".");
-  const res = await fetch(`/api/connectors/${encodeURIComponent(id ?? "")}/${encodeURIComponent(op ?? "")}`, {
+const connectorCall: ServiceHandler = async (input, { step, signal, guard }) => {
+  const [, id, op] = String(guard ? step.guard?.call : step.service).split(".");
+  const path = `/connectors/${encodeURIComponent(id ?? "")}/${encodeURIComponent(op ?? "")}`;
+  // A box connector (CNX-4) reaches the office network: only the office box calls it.
+  const onBox = publishedConnectors.value.find((c) => c.id === id)?.where === "box";
+  if (onBox && !(settings.box.url && settings.box.token)) throw new Error("This step needs the office box: connect it in Preferences → Storage.");
+  const res = await fetch(onBox ? `${settings.box.url.replace(/\/+$/, "")}/v1${path}` : `/api${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(onBox ? { Authorization: `Bearer ${settings.box.token}` } : {}) },
     body: JSON.stringify({ input: input ?? {} }),
     signal,
   });

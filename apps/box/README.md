@@ -76,6 +76,21 @@ Then, in the kiosk, go to **Settings → Storage → Local box**, enter `https:/
 
 Give the Pi a DHCP reservation in your router so its address doesn't change; the certificate names that address.
 
+## Office systems: box connectors (CNX-4)
+
+A connector marked `where: box` in the Service Catalogue reaches a system on the office network (Tally first, then printers and devices). Only the box calls it, and only once it is installed here by whoever runs the box:
+
+```bash
+# The file from the connector's "On the box" view in the catalogue
+yaxb-box connector add tally.connector.json
+# Its secret, if it has one: type the value, then Ctrl-D (never on the command line)
+yaxb-box connector secret tally TALLY_KEY
+yaxb-box connector list
+yaxb-box connector remove tally
+```
+
+Kiosks send the connector's steps to `POST /v1/connectors/<id>/<operation>` with the step's input; the box fills the request (an `xml` body for Tally, with the input escaped), adds the secret, and answers within 10 s (200 KB at most, no redirects). A kiosk can't name an address, only an installed connector and its operation. The secrets stay in the box's database and never reach the site or a browser.
+
 ## Run it on this computer (testing)
 
 ```bash
