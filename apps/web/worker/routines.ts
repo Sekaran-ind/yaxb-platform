@@ -34,7 +34,7 @@ import { dohResolver } from "@sekaran-ind/yaxb-core/web/pages";
 import type { LibraryEntry } from "@sekaran-ind/yaxb-core/library";
 import { currentEdition, db, dbFor, EDITIONS, withEdition } from "./edition";
 import { settings, type Bindings } from "./env";
-import { catalogue, connectorSecrets, currentTenant, serviceEvents, tenantContext } from "./kiosk";
+import { catalogue, connectorCalled, connectorSecrets, currentTenant, serviceEvents, tenantContext } from "./kiosk";
 
 const DAY = 86_400_000;
 /** At most this many routine runs from one batch of events. */
@@ -108,7 +108,15 @@ function liveHandlers(env: Bindings, ctx: RoutineContext, entry: LibraryEntry, r
       if (!found || !op || !found.connector.operations.some((o) => o.id === op)) throw new Error(`There's no published connector operation ${handler}.`);
       const secrets: Record<string, string> = {};
       for (const s of await connectorSecrets(env).list(tenant, found.connector.id)) secrets[s.name] = await unseal(settings(env).SESSION_SECRET, s.sealed);
-      return callConnector(found.connector, op, input, secrets, { resolve: dohResolver() });
+      const started = Date.now();
+      try {
+        const out = await callConnector(found.connector, op, input, secrets, { resolve: dohResolver() });
+        await connectorCalled(env, found.entry.id, op, out.ok, out.ms, runId);
+        return out;
+      } catch (e) {
+        await connectorCalled(env, found.entry.id, op, false, Date.now() - started, runId);
+        throw e;
+      }
     },
     async record(outcome) {
       await serviceEvents(env).add([{ id: crypto.randomUUID(), service: entry.id, journey: r.id, kind: "journey.outcome", step: null, role: null, run: runId, at: at.toISOString(), ms: null, ok: null, actor: null, outcome }]);

@@ -9,7 +9,11 @@ import { createModeratorService, statusOf, type ModeratorService } from "@sekara
 import { createReviewService, type ReviewService } from "@sekaran-ind/yaxb-core/reviews";
 import { createD1CaseStore, createD1ConnectorSecretStore, createD1EventStore, createD1FeedbackStore, createD1Relay, createD1DesignerStore, createD1Kv, createD1LibraryStore, createD1ModerationStore, createD1ModeratorStore, createD1ReviewStore, createD1ThreadStore } from "@sekaran-ind/yaxb-core/stores/d1";
 import { KvStore } from "@sekaran-ind/yaxb-core/stores/kv";
-import { stringEnv, type Bindings } from "./env";
+import { settings, stringEnv, type Bindings } from "./env";
+import { guardedFetch, mcpServerOfConnector } from "@sekaran-ind/yaxb-core/connectors";
+import { unseal } from "@sekaran-ind/yaxb-core/identity";
+import type { McpServer } from "@sekaran-ind/yaxb-core/mcp";
+import { dohResolver } from "@sekaran-ind/yaxb-core/web/pages";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { currentEdition, db, scoped } from "./edition";
 import { createD1SiteStore, createSiteService } from "@sekaran-ind/yaxb-core/sites";
@@ -97,6 +101,28 @@ export const sites = (env: Bindings) => createSiteService(createD1SiteStore(env.
 /** Connector secrets (CNX-3), sealed, per tenant, in the edition's D1. */
 export const connectorSecrets = (env: Bindings) => createD1ConnectorSecretStore(db(env));
 
+/**
+ * The business's own MCP servers (CNX-1): its published MCP connectors, each with its sealed secret
+ * added. One without its secret set is left out.
+ */
+export async function orgMcpServers(env: Bindings): Promise<McpServer[]> {
+  const lib = await catalogue(env);
+  const out: McpServer[] = [];
+  for (const { connector: c } of await lib.publishedConnectors()) {
+    if (!c.mcp) continue;
+    const secrets: Record<string, string> = {};
+    for (const r of await connectorSecrets(env).list(currentTenant(), c.id)) secrets[r.name] = await unseal(settings(env).SESSION_SECRET, r.sealed);
+    const server = mcpServerOfConnector(c, secrets);
+    if (server) out.push(server);
+  }
+  return out;
+}
+
+/** A connector's operation was called (CNX-8): facts only, on the server, whatever the services' storage. */
+export async function connectorCalled(env: Bindings, entryId: string, op: string, ok: boolean, ms: number, run = crypto.randomUUID()) {
+  await serviceEvents(env).add([{ id: crypto.randomUUID(), service: entryId, journey: op, kind: "connector.called", step: null, role: null, run, at: new Date().toISOString(), ms: Math.max(0, Math.round(ms)), ok, actor: null, outcome: null }]);
+}
+
 /** Services' events kept on the server (MET-2): the paid plan's storage. */
 export const serviceEvents = (env: Bindings) => createD1EventStore(db(env));
 
@@ -145,6 +171,9 @@ export function kiosk(env: Bindings): Kiosk {
       vector: env.VECTORIZE && env.AI ? createVectorizeRetriever({ index: env.VECTORIZE, ai: env.AI }) : undefined,
       // Slot filling for journeys from the Service Catalogue: their fields come from the published service.
       journeyFields: (journey, step) => catalogueFields(env, journey, step),
+      // The business's own MCP servers (CNX-1), reached through the SSRF guard.
+      orgMcp: () => orgMcpServers(env),
+      orgMcpFetch: guardedFetch(dohResolver()),
       // Workers Logs. No message content: it may contain health information.
       onError: (error, ctx) =>
         console.error(

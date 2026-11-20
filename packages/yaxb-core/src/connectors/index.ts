@@ -20,6 +20,17 @@
 //       path: "/values/Sheet1!A1:append"
 //       query: { valueInputOption: USER_ENTERED }
 //       body: { values: [["{{input.item}}", "{{input.count}}"]] }
+//
+// A business's own MCP server (CNX-1) is a connector too, with `mcp:` instead of base and operations:
+//
+//   kind: connector
+//   id: our-docs
+//   title: Our product docs
+//   mcp: { url: https://mcp.example.com/mcp, tools: [search_docs] }   tools: an optional allowlist
+//   auth: { type: bearer, secret: DOCS_TOKEN }                         bearer | header (name) | none
+//
+// Once published, the kiosk's agent may use its tools (Settings → MCP servers), like the
+// deployment's MCP_SERVERS; every request passes the SSRF guard.
 import { load } from "js-yaml";
 import { render } from "@sekaran-ind/yaxb-journeys/journeys";
 import { checkResolved, urlProblem, type Resolve } from "../web/pages.js";
@@ -35,12 +46,14 @@ export type Connector = {
   base: string;
   auth: { type: (typeof CONNECTOR_AUTH)[number]; secret?: string; name?: string };
   operations: ConnectorOperation[];
+  /** CNX-1: an MCP server (Streamable HTTP) instead of REST operations; `base` is its address. */
+  mcp?: { url: string; tools?: string[] };
 };
 
 const ID = /^[a-z][a-z0-9-]{0,47}$/;
 const SECRET = /^[A-Z][A-Z0-9_]{1,47}$/;
 const HEADER = /^[A-Za-z][A-Za-z0-9-]{0,63}$/;
-const KEYS = new Set(["kind", "id", "title", "summary", "base", "auth", "operations"]);
+const KEYS = new Set(["kind", "id", "title", "summary", "base", "auth", "operations", "mcp"]);
 const OP_KEYS = new Set(["id", "label", "method", "path", "query", "body"]);
 /** The longest answer kept from an API, and how long a call may take. */
 export const CONNECTOR_MAX_BYTES = 200_000;
@@ -65,6 +78,8 @@ export function compileConnector(doc: unknown): { ok: true; connector: Connector
   if (typeof d.id !== "string" || !ID.test(d.id)) problems.push("id is required (lower-case words joined by '-')");
   if (typeof d.title !== "string" || !d.title.trim()) problems.push("title is required");
   for (const k of Object.keys(d)) if (!KEYS.has(k)) problems.push(`unknown key '${k}'`);
+  const mcp = d.mcp as Record<string, unknown> | undefined;
+  if (mcp !== undefined) return compileMcpConnector(d, mcp, problems);
   if (typeof d.base !== "string") problems.push("base is required: the API's https address");
   else {
     let u: URL | null = null;
@@ -101,6 +116,64 @@ export function compileConnector(doc: unknown): { ok: true; connector: Connector
   }
   if (problems.length) return { ok: false, problems };
   return { ok: true, connector: { ...(d as unknown as Connector), auth: { type: (auth.type as Connector["auth"]["type"]) ?? "none", ...(auth.secret ? { secret: String(auth.secret) } : {}), ...(auth.name ? { name: String(auth.name) } : {}) } }, problems: [] };
+}
+
+const TOOL = /^[A-Za-z0-9_.-]{1,64}$/;
+/** CNX-1: a connector that is an MCP server. */
+function compileMcpConnector(d: Record<string, unknown>, mcp: Record<string, unknown>, problems: string[]): { ok: true; connector: Connector; problems: [] } | { ok: false; problems: string[] } {
+  if (d.base !== undefined || d.operations !== undefined) problems.push("an MCP connector has mcp, not base or operations");
+  if (!mcp || typeof mcp !== "object" || Array.isArray(mcp)) return { ok: false, problems: [...problems, "mcp is { url, tools }"] };
+  for (const k of Object.keys(mcp)) if (k !== "url" && k !== "tools") problems.push(`mcp: unknown key '${k}'`);
+  const url = typeof mcp.url === "string" ? mcp.url : "";
+  let u: URL | null = null;
+  try {
+    u = new URL(url);
+  } catch {
+    problems.push("mcp.url is the server's https address");
+  }
+  if (u && u.protocol !== "https:") problems.push("mcp.url must be an https address");
+  else if (u && urlProblem(url)) problems.push(`mcp.url: ${urlProblem(url)}`);
+  if (mcp.tools !== undefined && (!Array.isArray(mcp.tools) || !mcp.tools.length || !mcp.tools.every((t) => typeof t === "string" && TOOL.test(t)))) problems.push("mcp.tools lists the tool names the agent may use");
+  const auth = (d.auth ?? { type: "none" }) as Record<string, unknown>;
+  if (!["none", "bearer", "header"].includes(String(auth.type))) problems.push("auth.type for an MCP server is none, bearer or header");
+  if (auth.type !== "none" && (typeof auth.secret !== "string" || !SECRET.test(auth.secret))) problems.push("auth.secret is the secret's name (UPPER_CASE): its value is set by an administrator, never written here");
+  if (auth.type === "header" && (typeof auth.name !== "string" || !HEADER.test(auth.name))) problems.push("auth.name is the header the secret goes in");
+  if (problems.length) return { ok: false, problems };
+  const tools = Array.isArray(mcp.tools) ? (mcp.tools as string[]) : undefined;
+  return {
+    ok: true,
+    connector: {
+      kind: "connector",
+      id: String(d.id),
+      title: String(d.title),
+      ...(typeof d.summary === "string" ? { summary: d.summary } : {}),
+      base: url,
+      auth: { type: auth.type as Connector["auth"]["type"], ...(auth.secret ? { secret: String(auth.secret) } : {}), ...(auth.name ? { name: String(auth.name) } : {}) },
+      operations: [],
+      mcp: { url, ...(tools ? { tools } : {}) },
+    },
+    problems: [],
+  };
+}
+
+/** The MCP server a business's MCP connector is (CNX-1), with its secret in the header. Its id starts `org-`. */
+export function mcpServerOfConnector(c: Connector, secrets: Record<string, string>) {
+  if (!c.mcp) return null;
+  const secret = c.auth.secret ? secrets[c.auth.secret] : undefined;
+  if (c.auth.type !== "none" && !secret) return null;
+  const headers: Record<string, string> = c.auth.type === "bearer" ? { Authorization: `Bearer ${secret}` } : c.auth.type === "header" ? { [c.auth.name!]: secret! } : {};
+  return { id: `org-${c.id}`.slice(0, 32).replace(/-+$/, ""), label: c.title, ...(c.summary ? { description: c.summary.slice(0, 300) } : {}), url: c.mcp.url, headers, ...(c.mcp.tools ? { tools: c.mcp.tools } : {}) };
+}
+
+/** A fetch for a business's own servers: each request's address passes the SSRF guard first (SEC-4). */
+export function guardedFetch(resolve?: Resolve, fetchImpl: typeof fetch = (i, o) => fetch(i, o)): typeof fetch {
+  return (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const problem = urlProblem(url);
+    if (problem) throw new Error(problem);
+    await checkResolved(new URL(url).hostname, resolve);
+    return fetchImpl(input, { ...init, redirect: "error" });
+  }) as typeof fetch;
 }
 
 /** A connector from its YAML, or its problems. */

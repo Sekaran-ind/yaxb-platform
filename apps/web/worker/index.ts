@@ -14,6 +14,8 @@ import { callConnector, connectorSecrets as connectorSecretNames, ConnectorError
 import { seal as sealIdentity, unseal as unsealIdentity } from "@sekaran-ind/yaxb-core/identity";
 import { SITE_USES, SiteError, type SiteUse } from "@sekaran-ind/yaxb-core/sites";
 import { sites } from "./kiosk";
+import { connectorCalled, orgMcpServers } from "./kiosk";
+import { mcpServerInfo } from "@sekaran-ind/yaxb-core/mcp";
 import { cases, catalogue, currentTenant, designer, kiosk, library, moderators, relay, reviews, serviceEvents, tenantContext, tenantOfMember, tenants } from "./kiosk";
 import { DEFAULT_TENANT, SLUG, TenantError } from "@sekaran-ind/yaxb-core/tenants";
 import { offers, resolveContext, servesApi, SURFACE_HEADS } from "@sekaran-ind/yaxb-core/context";
@@ -403,7 +405,10 @@ app.get("/api/agent/:resource", async (c) => {
     case "capabilities": {
       // Where cases may be kept here (LIB-42..48): central storage only on the paid plan.
       const s = settings(c.env);
-      return c.json({ ...k.capabilities(), cases: { central: s.CASES_CENTRAL === "on", relay: s.CASES_RELAY === "on", relayHours: s.RELAY_HOURS } });
+      const caps = k.capabilities();
+      // The business's own MCP servers (CNX-1) join the deployment's; never their address's secrets.
+      const org = (await orgMcpServers(c.env).catch(() => [])).filter((sv) => !caps.mcp.some((m) => m.id === sv.id)).map(mcpServerInfo);
+      return c.json({ ...caps, mcp: [...caps.mcp, ...org], cases: { central: s.CASES_CENTRAL === "on", relay: s.CASES_RELAY === "on", relayHours: s.RELAY_HOURS } });
     }
     case "sources":
       return c.json({ sources: k.sources() });
@@ -1055,10 +1060,13 @@ app.post("/api/connectors/:id/:op", async (c) => {
   const input = body?.input && typeof body.input === "object" && !Array.isArray(body.input) ? (body.input as Record<string, unknown>) : {};
   const secrets: Record<string, string> = {};
   for (const r of await connectorSecrets(c.env).list(currentTenant(), found.connector.id)) secrets[r.name] = await unsealIdentity(sealKey(c), r.sealed);
+  const started = Date.now();
   try {
     const out = await callConnector(found.connector, c.req.param("op"), input, secrets, { resolve: dohResolver() });
+    c.executionCtx.waitUntil(connectorCalled(c.env, found.entry_id, c.req.param("op"), out.ok, out.ms).catch(() => undefined));
     return c.json(out);
   } catch (e) {
+    c.executionCtx.waitUntil(connectorCalled(c.env, found.entry_id, c.req.param("op"), false, Date.now() - started).catch(() => undefined));
     if (e instanceof ConnectorError) return jsonError(c, e.status, e.message);
     throw e;
   }

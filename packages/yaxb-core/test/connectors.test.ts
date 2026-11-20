@@ -1,7 +1,7 @@
 // Connectors (CNX-2..8): a REST API in YAML; requests built on the server with the secret; the SSRF
 // guard; answers as untrusted data.
 import { describe, expect, it } from "vitest";
-import { buildConnectorRequest, callConnector, connectorHandlers, connectorSecrets, parseConnector, parseConnectorHandler } from "../src/connectors/index.js";
+import { buildConnectorRequest, callConnector, connectorHandlers, connectorSecrets, parseConnector, parseConnectorHandler, mcpServerOfConnector, guardedFetch } from "../src/connectors/index.js";
 import { createD1ConnectorSecretStore } from "../src/stores/d1.js";
 import { sqliteD1 } from "./sqlite-d1.js";
 
@@ -98,5 +98,42 @@ journeys:
     expect(s.leavesDevice).toBe(true);
     expect(s.privacy).toMatch(/sent to stock sheet, an outside service/);
     expect(s.privacy).not.toMatch(/AI assistant/);
+  });
+});
+
+describe("a business's own MCP server (CNX-1)", () => {
+  const YAML = `kind: connector
+id: our-docs
+title: Our docs
+summary: The shop's product notes.
+mcp: { url: "https://mcp.example.com/mcp", tools: [search_docs] }
+auth: { type: bearer, secret: DOCS_TOKEN }
+`;
+  it("is a connector with mcp instead of operations, and becomes a server with its secret", () => {
+    const r = parseConnector(YAML);
+    if (!r.ok) throw new Error(r.problems.join());
+    expect(r.connector).toMatchObject({ base: "https://mcp.example.com/mcp", operations: [], mcp: { url: "https://mcp.example.com/mcp", tools: ["search_docs"] } });
+    expect(connectorHandlers(r.connector)).toEqual([]);
+    expect(connectorSecrets(r.connector)).toEqual(["DOCS_TOKEN"]);
+    expect(mcpServerOfConnector(r.connector, {})).toBeNull();
+    expect(mcpServerOfConnector(r.connector, { DOCS_TOKEN: "t" })).toEqual({ id: "org-our-docs", label: "Our docs", description: "The shop's product notes.", url: "https://mcp.example.com/mcp", headers: { Authorization: "Bearer t" }, tools: ["search_docs"] });
+  });
+  it("refuses plain http, private addresses, query auth and operations beside mcp", () => {
+    const bad = (y: string) => {
+      const r = parseConnector(y);
+      return r.ok ? "" : r.problems.join(" | ");
+    };
+    expect(bad(YAML.replace("https://mcp.example.com", "http://mcp.example.com"))).toMatch(/https/);
+    expect(bad(YAML.replace("https://mcp.example.com", "https://10.0.0.2"))).toMatch(/mcp.url/);
+    expect(bad(YAML.replace("type: bearer", "type: query, name: key"))).toMatch(/none, bearer or header/);
+    expect(bad(`${YAML}operations: []\n`)).toMatch(/not base or operations/);
+  });
+  it("guards every request: a private address is refused before it is fetched", async () => {
+    let fetched = 0;
+    const f = guardedFetch(async () => ["192.168.0.9"], (async () => (fetched++, new Response("{}"))) as unknown as typeof fetch);
+    await expect(f("https://inside.example.com/mcp", { method: "POST" })).rejects.toThrow();
+    expect(fetched).toBe(0);
+    const ok = guardedFetch(async () => ["93.184.216.34"], (async (_u: string, init: RequestInit) => (fetched++, new Response(init.redirect ?? ""))) as unknown as typeof fetch);
+    expect(await (await ok("https://mcp.example.com/mcp", { method: "POST" })).text()).toBe("error");
   });
 });
