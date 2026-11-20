@@ -26,6 +26,10 @@
 | PRV-4 | Features that send text off the device must say so where they are switched on: the AI agent (to the chosen provider), web search (to the search service), speech recognition (to the browser's maker). | Built (agent, web); Planned (speech, LNG-7) |
 | PRV-5 | A client-held conversation must be validated (no system messages, size limit) before the agent uses it. | Built |
 | PRV-6 | Everything a client sends that names knowledge (references, journey forms) must be resolved by the server from its own data. | Built |
+| PRV-7 | Server records are deleted 30 days after creation on every plan; only the paid plan keeps a service's records, for the period the service's design declares (one period per service). The backups keep deleted rows about 30 days longer, and the terms say so. | Planned |
+| PRV-8 | A service may declare one retention period for all the records it captures; the paid plan honours it and nothing is kept per field or field type. | Planned |
+| PRV-9 | The free plan allows 5 syncs from a device a year per account, counted on the server, and shows what is left. | Planned |
+| PRV-10 | The server verifies a case's signature, membership, schema and quota, and does not run or recompute a sender's checks; the recipient re-checks. End-to-end encryption is deferred. | Planned |
 
 ## Security
 

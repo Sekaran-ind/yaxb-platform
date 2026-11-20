@@ -82,6 +82,8 @@ Nothing on the device is ever removed today, and Anjal never asks the browser to
 
 ## Statutory retention
 
+**Decided 2026-11-20: the platform is not responsible for a business's audit or statutory duties.** On the free plan every record is deleted 30 days after creation; on the paid plan a service's records are kept for the one period its design declares, not per field. RET-1..7 below are the per-class design that decision replaces for now; RET-1 survives as a single period per service (not per field or case type) and RET-4 as the legal hold, RET-2, RET-3, RET-6 and RET-7 are dropped as platform duties (the designer shows the author a notice instead). See `docs/architecture/hardening.md`.
+
 | ID | Requirement | Status |
 |---|---|---|
 | RET-1 | Each service field, case type and connector export may be tagged with a record class (tax-invoice, payroll, attendance, consent, audit). The jurisdiction's realm pack gives each class its minimum period. | Planned |

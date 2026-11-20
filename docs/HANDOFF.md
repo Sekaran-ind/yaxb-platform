@@ -104,6 +104,10 @@ From the architecture review. Details in `docs/architecture/hardening.md`.
 - **TanStack Query** (`@tanstack/vue-query`, `lib/queries.ts`) now runs the Business links, Join links and Approved sites panels; other panels still load by hand and can move over one at a time.
 - **Still open from the review:** the free plan's 10 ms CPU limit (decide on Workers Paid), D1 size monitoring and a rule for moving a big business to its own database, retention (RET), (`worker/index.ts` is split into `worker/routes/`, 2026-11-20), the cron's sequential loop over businesses, `cases.list` expiring on read, and a per-tenant fingerprint cache for `published()`'s database reads.
 
+## Data lifetime and trust (decided 2026-11-20, not built)
+
+Local-first, relay-style (like WhatsApp), multi-business, moderated. Full text in `docs/architecture/hardening.md`. In short: all server records are deleted 30 days after creation; only the paid plan persists data, set per service (one `retain` period in the service design covers every record the service captures; the author is responsible for statutory duties; no per-field classes); free sync is 5 a year; a service and its configuration are managed as a whole in the same 30-day window (re-sync puts them back); E2E encryption waits (the envelope/payload split is groundwork for it and waits too); the sender's device may run checks but the recipient re-checks and the server verifies only signature, membership, schema and quota; no code execution on the server. Health is clinux's, so no special case. A lapsed paid plan has a 30-day read-only grace with an export; no day-23 reminder. Nothing open. Next to build: table classes plus the daily purge.
+
 ## Wave 2: where to start
 
 Each spec file ends with an "Order of work". Requirements still Planned or Partly built:
