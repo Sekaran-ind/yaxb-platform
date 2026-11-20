@@ -29,6 +29,7 @@ export const SERVICE_INFO: Record<string, ServiceInfo> = {
   "notebook.remember": { label: "your notebook's memory", where: "notebook" },
   "speech.speak": { label: "read-aloud", where: "device" },
   "identity.status": { label: "your account (who is signed in)", where: "account" },
+  "attendance.check": { label: "this business's roster (checking your PIN, on this device)", where: "device" },
   // Media (MED-6): read or transcribed on the device; nothing leaves it.
   "media.read": { label: "reading a photo on this device (its text, or a description)", where: "device" },
   "media.transcribe": { label: "writing down a voice note on this device", where: "device" },

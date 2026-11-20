@@ -20,6 +20,8 @@ export const JOURNEY_SERVICES = [
   "speech.speak",
   // Signing in and spaces (15-identity.md): the your-account journey.
   "identity.status",
+  // Attendance (ATT-1): a check-in against this business's roster, on the device.
+  "attendance.check",
   // Media (MED-6): read a photo, transcribe a voice note, on the device.
   "media.read",
   "media.transcribe",

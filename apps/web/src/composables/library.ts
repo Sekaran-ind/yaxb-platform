@@ -8,6 +8,7 @@ import { trackWrite } from "@/lib/browser/sync-hook";
 import { compileBundle, DEFAULT_ROLES, journeyRolesNeeded, MANAGER_OF_REQUESTER, roleLabel, type Journey, type Organisation, type Role, type RunActor, type Service } from "@sekaran-ind/yaxb-journeys";
 import { HOUSEHOLD_ENTRY, HOUSEHOLD_ROLE_LABELS, householdJourneys } from "@sekaran-ind/yaxb-core/household";
 import { useHousehold } from "@/composables/household";
+import { applyRoster, ATTENDANCE_ID } from "@/composables/attendance";
 import { accountLevel } from "@/composables/identity";
 import { offers } from "@/lib/surface";
 import { computed, ref, shallowRef } from "vue";
@@ -96,6 +97,7 @@ export const loadLibraryContent = loadCatalogue;
 /** Service data on the box (sync v2): which catalogue services this business's kiosks have loaded. */
 export const SERVICE_DATA_ID = "kiosk-services";
 export function applyServiceData(id: string, data: unknown | null) {
+  if (id === ATTENDANCE_ID) return applyRoster(data);
   if (id !== SERVICE_DATA_ID) return;
   const list = data && typeof data === "object" && Array.isArray((data as { loaded?: unknown }).loaded) ? ((data as { loaded: unknown[] }).loaded.filter((x) => typeof x === "string") as string[]) : [];
   loadedIds.value = list;
