@@ -53,17 +53,31 @@ export function sameText(a: string, b: string): boolean {
 
 // ---- sealing private keys --------------------------------------------------------------------------
 
-async function sealKey(secret: string) {
+/**
+ * Sealing keys are derived from a secret with HKDF, one per purpose, so a value sealed for one thing
+ * (a connector's password) can't be opened as another (a signing key). `purpose` absent is the
+ * original single key, which values sealed before purposes existed still use.
+ */
+async function sealKey(secret: string, purpose?: string) {
   const base = await crypto.subtle.importKey("raw", enc.encode(secret), "HKDF", false, ["deriveKey"]);
-  return crypto.subtle.deriveKey({ name: "HKDF", hash: "SHA-256", salt: enc.encode("anjal-identity"), info: enc.encode("signing-key-seal") }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+  return crypto.subtle.deriveKey({ name: "HKDF", hash: "SHA-256", salt: enc.encode("anjal-identity"), info: enc.encode(purpose ? `seal:${purpose}` : "signing-key-seal") }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
 }
-export async function seal(secret: string, text: string): Promise<string> {
+const PURPOSE = /^[a-z][a-z-]{1,30}$/;
+/** Seal `text` for one purpose: `v2.<purpose>.<iv>.<ciphertext>`. */
+export async function seal(secret: string, text: string, purpose = "signing-key"): Promise<string> {
+  if (!PURPOSE.test(purpose)) throw new Error("A sealing purpose is lower-case words.");
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await sealKey(secret), enc.encode(text)));
-  return `${b64url(iv)}.${b64url(ct)}`;
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: enc.encode(purpose) }, await sealKey(secret, purpose), enc.encode(text)));
+  return `v2.${purpose}.${b64url(iv)}.${b64url(ct)}`;
 }
-export async function unseal(secret: string, sealed: string): Promise<string> {
-  const [iv, ct] = sealed.split(".");
+/** Open a sealed value (current or original format); with `purpose`, only one sealed for it. */
+export async function unseal(secret: string, sealed: string, purpose?: string): Promise<string> {
+  const parts = sealed.split(".");
+  if (parts[0] === "v2" && parts.length === 4) {
+    if (purpose && parts[1] !== purpose) throw new Error("This was sealed for something else.");
+    return dec.decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64url(parts[2]!), additionalData: enc.encode(parts[1]!) }, await sealKey(secret, parts[1]), fromB64url(parts[3]!)));
+  }
+  const [iv, ct] = parts;
   return dec.decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64url(iv!) }, await sealKey(secret), fromB64url(ct!)));
 }
 

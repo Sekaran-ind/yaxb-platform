@@ -9,7 +9,7 @@
 import { compileBundle, parseDocument, serviceDates } from "@sekaran-ind/yaxb-journeys";
 import { JOURNEY_SERVICES } from "@sekaran-ind/yaxb-core/content";
 import { callConnector } from "@sekaran-ind/yaxb-core/connectors";
-import { unseal } from "@sekaran-ind/yaxb-core/identity";
+import { unsealConnectorSecret } from "./secrets";
 import { serviceMetrics, type ServiceEvent } from "@sekaran-ind/yaxb-core/metrics";
 import {
   FAMILY_APPROVER,
@@ -107,7 +107,7 @@ function liveHandlers(env: Bindings, ctx: RoutineContext, entry: LibraryEntry, r
       const found = ctx.connectors.find((c) => c.connector.id === id);
       if (!found || !op || !found.connector.operations.some((o) => o.id === op)) throw new Error(`There's no published connector operation ${handler}.`);
       const secrets: Record<string, string> = {};
-      for (const s of await connectorSecrets(env).list(tenant, found.connector.id)) secrets[s.name] = await unseal(settings(env).SESSION_SECRET, s.sealed);
+      for (const s of await connectorSecrets(env).list(tenant, found.connector.id)) secrets[s.name] = await unsealConnectorSecret(env, s.sealed);
       const started = Date.now();
       try {
         const out = await callConnector(found.connector, op, input, secrets, { resolve: dohResolver() });

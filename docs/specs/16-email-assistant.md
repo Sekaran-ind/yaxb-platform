@@ -4,6 +4,8 @@ A person adds `review@anjalai.cc` to an email as Cc or Bcc, or forwards a thread
 
 Each email opens a case of a built-in **Email review** service, so it can be handed between roles: a receptionist can pass a draft to the doctor, or a staff member to the owner. The cloud holds the email only in transit. The lasting record lives on the tenant's box, or on its devices when it has no box.
 
+**Wave 3 (decided 2026-11-20):** the email assistant moves from Wave 2 to Wave 3. It reads untrusted email into a model that can send as a person, so it waits for the foundations (retention, storage, audit) and for Google's `gmail.send` verification (EML-4, 2 to 6 weeks), which can be started earlier.
+
 Source: *Anjal Email Assistant: Review & Draft Spec* (2026-11-18), reviewed that day. The changes from that review are below; the IDs keep the doc's own FR and NFR numbers as `EML-` and `EMN-`.
 
 **Changes from the design doc:**
