@@ -88,6 +88,9 @@ export type ModeratorProfile = {
 
 export const AUDIT_ACTIONS = {
   "audit.viewed": "Audit log viewed",
+  "link.created": "Business link asked for",
+  "link.consent_changed": "Business link's consent changed",
+  "link.ended": "Business link ended",
   "audit.exported": "Audit log exported",
   "admin.signed_in": "Administrator signed in",
   "moderator.signed_in": "Moderator signed in",

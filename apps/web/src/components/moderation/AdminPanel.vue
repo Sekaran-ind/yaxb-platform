@@ -16,6 +16,8 @@ import JoinLinks from "./JoinLinks.vue";
 import SignInRules from "./SignInRules.vue";
 import CompanySignIn from "./CompanySignIn.vue";
 import ApprovedSites from "./ApprovedSites.vue";
+import BusinessLinks from "./BusinessLinks.vue";
+import { offers } from "@/lib/surface";
 import { cn } from "@/lib/cn";
 
 type Row = Moderator & { status: ModeratorStatus };
@@ -249,6 +251,7 @@ onMounted(load);
       <SignInRules />
       <CompanySignIn :roles="roleOptions" />
       <ApprovedSites />
+      <BusinessLinks v-if="offers('requests')" />
 
       <section class="card p-5">
         <h3 class="font-semibold text-ink">Audit log</h3>

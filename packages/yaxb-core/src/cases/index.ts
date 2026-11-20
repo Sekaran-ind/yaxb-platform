@@ -22,9 +22,17 @@
 // version of the used journey is pinned when the parent starts (`links.pins`). When the child is
 // closed, how it ended goes into the parent's run (steps.<screen>) and the parent carries on; a
 // `timeout` past its `due_at` puts `timed_out` there instead, which leads to the screen's fallback.
+//
+// Between businesses (DEP-2): `uses: { business, service, journey, as }` names a linked business.
+// The requester's case service asks the `partner` port whether an active link offers that journey,
+// shapes the `with:` values as a schema.org Order or Invoice (nothing else crosses), and the
+// provider's own case service starts the request in its own list (`startForPartner`), checking the
+// link again and using its own current version of the journey. Only how it ended (title, text,
+// outcome) goes back (`resumeFromPartner`).
 import { ASSURANCE_LEVELS, canInitiate, levelNeeded, mayAnswer, replay, type Journey, type RunActor, type RunSnapshot, type UsesResult } from "@sekaran-ind/yaxb-journeys/journeys";
 import { render } from "@sekaran-ind/yaxb-journeys/journeys";
 import { resolveForRequester, type Organisation } from "@sekaran-ind/yaxb-journeys";
+import { shapeInputs, shapeProblems, type LinkShape } from "../links/index.js";
 import { z } from "zod";
 
 export type CaseStatus = "waiting" | "to_finish" | "done" | "declined";
@@ -80,7 +88,16 @@ export type Case = {
 };
 
 /** One end of a dependency (DEP-1). */
-export type CaseLink = { id: string; ref: string; step: string; service_title: string; journey_title: string };
+export type CaseLink = {
+  id: string;
+  ref: string;
+  step: string;
+  service_title: string;
+  journey_title: string;
+  /** DEP-2: the other business (its tenant id) when this link crosses a business link; absent within one. */
+  business?: string;
+  business_name?: string;
+};
 export type CaseLinks = {
   /** This case was started for that case's screen. */
   parent?: CaseLink | null;
@@ -138,6 +155,27 @@ export const caseFinishSchema = z.object({ decision: z.enum(["done", "declined"]
 /** The published journey a case runs, and the service it belongs to. */
 export type CaseJourney = { journey: Journey; entry_id: string; service_id: string; service_title: string; revision: number | null };
 
+/** What a request for another business carries: only the shaped values and where to report back. */
+export type PartnerStart = {
+  requester: string;
+  requester_name: string;
+  service: string;
+  journey: string;
+  as: LinkShape;
+  inputs: Record<string, unknown>;
+  parent: { id: string; ref: string; step: string; service_title: string; journey_title: string };
+};
+export type PartnerPort = {
+  /** Requester side: does an active link offer this journey of the business (by short name or id)? */
+  allows(business: string, service: string, journey: string): Promise<{ id: string; name: string; as: LinkShape } | null>;
+  /** Requester side: start the request in the provider's own list (the Worker adds who is asking). */
+  start(provider: string, input: Omit<PartnerStart, "requester" | "requester_name">): Promise<{ ref: string; service_title: string; journey_title: string }>;
+  /** Provider side: does an active link let that requester use this journey (and in which shape)? */
+  offered(requester: string, service: string, journey: string): Promise<LinkShape | null>;
+  /** Provider side: a request started for a partner has closed; tell the requester's service. */
+  closed(requester: string, input: { parent: string; ref: string; status: "done" | "declined"; result: Case["result"] }): Promise<void>;
+};
+
 export type CaseOptions = {
   /** Finds a published catalogue journey (null when there is none, or it isn't published). */
   journeyFor(entry: string, journey: string): Promise<CaseJourney | null>;
@@ -156,6 +194,11 @@ export type CaseOptions = {
   /** DEP-1: a published service's journey by the service's own id (what `uses:` names). */
   journeyForService?(service: string, journey: string): Promise<CaseJourney | null>;
   /** DEP-5: a dependency started, timed out (and went to its fallback), or ended. */
+  /**
+   * DEP-2: the link between this business and another, as the Worker keeps it. Absent: no business
+   * links (a `uses.business` step then can't start).
+   */
+  partner?: PartnerPort;
   onDependency?: (kind: "dependency.started" | "dependency.timed_out" | "dependency.fallback" | "dependency.ended", parent: Case, child: Case | null) => Promise<void> | void;
 };
 
@@ -240,6 +283,10 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
     const pins: Record<string, CaseJourney> = {};
     for (const [sid, st] of Object.entries(journey.steps)) {
       if (!st.uses) continue;
+      if (st.uses.business) {
+        if (!(await options.partner?.allows(st.uses.business, st.uses.service, st.uses.journey))) throw new CaseError(`This journey needs "${st.uses.service}" from "${st.uses.business}", which has no active link offering it.`, 422);
+        continue;
+      }
       const found = options.journeyForService ? await options.journeyForService(st.uses.service, st.uses.journey) : null;
       if (!found) throw new CaseError(`This journey needs "${st.uses.service}" (${st.uses.journey}), which isn't published.`, 422);
       pins[sid] = found;
@@ -251,10 +298,11 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
    * DEP-1: start the request a waiting screen needs, as a case of its own with only the screen's
    * `with:` values. Returns the parent, now linked to it, and the child; null when nothing to start.
    */
-  async function depend(parent: Case, device: string | null): Promise<{ parent: Case; child: Case } | null> {
+  async function depend(parent: Case, device: string | null): Promise<{ parent: Case; child: Case | null } | null> {
     const uses = usesAt(parent);
     if (!uses || parent.links?.child) return null;
     const step = parent.waiting_step!;
+    if (uses.business) return dependOnPartner(parent, uses, step);
     const pin = parent.links?.pins?.[step] ?? (await pinsFor({ ...parent.journey, steps: { [step]: parent.journey.steps[step]! } }))[step]!;
     const inputs = (render(parent.journey.steps[step]!.with ?? {}, { answers: parent.run.answers, steps: parent.run.steps, context: contextOf(parent) }) ?? {}) as Record<string, unknown>;
     const r = await replay(pin.journey, { answers: {}, steps: {} }, { uses: inputs });
@@ -300,6 +348,31 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
     return { parent: linked, child };
   }
 
+  /** DEP-2: the request is for a linked business: shape the values, start it in its list, and wait. */
+  async function dependOnPartner(parent: Case, uses: NonNullable<ReturnType<typeof usesAt>>, step: string): Promise<{ parent: Case; child: null }> {
+    const port = options.partner;
+    const ok = port ? await port.allows(uses.business!, uses.service, uses.journey) : null;
+    if (!port || !ok) throw new CaseError(`"${uses.business}" has no active link offering "${uses.service}" (${uses.journey}).`, 422);
+    const values = (render(parent.journey.steps[step]!.with ?? {}, { answers: parent.run.answers, steps: parent.run.steps, context: contextOf(parent) }) ?? {}) as Record<string, unknown>;
+    const bad = shapeProblems(ok.as, Object.keys(values));
+    if (bad.length) throw new CaseError(bad[0]!, 422);
+    const made = await port.start(ok.id, {
+      service: uses.service,
+      journey: uses.journey,
+      as: ok.as,
+      inputs: shapeInputs(ok.as, values),
+      parent: { id: parent.id, ref: parent.ref, step, service_title: parent.service_title, journey_title: parent.journey_title },
+    });
+    const t = now();
+    const due = uses.timeout ? new Date(Date.parse(t) + uses.timeout * 3_600_000).toISOString() : null;
+    const linked: Case = { ...parent, updated_at: t, links: { ...parent.links, child: { id: `${ok.id}:${made.ref}`, ref: made.ref, step, service_title: made.service_title, journey_title: made.journey_title, due_at: due, business: ok.id, business_name: ok.name } } };
+    await store.put(linked);
+    const sys = SYSTEM_CASE_ACTOR(parent);
+    await event(linked, sys, "dependency", step, `Waiting for ${ok.name}: ${made.service_title} ${made.ref}`);
+    await options.onDependency?.("dependency.started", linked, null);
+    return { parent: linked, child: null };
+  }
+
   /**
    * DEP-1, DEP-3: a parent's dependency ended (closed, or past its time): how it ended goes into the
    * parent's run at that screen, and the parent carries on (and may start its next dependency).
@@ -321,13 +394,22 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
       if (next.journey.steps[step]?.uses?.fallback) await options.onDependency?.("dependency.fallback", next, child);
     } else await options.onDependency?.("dependency.ended", next, child);
     const more = await depend(next, device);
-    return more ? { parent: more.parent, spawned: [more.child] } : { parent: next, spawned: [] };
+    return more ? { parent: more.parent, spawned: more.child ? [more.child] : [] } : { parent: next, spawned: [] };
   }
 
   /** A closed child: resume its parent if the parent still waits for it (and is kept here). */
   async function childClosed(child: Case, device: string | null): Promise<{ parent: Case; spawned: Case[] } | null> {
     const link = child.links?.parent;
     if (!link || (child.status !== "done" && child.status !== "declined")) return null;
+    // DEP-2: the request was started for another business: tell its case service how this ended.
+    if (link.business) {
+      try {
+        await options.partner?.closed(link.business, { parent: link.id, ref: child.ref, status: child.status, result: child.result });
+      } catch {
+        await event(child, SYSTEM_CASE_ACTOR({ id: link.id, service_title: child.started_by_name }), "note", null, `${link.business_name ?? "The other business"} couldn't be told yet: it stops waiting when its time is up.`);
+      }
+      return null;
+    }
     const parent = await store.get(link.id);
     if (!parent || parent.links?.child?.id !== child.id) return null;
     return resume(parent, { case: child.ref, status: child.status, result: child.result }, child, device);
@@ -405,7 +487,7 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
       await store.put(c);
       await event(c, a, "started", null, r.answered.map((s) => journey.steps[s]?.label ?? s).join(", ") || null);
       const dep = await depend(c, a.device ?? null);
-      return { case: summaryOf(dep?.parent ?? c), spawned: dep ? [dep.child] : [] };
+      return { case: summaryOf(dep?.parent ?? c), spawned: dep?.child ? [dep.child] : [] };
     },
 
     /** Answer the screens that are this person's turn, from where the case stopped. */
@@ -446,7 +528,7 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
       // It now waits for another service (DEP-1), or, as a dependency, it ended with nobody to close it.
       const dep = await depend(next, actor.device ?? null);
       const back = at.status === "done" ? await childClosed(next, actor.device ?? null) : null;
-      return { case: summaryOf(dep?.parent ?? next), spawned: [...(dep ? [dep.child] : []), ...(back?.spawned ?? [])], resumed: back ? summaryOf(back.parent) : null };
+      return { case: summaryOf(dep?.parent ?? next), spawned: [...(dep?.child ? [dep.child] : []), ...(back?.spawned ?? [])], resumed: back ? summaryOf(back.parent) : null };
     },
 
     /**
@@ -497,6 +579,68 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
       // A dependency closed (DEP-1): the case that needed it carries on.
       const back = await childClosed(next, actor.device ?? null);
       return { case: summaryOf(next), resumed: back ? summaryOf(back.parent) : null, spawned: back?.spawned ?? [] };
+    },
+
+    /**
+     * DEP-2, the provider's side: another business's request for one of this business's services. It
+     * checks the link again, takes only the shaped values, and starts the request as a case of its
+     * own, in this business's list, on this business's current version of the journey.
+     */
+    async startForPartner(input: PartnerStart): Promise<{ ref: string; service_title: string; journey_title: string }> {
+      const port = options.partner;
+      const as = port ? await port.offered(input.requester, input.service, input.journey) : null;
+      if (!as || as !== input.as) throw new CaseError("There is no active link that lets that business use this service.", 403);
+      const bad = shapeProblems(as, Object.keys(input.inputs).filter((k) => !k.startsWith("@")));
+      if (bad.length) throw new CaseError(bad[0]!, 422);
+      const pin = options.journeyForService ? await options.journeyForService(input.service, input.journey) : null;
+      if (!pin) throw new CaseError(`"${input.service}" isn't published.`, 422);
+      const r = await replay(pin.journey, { answers: {}, steps: {} }, { uses: input.inputs });
+      if (!r.ok) throw new CaseError(r.problems[0] ?? "The service can't start.", 422);
+      const at = position(pin.journey, r);
+      if (at.status === "waiting" && at.waiting_role === null) throw new CaseError(`"${pin.service_title}" starts with the requester's own screens, so another business can't use it.`, 422);
+      const t = now();
+      let ref = newRef();
+      for (let i = 0; i < 5 && (await store.byRef(ref)); i++) ref = newRef();
+      const sys: CaseActor = { id: `business:${input.requester}`, name: input.requester_name, roles: [], admin: false };
+      const child: Case = {
+        id: id(),
+        ref,
+        entry_id: pin.entry_id,
+        service_id: pin.service_id,
+        service_title: pin.service_title,
+        journey_id: pin.journey.id,
+        journey_title: pin.journey.title,
+        revision: pin.revision,
+        ...at,
+        finish_roles: (pin.journey.roles?.complete ?? []).filter((x) => x !== "visitor"),
+        roles: rolesOf(pin.journey),
+        started_by: sys.id,
+        started_by_name: input.requester_name,
+        starter_device: null,
+        assignee: null,
+        assignee_name: null,
+        created_at: t,
+        updated_at: t,
+        closed_at: null,
+        run: { current: r.state.current, answers: {}, steps: {}, trail: r.state.trail },
+        journey: pin.journey,
+        links: { parent: { ...input.parent, business: input.requester, business_name: input.requester_name }, inputs: input.inputs },
+      };
+      await store.put(child);
+      await event(child, sys, "started", null, `For ${input.requester_name}`);
+      return { ref, service_title: pin.service_title, journey_title: pin.journey.title };
+    },
+
+    /**
+     * DEP-2, the requester's side: the request it waits for at another business has closed. Only the
+     * case waiting for exactly that request (and that business) carries on.
+     */
+    async resumeFromPartner(input: { provider: string; parent: string; ref: string; status: "done" | "declined"; result: Case["result"] }): Promise<{ case: CaseSummary } | null> {
+      const parent = await store.get(input.parent);
+      const waiting = parent?.links?.child;
+      if (!parent || !waiting || waiting.ref !== input.ref || waiting.business !== input.provider) return null;
+      const r = await resume(parent, { case: input.ref, status: input.status, result: input.result }, null, null);
+      return { case: summaryOf(r.parent) };
     },
 
     /**

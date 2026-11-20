@@ -63,6 +63,10 @@ Decided 2026-11-19, built in the PR "One address for every edition" (SUR-14). On
 
 **Locally:** `node yaxb.mjs start`, then http://localhost:3000 (the portal) and http://family.localhost:3000, http://business.localhost:3000, http://community.localhost:3000. Each local address is its own passkey relying party and has its own cookies, so sign in on each.
 
+## Business links (DEP-2, 4, 5): built 2026-11-20, not deployed
+
+One business can use another's service as a step (`uses: { business, service, journey, as }`) under a link the provider accepts (Administration → Business links). **Migration 0022** (edition databases) adds `business_links` and `cases.tenant_id`: cases are now per business, and every case that exists is assigned to the `default` business. A non-default business's earlier central cases (rare: central cases need the paid plan) would no longer show for it; check before deploying. Open: a dependency loop that passes through a business isn't detected; the designer agent doesn't draft `uses:` steps.
+
 ## Wave 2: what is left (on the other laptop)
 
 - **Identity, the rest of step 1:**

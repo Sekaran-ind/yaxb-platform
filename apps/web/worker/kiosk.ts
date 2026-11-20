@@ -1,11 +1,12 @@
 import { createKiosk, type Kiosk } from "@sekaran-ind/yaxb-core/agent";
 import { JOURNEY_SERVICES, kioskContent } from "@sekaran-ind/yaxb-core/content";
 import { compileBundle } from "@sekaran-ind/yaxb-journeys/bundle";
-import { createCaseService, type CaseService } from "@sekaran-ind/yaxb-core/cases";
+import { createCaseService, type CaseService, type PartnerPort } from "@sekaran-ind/yaxb-core/cases";
+import { createD1LinkStore, createLinkService, type LinkService } from "@sekaran-ind/yaxb-core/links";
 import { createDesignerService, type DesignerService } from "@sekaran-ind/yaxb-core/designer";
 import { createLibraryService, type LibraryService } from "@sekaran-ind/yaxb-core/library";
 import { createVectorizeRetriever } from "@sekaran-ind/yaxb-core/knowledge";
-import { createModeratorService, statusOf, type ModeratorService } from "@sekaran-ind/yaxb-core/moderators";
+import { auditEvent, createModeratorService, statusOf, type ModeratorService } from "@sekaran-ind/yaxb-core/moderators";
 import { createReviewService, type ReviewService } from "@sekaran-ind/yaxb-core/reviews";
 import { createD1CaseStore, createD1ConnectorSecretStore, createD1EventStore, createD1FeedbackStore, createD1Relay, createD1DesignerStore, createD1Kv, createD1LibraryStore, createD1ModerationStore, createD1ModeratorStore, createD1ReviewStore, createD1ThreadStore } from "@sekaran-ind/yaxb-core/stores/d1";
 import { KvStore } from "@sekaran-ind/yaxb-core/stores/kv";
@@ -35,6 +36,7 @@ const libraryServices = new WeakMap<object, Map<string, LibraryService>>();
 const tenantServices = new WeakMap<object, Map<string, TenantService>>();
 const designerServices = new WeakMap<object, Map<string, DesignerService>>();
 const caseServices = new WeakMap<object, Map<string, CaseService>>();
+const linkServices = new WeakMap<object, Map<string, LinkService>>();
 const seeded = new WeakMap<object, Map<string, Promise<unknown>>>();
 
 /**
@@ -72,6 +74,11 @@ export function library(env: Bindings, tenant = currentTenant()): LibraryService
       onReviewed: (entry, decision, note, reviewer) => designer(env).learn(entry, decision, note, reviewer.name),
       // Who is staffed, for the organisation's check (ORG-5): active members' roles only.
       memberRoles: async () => (await moderators(env, tenant).store.list()).filter((m) => statusOf(m) === "active").map((m) => [...m.roles]),
+      // DEP-2, DEP-4: a service that uses another business needs an active link that offers it.
+      businessOffer: async (business, service, journey) => {
+        const o = await links(env).offerFor(tenant, business, service, journey);
+        return o ? { as: o.offer.accepts } : null;
+      },
     });
   }, tenant);
 }
@@ -81,8 +88,11 @@ export function library(env: Bindings, tenant = currentTenant()): LibraryService
  * the published catalogue, kept with the case as it was then.
  */
 export function cases(env: Bindings): CaseService {
+  // Each business has its own list of cases (a partner's request is in the partner's list only).
+  const tenant = currentTenant();
   return scoped(caseServices, env, () =>
-    createCaseService(createD1CaseStore(db(env)), {
+    createCaseService(createD1CaseStore(db(env), { tenant }), {
+      partner: partnerPort(env, tenant),
       async journeyFor(entry, journey) {
         const { services } = await (await catalogue(env)).published([], { all: true });
         const s = services.find((x) => x.entry_id === entry);
@@ -106,7 +116,55 @@ export function cases(env: Bindings): CaseService {
         await serviceEvents(env).add([{ id: crypto.randomUUID(), service: parent.entry_id, journey: parent.journey_id, kind, step: parent.links?.child?.step ?? parent.waiting_step, role: null, run: parent.id, at: new Date().toISOString(), ms: null, ok: kind === "dependency.started" ? null : false, actor: null, outcome: null }]);
       },
     }),
+  tenant);
+}
+
+/**
+ * Business links (DEP-2, DEP-4, DEP-5), in the edition's database: both businesses are tenants of
+ * it. Each side's audit log records the link's creation, consent changes and end.
+ */
+export function links(env: Bindings): LinkService {
+  return scoped(linkServices, env, () =>
+    createLinkService(createD1LinkStore(db(env)), {
+      tenant: async (key) => {
+        const t = await tenants(env).tenant(key);
+        return t ? { id: t.id, slug: t.slug, name: t.name, status: t.status } : null;
+      },
+      // An offer names a journey the provider has published.
+      published: async (tenant, service, journey) => {
+        const { services } = await library(env, tenant).published([], { all: true });
+        const s = services.find((x) => x.id === service);
+        return Boolean(s && compileBundle(s.yaml, { services: JOURNEY_SERVICES }).journeys.some((j) => j.id === journey));
+      },
+      audit: (tenant, action, link, actor, details) => moderators(env, tenant).store.audit(auditEvent({ actor_type: "moderator", actor_id: null, actor_name: actor.name, action, target_id: link.id, details })),
+    }),
   );
+}
+
+/**
+ * What a request for another business needs from the Worker (DEP-2): the link (checked on each side),
+ * and the other business's own case service, run as that business so its catalogue, members and list
+ * are its own. Only the shaped values go over, and only how it ended comes back.
+ */
+function partnerPort(env: Bindings, me: string): PartnerPort {
+  const as = <T>(tenant: string, fn: () => Promise<T>) => tenantContext.run(tenant, fn);
+  return {
+    async allows(business, service, journey) {
+      const o = await links(env).offerFor(me, business, service, journey);
+      return o ? { id: o.link.provider, name: o.link.provider_name, as: o.offer.accepts } : null;
+    },
+    async start(provider, input) {
+      const name = (await tenants(env).tenant(me))?.name ?? me;
+      return as(provider, () => cases(env).startForPartner({ ...input, requester: me, requester_name: name }));
+    },
+    async offered(requester, service, journey) {
+      const l = (await links(env).list(me)).find((x) => x.status === "active" && x.requester === requester && x.provider === me);
+      return l?.offers.find((o) => o.service === service && o.journey === journey)?.accepts ?? null;
+    },
+    async closed(requester, input) {
+      await as(requester, () => cases(env).resumeFromPartner({ provider: me, ...input }));
+    },
+  };
 }
 
 /** Approved sites (SIT-1..6), in the platform database: one list for every edition. */

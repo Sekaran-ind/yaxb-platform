@@ -460,7 +460,8 @@ export function createD1DesignerStore(db: D1Like): DesignerStore {
 }
 
 /** Cases and their threads (migration 0009). */
-export function createD1CaseStore(db: D1Like): CaseStore {
+/** Cases in D1; each business (tenant) has its own list, so a partner's request never shows in another's (migration 0022). */
+export function createD1CaseStore(db: D1Like, { tenant = "default" }: { tenant?: string } = {}): CaseStore {
   const SUMMARY =
     "id, ref, entry_id, service_id, service_title, journey_id, journey_title, revision, status, waiting_step, waiting_role, finish_roles, roles, started_by, started_by_name, created_at, updated_at, closed_at, result, starter_device, assignee, assignee_name, links";
   type Row = Omit<Case, "finish_roles" | "roles" | "result" | "run" | "journey" | "links"> & { finish_roles: string; roles: string; result: string | null; run?: string; journey?: string; links: string | null };
@@ -479,7 +480,7 @@ export function createD1CaseStore(db: D1Like): CaseStore {
     async put(c) {
       await db
         .prepare(
-          `INSERT INTO cases (${SUMMARY}, run, journey) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?22, ?23, ?24, ?25, ?20, ?21)
+          `INSERT INTO cases (${SUMMARY}, run, journey, tenant_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?22, ?23, ?24, ?25, ?20, ?21, ?26)
            ON CONFLICT (id) DO UPDATE SET status = ?9, waiting_step = ?10, waiting_role = ?11, updated_at = ?17, closed_at = ?18, result = ?19, run = ?20, assignee = ?23, assignee_name = ?24, links = ?25`,
         )
         .bind(
@@ -508,15 +509,16 @@ export function createD1CaseStore(db: D1Like): CaseStore {
           c.assignee ?? null,
           c.assignee_name ?? null,
           c.links ? JSON.stringify(c.links) : null,
+          tenant,
         )
         .run();
     },
-    get: async (id) => full(await db.prepare(`SELECT ${SUMMARY}, run, journey FROM cases WHERE id = ?1`).bind(id).first<Row>()),
-    byRef: async (ref) => full(await db.prepare(`SELECT ${SUMMARY}, run, journey FROM cases WHERE ref = ?1`).bind(ref).first<Row>()),
+    get: async (id) => full(await db.prepare(`SELECT ${SUMMARY}, run, journey FROM cases WHERE id = ?1 AND tenant_id = ?2`).bind(id, tenant).first<Row>()),
+    byRef: async (ref) => full(await db.prepare(`SELECT ${SUMMARY}, run, journey FROM cases WHERE ref = ?1 AND tenant_id = ?2`).bind(ref, tenant).first<Row>()),
     async list({ open, startedBy, limit }) {
-      const where = [open ? "status IN ('waiting', 'to_finish')" : null, startedBy !== undefined ? "started_by = ?2" : null].filter(Boolean).join(" AND ") || "1 = 1";
+      const where = ["tenant_id = ?2", open ? "status IN ('waiting', 'to_finish')" : null, startedBy !== undefined ? "started_by = ?3" : null].filter(Boolean).join(" AND ");
       const q = db.prepare(`SELECT ${SUMMARY} FROM cases WHERE ${where} ORDER BY updated_at DESC LIMIT ?1`);
-      const rows = await (startedBy !== undefined ? q.bind(limit, startedBy) : q.bind(limit)).all<Row>();
+      const rows = await (startedBy !== undefined ? q.bind(limit, tenant, startedBy) : q.bind(limit, tenant)).all<Row>();
       return rows.results.map(summary);
     },
     async addEvent(e) {

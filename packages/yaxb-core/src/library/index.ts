@@ -21,12 +21,14 @@
 import { SERVICE_STORAGE, type ServiceStorage } from "../metrics/index.js";
 import { connectorHandlers, connectorSecrets, parseConnector, type Connector } from "../connectors/index.js";
 import { parseRoutine, ROUTINE_AUTHORS, type Routine } from "../routines/index.js";
+import { shapeProblems, type LinkShape } from "../links/index.js";
 import {
   canInitiate,
   checkDocument,
   compileBundle,
   compileOrganisation,
   DEFAULT_ROLES,
+  MANAGER_OF_REQUESTER,
   organisationChecks,
   organisationRoles,
   problemLine,
@@ -208,6 +210,8 @@ export type LibraryOptions = {
   onReviewed?: (entry: LibraryEntry, decision: "accepted" | "rejected", note: string | null, reviewer: LibraryActor) => Promise<unknown>;
   /** Every member's roles: the organisation's check for units running a service with nobody staffed (ORG-5). */
   memberRoles?: () => Promise<string[][]>;
+  /** DEP-2, DEP-4: does an active business link offer this journey of that business to this one (and in which shape)? */
+  businessOffer?: (business: string, service: string, journey: string) => Promise<{ as: LinkShape } | null>;
   now?: () => Date;
 };
 
@@ -347,7 +351,20 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
       const { services } = await api.published([], { all: true });
       const opts = await compileOptions();
       const chunk = { text: yaml.replace(/\r\n?/g, "\n"), line: 1 };
-      const deps = dependencyProblems(own.bundle.services[0]?.id ?? "", own.bundle.journeys, services.map((x) => ({ id: x.id, title: x.title, journeys: compileBundle(x.yaml, opts).journeys })));
+      // DEP-4: the roles a used journey needs are held by someone; a partner's link is active and offers it.
+      const members = options.memberRoles ? await options.memberRoles().catch(() => undefined) : undefined;
+      const offers = new Map<string, { as: LinkShape } | null>();
+      for (const j of own.bundle.journeys)
+        for (const st of Object.values(j.steps)) {
+          const u = st.uses;
+          if (u?.business && options.businessOffer) offers.set(`${u.business}/${u.service}/${u.journey}`, await options.businessOffer(u.business, u.service, u.journey).catch(() => null));
+        }
+      const deps = dependencyProblems(
+        own.bundle.services[0]?.id ?? "",
+        own.bundle.journeys,
+        services.map((x) => ({ id: x.id, title: x.title, journeys: compileBundle(x.yaml, opts).journeys })),
+        { staffed: members ? (role) => members.some((m) => m.includes(role)) : undefined, business: options.businessOffer ? (b, s, j) => offers.get(`${b}/${s}/${j}`) ?? null : undefined },
+      );
       return [...own.problems, ...deps.map((message): BundleProblem => ({ level: "error", line: problemLine(chunk, message), kind: "service" as never, id: own.bundle.services[0]?.id ?? "", message }))].sort((a, b) => a.line - b.line);
     }
     if (!org) return own.problems;
@@ -878,15 +895,35 @@ export function createMemoryLibraryStore(): LibraryStore {
 /**
  * DEP-4: a service's dependencies, checked against the published catalogue: each used service and
  * journey is published; its journey starts with a screen a role answers (nobody else can start it);
- * and following `uses:` from this service never comes back to it.
+ * someone holds every role it needs (`staffed`, when members are known); and following `uses:` from
+ * this service never comes back to it. A step that uses another business (DEP-2) is checked against
+ * the link instead: it must be active, offer that journey, in the shape the step names, and the
+ * step's `with:` may name only that shape's properties.
  */
-export function dependencyProblems(self: string, journeys: readonly Journey[], published: readonly { id: string; title: string; journeys: readonly Journey[] }[]): string[] {
+export function dependencyProblems(
+  self: string,
+  journeys: readonly Journey[],
+  published: readonly { id: string; title: string; journeys: readonly Journey[] }[],
+  check: { staffed?: (role: string) => boolean; business?: (business: string, service: string, journey: string) => { as: LinkShape } | null } = {},
+): string[] {
   const out: string[] = [];
-  const usesOf = (js: readonly Journey[]) => js.flatMap((j) => Object.values(j.steps).flatMap((st) => (st.uses ? [st.uses] : [])));
+  const usesOf = (js: readonly Journey[]) => js.flatMap((j) => Object.values(j.steps).flatMap((st) => (st.uses && !st.uses.business ? [st.uses] : [])));
   for (const j of journeys)
     for (const [sid, st] of Object.entries(j.steps)) {
       if (!st.uses) continue;
       const at = `journey '${j.id}' screen '${sid}'`;
+      if (st.uses.business) {
+        if (!check.business) out.push(`${at}: uses '${st.uses.business}', but business links aren't available here`);
+        else {
+          const offer = check.business(st.uses.business, st.uses.service, st.uses.journey);
+          if (!offer) out.push(`${at}: no active link with '${st.uses.business}' offers '${st.uses.service}' (${st.uses.journey})`);
+          else {
+            if (offer.as !== st.uses.as) out.push(`${at}: '${st.uses.business}' accepts a ${offer.as} for this journey; write as: ${offer.as}`);
+            out.push(...shapeProblems(offer.as, Object.keys(st.with ?? {})).map((m) => `${at}: ${m}`));
+          }
+        }
+        continue;
+      }
       if (st.uses.service === self) {
         out.push(`${at}: uses its own service '${self}'`);
         continue;
@@ -895,7 +932,14 @@ export function dependencyProblems(self: string, journeys: readonly Journey[], p
       const tj = target?.journeys.find((x) => x.id === st.uses!.journey);
       if (!target) out.push(`${at}: uses '${st.uses.service}', which isn't published`);
       else if (!tj) out.push(`${at}: '${target.title}' has no journey '${st.uses.journey}'`);
-      else if (tj.steps[tj.start]?.ask !== undefined && !tj.steps[tj.start]?.role) out.push(`${at}: '${target.title}' (${tj.id}) starts with the requester's own screen, so another service can't use it`);
+      else {
+        if (tj.steps[tj.start]?.ask !== undefined && !tj.steps[tj.start]?.role) out.push(`${at}: '${target.title}' (${tj.id}) starts with the requester's own screen, so another service can't use it`);
+        if (check.staffed) {
+          const needed = [...new Set([...Object.values(tj.steps).map((x) => x.role), ...(tj.roles?.complete ?? [])])].filter((r): r is string => Boolean(r) && r !== "visitor" && r !== MANAGER_OF_REQUESTER);
+          const nobody = needed.filter((r) => !check.staffed!(r));
+          if (nobody.length) out.push(`${at}: nobody holds ${nobody.length > 1 ? "the roles" : "the role"} ${nobody.map((r) => `'${r}'`).join(", ")}, which '${target.title}' needs to run`);
+        }
+      }
     }
   // A loop: from what this service uses, can we reach this service again?
   const seen = new Set<string>();

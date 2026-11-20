@@ -76,5 +76,5 @@ The detail lives in `docs/architecture/`. Read the file for the area you are cha
 | [identity.md](docs/architecture/identity.md) | Accounts and spaces (IDN, SPC), assurance levels and sign-in flows, tenants and join links (TEN), surfaces and editions (SUR) |
 | [journeys.md](docs/architecture/journeys.md) | The yaxb-journeys engine and Vue parts, questionnaires, XState machines and parallel journeys, summaries, photos and voice notes, maps, charts and timelines (VIS) |
 | [catalogue.md](docs/architecture/catalogue.md) | The Service Catalogue (LIB), the Service Designer agent, consent (CON), the organisation (ORG) |
-| [cases.md](docs/architecture/cases.md) | Cases handed between roles, device-first storage and hand-over, dependencies (DEP), household requests |
+| [cases.md](docs/architecture/cases.md) | Cases handed between roles, device-first storage and hand-over, dependencies (DEP) and business links, household requests |
 | [automation.md](docs/architecture/automation.md) | Service events and metrics, routines and hooks (RTN), connectors (CNX), the Scheduler (SCH), attendance (ATT) |
