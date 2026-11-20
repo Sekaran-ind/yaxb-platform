@@ -26,6 +26,9 @@
 //       guard: { call, with, within, reason }  condition) holds, or a service answers yes within
 //                                       `within` ms; otherwise the person sees `reason` and stays.
 //                                       A call's answer is kept in `steps["guard:<id>"]` (RTN-11).
+//       show: [{ map | chart | timeline: { from, title } }]   VIS-6: what a screen or a result shows,
+//                                       from a template (`from: "{{steps.load.items}}"`): places or
+//                                       areas on a map, { label, value } bars, or dated items
 //       uses: { service, journey, timeout, fallback }   DEP-1: another service's journey runs as a
 //                                       request of its own (a child case) with only this step's
 //                                       `with:` values; the run waits here until it ends, its outcome
@@ -46,6 +49,11 @@ export * from "./questionnaires.js";
 export * from "./roles.js";
 
 export type Branch = { if?: string; to: string };
+/** VIS-6: a display block as written, and as the runner fills it (`data` from its template). */
+export const DISPLAY_KINDS = ["map", "chart", "timeline"] as const;
+export type DisplayKind = (typeof DISPLAY_KINDS)[number];
+export type DisplayBlock = Partial<Record<DisplayKind, { from: string; title?: string; kind?: "bar" | "line" }>>;
+export type ShownBlock = { type: DisplayKind; title: string | null; kind?: "bar" | "line"; data: unknown };
 /** A dependency (DEP-1): a service's journey run as a request of its own; `timeout` hours lead to `fallback`. */
 export type StepUses = { service: string; journey: string; timeout?: number; fallback?: string };
 /** What a finished dependency left in `steps.<id>` (DEP-1): its request, how it ended, its result. */
@@ -94,6 +102,8 @@ export type Step = {
   guard?: StepGuard;
   /** DEP-1: the service this step needs; the run waits for it (its `with:` values are all it gets). */
   uses?: StepUses;
+  /** VIS-6: maps, charts or timelines this screen (or result) shows, filled from the run. */
+  show?: DisplayBlock[];
   /** The questionnaire's pages, by field id (absent for a step with its own fields). */
   sections?: StepSection[];
 };
@@ -126,7 +136,7 @@ export type Journey = {
 };
 
 const JOURNEY_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "category", "roles", "flow", "level", "start", "steps"]);
-const STEP_KEYS = new Set(["ask", "fields", "questionnaire", "service", "with", "onError", "decide", "final", "result", "next", "label", "stage", "icon", "submitLabel", "role", "after", "level", "guard", "uses"]);
+const STEP_KEYS = new Set(["ask", "fields", "questionnaire", "service", "with", "onError", "decide", "final", "result", "next", "label", "stage", "icon", "submitLabel", "role", "after", "level", "guard", "uses", "show"]);
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 /** An outcome id: lower-case words joined by '-', optionally dotted (registration.approved). */
 export const OUTCOME_ID = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*$/;
@@ -239,6 +249,7 @@ export function journeyProblems(doc: unknown, { services, questionnaires = [], r
       checkTemplate(at, s.with);
     }
     if (s.uses !== undefined) checkTemplate(at, s.with);
+    if (s.show !== undefined) problems.push(...showProblems(at, s.show, checkTemplate));
     if (s.role !== undefined) {
       if (typeof s.role !== "string" || !ROLE_ID.test(s.role)) problems.push(`${at}: role is a role id (lower-case words joined by '-')`);
       else if (s.role === VISITOR_ROLE) problems.push(`${at}: leave role out for the person who started the journey`);
@@ -370,13 +381,13 @@ export type RunState = {
   waiting: { step: string; role: string | null; uses?: StepUses } | null;
   /** The step that needs a stronger sign-in (status "step_up"), and the level it needs (IDN-32). */
   stepUp?: { step: string; level: number } | null;
-  /** The step waiting for the visitor (status "asking"). */
-  prompt: { step: string; text: string; fields: Field[]; sections?: StepSection[]; submitLabel?: string } | null;
+  /** The step waiting for the visitor (status "asking"); `show`: its display blocks, filled (VIS-6). */
+  prompt: { step: string; text: string; fields: Field[]; sections?: StepSection[]; submitLabel?: string; show?: ShownBlock[] } | null;
   answers: Record<string, Record<string, unknown>>;
   steps: Record<string, unknown>;
   /** Steps passed, in order, for the progress list. */
   trail: { step: string; label: string; stage?: string; ok: boolean }[];
-  result: { title: string; text: string; ok: boolean; outcome: string | null } | null;
+  result: { title: string; text: string; ok: boolean; outcome: string | null; show?: ShownBlock[] } | null;
   error: string | null;
   /** flow: parallel (JRN-46): every task and where it stands, while the tasks are open. */
   tasks?: TaskState[];
@@ -440,5 +451,22 @@ function usesProblems(at: string, u: unknown, combined: boolean, parallel: boole
   if (x.timeout !== undefined && (typeof x.timeout !== "number" || !Number.isInteger(x.timeout) || x.timeout < 1 || x.timeout > USES_MAX_HOURS)) out.push(`${at}: uses.timeout is hours, 1 to ${USES_MAX_HOURS}`);
   if ((x.timeout === undefined) !== (x.fallback === undefined)) out.push(`${at}: uses.timeout and uses.fallback go together: where the journey goes when it waits too long`);
   else if (x.fallback !== undefined && (typeof x.fallback !== "string" || !hasStep(x.fallback))) out.push(`${at}: uses.fallback: no step '${String(x.fallback)}'`);
+  return out;
+}
+
+/** What's wrong with a step's display blocks (VIS-6). */
+function showProblems(at: string, show: unknown, checkTemplate: (at: string, v: unknown) => void): string[] {
+  if (!Array.isArray(show) || !show.length) return [`${at}: show is a list of map, chart or timeline blocks`];
+  const out: string[] = [];
+  show.forEach((b, i) => {
+    const keys = b && typeof b === "object" && !Array.isArray(b) ? Object.keys(b) : [];
+    const kind = keys[0];
+    if (keys.length !== 1 || !DISPLAY_KINDS.includes(kind as DisplayKind)) return void out.push(`${at}: show ${i + 1} is one of map, chart, timeline`);
+    const v = (b as Record<string, unknown>)[kind!] as Record<string, unknown> | null;
+    if (!v || typeof v !== "object" || typeof v.from !== "string" || !v.from.includes("{{")) return void out.push(`${at}: show ${i + 1}: ${kind}.from is a template such as "{{steps.load.items}}"`);
+    for (const k of Object.keys(v)) if (!["from", "title", "kind"].includes(k)) out.push(`${at}: show ${i + 1}: unknown key '${k}'`);
+    if (v.kind !== undefined && (kind !== "chart" || (v.kind !== "bar" && v.kind !== "line"))) out.push(`${at}: show ${i + 1}: kind is bar or line, for a chart`);
+    checkTemplate(`${at} show ${i + 1}`, v.from);
+  });
   return out;
 }

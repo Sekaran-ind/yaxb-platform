@@ -47,7 +47,7 @@ export const isNestedService = (doc: unknown): doc is Record<string, unknown> =>
 
 const SERVICE_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "order", "layouts", "hidden", "roles", "journeys", "dates", "consent"]);
 const JOURNEY_KEYS = new Set(["id", "title", "summary", "icon", "category", "version", "roles", "flow", "level", "start", "screens"]);
-const SCREEN_KEYS = new Set(["id", "title", "ask", "questions", "submitLabel", "service", "with", "onError", "decide", "next", "result", "stage", "icon", "role", "after", "level", "guard", "uses"]);
+const SCREEN_KEYS = new Set(["id", "title", "ask", "questions", "submitLabel", "service", "with", "onError", "decide", "next", "result", "stage", "icon", "role", "after", "level", "guard", "uses", "show"]);
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 
 export type Expanded = {
@@ -182,6 +182,8 @@ export function expandService(doc: Record<string, unknown>): Expanded {
       const step: Record<string, unknown> = {};
       if (s.title !== undefined) step.label = s.title;
       for (const k of ["stage", "icon"] as const) if (s[k] !== undefined) step[k] = s[k];
+      // VIS-6: maps, charts and timelines on a screen or its result.
+      if (s.show !== undefined) step.show = s.show;
       if (ends) {
         step.final = true;
         step.result = s.result;

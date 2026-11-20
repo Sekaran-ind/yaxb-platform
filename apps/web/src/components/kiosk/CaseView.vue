@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { caseTimeline } from "@sekaran-ind/yaxb-core/timeline";
+import { EventTimeline } from "@sekaran-ind/yaxb-journeys/vue";
 import MediaThumbs from "./MediaThumbs.vue";
 // One case (LIB-33..38): a catalogue journey handed between people. It shows where the journey is,
 // the answers so far, and its thread (who did what, and notes). Whoever's turn it is carries on in
@@ -61,6 +63,7 @@ async function load() {
 watch(() => props.caseKey, load, { immediate: true });
 
 const c = computed(() => detail.value?.case ?? null);
+const threadAsTimeline = ref(false);
 /** A visitor's case is theirs by its reference; everyone else uses its id. */
 const key = computed(() => (c.value && detail.value?.actor.starter && c.value.started_by.startsWith("guest:") ? c.value.ref : (c.value?.id ?? props.caseKey)));
 const closed = computed(() => c.value?.status === "done" || c.value?.status === "declined");
@@ -276,8 +279,13 @@ const when = (iso: string) => new Date(iso).toLocaleString([], { dateStyle: "med
 
       <!-- The thread: oldest first, like a conversation, with the composer at its end. -->
       <section aria-labelledby="case-thread" class="space-y-2">
-        <h4 id="case-thread" class="flex items-center gap-2 text-sm font-semibold text-ink"><MessageSquare class="size-4 text-brand" aria-hidden="true" /> What happened</h4>
-        <ol class="space-y-2">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h4 id="case-thread" class="flex items-center gap-2 text-sm font-semibold text-ink"><MessageSquare class="size-4 text-brand" aria-hidden="true" /> What happened</h4>
+          <button v-if="detail!.events.length > 2" type="button" class="btn-ghost h-8 px-2 text-xs" @click="threadAsTimeline = !threadAsTimeline">{{ threadAsTimeline ? "As a thread" : "On a timeline" }}</button>
+        </div>
+        <!-- VIS-4: the thread's steps and notes on a timeline (who and when; never the notes' words). -->
+        <EventTimeline v-if="threadAsTimeline" :items="caseTimeline(detail!.events)" />
+        <ol v-else class="space-y-2">
           <li v-for="e in detail!.events" :key="e.id" class="rounded-lg px-3 py-2 text-sm" :class="e.kind === 'note' ? 'bg-surface ring-1 ring-gray-200' : 'bg-mist'">
             <!-- Started and answered name the screens in the line itself; notes and closing words follow it. -->
             <p v-if="e.kind === 'started' || e.kind === 'answered'" class="text-ink">
