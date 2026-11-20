@@ -28,6 +28,8 @@ export type CatalogueService = {
   state?: string;
   /** Where it records events (MET-1): none, box or server. */
   storage?: "none" | "box" | "server";
+  /** Days its records are kept on the server (absent: 30). */
+  retain_days?: number | null;
   roles: Role[];
   journeys: CatalogueJourney[];
   yaml: string;

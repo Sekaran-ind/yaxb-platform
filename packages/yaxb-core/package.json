@@ -83,6 +83,10 @@
       "types": "./dist/mcp/index.d.ts",
       "default": "./dist/mcp/index.js"
     },
+    "./stores/lifetime": {
+      "types": "./dist/stores/lifetime.d.ts",
+      "default": "./dist/stores/lifetime.js"
+    },
     "./stores/kv": {
       "types": "./dist/stores/kv.d.ts",
       "default": "./dist/stores/kv.js"
@@ -166,6 +170,18 @@
     "./metrics": {
       "types": "./dist/metrics/index.d.ts",
       "default": "./dist/metrics/index.js"
+    },
+    "./stores/size": {
+      "types": "./dist/stores/size.d.ts",
+      "default": "./dist/stores/size.js"
+    },
+    "./records": {
+      "types": "./dist/records/index.d.ts",
+      "default": "./dist/records/index.js"
+    },
+    "./quota/sync-allowance": {
+      "types": "./dist/quota/sync-allowance.d.ts",
+      "default": "./dist/quota/sync-allowance.js"
     },
     "./quota": {
       "types": "./dist/quota/index.d.ts",

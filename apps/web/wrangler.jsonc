@@ -70,14 +70,24 @@
   "durable_objects": { "bindings": [{ "name": "TEAM", "class_name": "TeamHub" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TeamHub"] }],
 
-  // Routines (RTN-2): every 15 minutes the Worker's scheduled() runs each business's due routines.
-  "triggers": { "crons": ["*/15 * * * *"] },
+  // Routines (RTN-2): every 15 minutes the Worker's scheduled() runs each business's due routines;
+  // daily at 03:17 UTC it purges records past their lifetime (worker/purge.ts; PURGE_CRON in index.ts).
+  "triggers": { "crons": ["*/15 * * * *", "17 3 * * *"] },
 
   // Per-session chat limit and per-IP form limit. namespace_id is any number unique to your account.
   "ratelimits": [
     { "name": "CHAT_LIMITER", "namespace_id": "4101", "simple": { "limit": 20, "period": 60 } },
     { "name": "FORM_LIMITER", "namespace_id": "4102", "simple": { "limit": 5, "period": 60 } }
   ],
+
+  // The paid plan's sweep queue: the 15-minute cron enqueues one job per business and the Worker's
+  // queue() runs them in parallel, each retried on its own. Create the queue once with
+  // `npx wrangler queues create yaxb-sweep`, then uncomment. Without it the cron runs the jobs itself, one
+  // after another (fine for the free plan's few businesses).
+  // "queues": {
+  //   "producers": [{ "binding": "SWEEP_QUEUE", "queue": "yaxb-sweep" }],
+  //   "consumers": [{ "queue": "yaxb-sweep", "max_batch_size": 10, "max_retries": 3 }]
+  // },
 
   // Optional vector search over the knowledge base. Uncomment both, then ingest documents with
   // `{ text, source }` metadata embedded by the same model (see packages/yaxb-core/src/knowledge).

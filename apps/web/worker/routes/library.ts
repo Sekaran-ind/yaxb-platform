@@ -122,6 +122,7 @@ app.get("/api/library/design", (c) =>
 const guardianRequestSchema = z.strictObject({
   yaml: z.string().min(1).max(MAX_ENTRY_BYTES),
   storage: z.enum(["none", "box", "server"]).optional(),
+  retainDays: z.number().int().optional(),
   provider: z.string().max(40).optional(),
   model: z.string().max(120).optional(),
 });
@@ -134,12 +135,12 @@ app.post("/api/library/consent", async (c) => {
   if (!parsed.success) return jsonError(c, 422, parsed.error.issues[0]?.message ?? "Invalid request.");
   const gate = await modelGate(c, c.env, { long: true });
   if (!gate.ok) return refusal(c, gate);
-  const { yaml, storage, provider: askedProvider, model: askedModel } = parsed.data;
+  const { yaml, storage, retainDays, provider: askedProvider, model: askedModel } = parsed.data;
   const provider = gate.selection?.provider ?? askedProvider;
   const model = gate.selection?.model ?? askedModel;
   const { roles } = await library(c.env).published([], { all: true });
   const out = await kiosk(c.env).guardian(
-    { yaml, storage, relayHours: settings(c.env).RELAY_HOURS, roles, selection: provider && model ? { provider, model, temperature: 0.2 } : null },
+    { yaml, storage, relayHours: settings(c.env).RELAY_HOURS, retainDays: settings(c.env).PLAN === "paid" ? retainDays : undefined, roles, selection: provider && model ? { provider, model, temperature: 0.2 } : null },
     { signal: c.req.raw.signal },
   );
   if ("error" in out) return jsonError(c, 422, out.error);

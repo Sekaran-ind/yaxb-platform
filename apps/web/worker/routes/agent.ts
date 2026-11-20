@@ -29,6 +29,8 @@ app.post("/api/agent/chat", async (c) => {
   const { threadId, message, provider, model, temperature, settings: agentSettings, client } = parsed.data;
   // The free plan (everyone, members too): a few short questions per IP, on the small tool-calling
   // model, the lean harness and short answers. The paid plan is a deployment of its own.
+  // Server storage (the conversation and the agent's memory kept on the server) is the paid plan's.
+  if (agentSettings?.storage === "server" && settings(c.env).PLAN === "free") return jsonError(c, 402, "Keeping your conversation and memory on the server is part of the paid plan. Use storage on this device, or move to the paid plan.");
   const gate = await modelGate(c, c.env, { chars: message.length });
   if (!gate.ok) return refusal(c, gate);
   const events = kiosk(c.env).ask(

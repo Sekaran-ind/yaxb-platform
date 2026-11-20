@@ -6,21 +6,46 @@
 import { consentFacts, guardianFlags, type GuardianFlag } from "@sekaran-ind/yaxb-core/guardian";
 import { parseDocument, serviceConsent, toYaml, type ConsentForm, type ServiceConsent } from "@sekaran-ind/yaxb-journeys";
 import { AlertTriangle, Info, Loader2, Plus, Scale, Trash2, XCircle } from "@lucide/vue";
-import { computed, ref } from "vue";
-import { effectiveSelection, settings, useProviders } from "@/composables/settings";
+import { computed, ref, watch } from "vue";
+import { effectiveSelection, settings, useCapabilities, useProviders } from "@/composables/settings";
 import { api } from "@/lib/api";
 import { roleLabel, type Role } from "@sekaran-ind/yaxb-journeys";
 
-const props = defineProps<{ editable: boolean; storage: "none" | "box" | "server"; roles: readonly Role[] }>();
+const props = defineProps<{ editable: boolean; storage: "none" | "box" | "server"; roles: readonly Role[]; entryId?: string | null; retainDays?: number | null }>();
+const emit = defineEmits<{ retained: [days: number | null] }>();
 const yaml = defineModel<string>({ required: true });
 
 const parsed = computed(() => parseDocument(yaml.value));
 const current = computed<ServiceConsent | null>(() => (parsed.value.ok ? serviceConsent(parsed.value.doc.consent, null) : null));
 /** The flags, worked out here as the service changes (the same rules the Guardian uses). */
-const flags = computed<GuardianFlag[]>(() => (parsed.value.ok ? guardianFlags(consentFacts(parsed.value.doc, { storage: props.storage, roles: props.roles })) : []));
+const flags = computed<GuardianFlag[]>(() => (parsed.value.ok ? guardianFlags(consentFacts(parsed.value.doc, { storage: props.storage, retainDays: props.retainDays, roles: props.roles })) : []));
 const roleName = (id: string) => (id === "visitor" ? "Anyone starting" : roleLabel(id, props.roles));
 
 const { data: catalog } = useProviders();
+const { data: caps } = useCapabilities();
+
+/** How long this service's records are kept on the server (RET-1): its author sets one period for all of them. */
+const days = ref<string>(props.retainDays ? String(props.retainDays) : "");
+watch(() => props.retainDays, (d) => (days.value = d ? String(d) : ""));
+const retainBusy = ref(false);
+const retainError = ref<string | null>(null);
+const retainSaved = ref(false);
+async function saveRetain() {
+  if (!props.entryId) return;
+  retainBusy.value = true;
+  retainError.value = null;
+  retainSaved.value = false;
+  try {
+    const n = days.value.trim() === "" ? null : Number(days.value);
+    await api(`/api/library/entries/${props.entryId}/retain`, { days: n }, "PUT");
+    emit("retained", n);
+    retainSaved.value = true;
+  } catch (e) {
+    retainError.value = (e as Error).message;
+  } finally {
+    retainBusy.value = false;
+  }
+}
 const selection = computed(() => effectiveSelection(settings, catalog.value));
 const draft = ref<ServiceConsent | null>(null);
 const via = ref<"assistant" | "draft" | null>(null);
@@ -32,7 +57,7 @@ async function ask() {
   busy.value = true;
   error.value = note.value = null;
   try {
-    const r = await api<{ consent: ServiceConsent; via: "assistant" | "draft"; note: string | null }>("/api/library/consent", { yaml: yaml.value, storage: props.storage, ...(selection.value ?? {}) });
+    const r = await api<{ consent: ServiceConsent; via: "assistant" | "draft"; note: string | null }>("/api/library/consent", { yaml: yaml.value, storage: props.storage, ...(props.retainDays ? { retainDays: props.retainDays } : {}), ...(selection.value ?? {}) });
     draft.value = JSON.parse(JSON.stringify(r.consent)) as ServiceConsent;
     via.value = r.via;
     note.value = r.note;
@@ -77,6 +102,17 @@ const icon = (l: GuardianFlag["level"]) => (l === "error" ? XCircle : l === "war
         <Loader2 v-if="busy" class="size-4 animate-spin" aria-hidden="true" /><Scale v-else class="size-4" aria-hidden="true" />
         {{ current ? "Ask the Legal Guardian again" : "Ask the Legal Guardian" }}
       </button>
+    </div>
+    <div v-if="storage === 'server' && entryId" class="card space-y-2 p-4">
+      <h4 class="eyebrow">How long records are kept</h4>
+      <p class="text-sm text-gray-600">Every record this service keeps on the server is deleted this many days after it was made. Leave it empty for 30. You decide the period; the platform doesn't check it against any law or audit duty of yours.</p>
+      <p v-if="caps?.plan === 'free'" class="caution px-3 py-2 text-sm">On the free plan every record is deleted 30 days after it is made, whatever you set here. The setting is kept for when you move to the paid plan.</p>
+      <div class="flex flex-wrap items-end gap-2">
+        <label class="text-sm"><span class="mb-1 block font-medium text-ink">Days</span><input v-model="days" type="number" inputmode="numeric" min="30" max="7300" step="1" placeholder="30" class="input w-32" :disabled="!editable" @input="retainSaved = false" /></label>
+        <button v-if="editable" type="button" class="btn-light h-10" :disabled="retainBusy" @click="saveRetain"><Loader2 v-if="retainBusy" class="size-4 animate-spin" aria-hidden="true" /> Save</button>
+        <span v-if="retainSaved" class="text-sm text-gray-600" role="status">Saved.</span>
+      </div>
+      <p v-if="retainError" role="alert" class="text-sm text-red-800">{{ retainError }}</p>
     </div>
     <p v-if="!parsed.ok" class="caution px-3 py-2 text-sm">Fix the YAML first: {{ parsed.error }}</p>
     <p v-if="error" role="alert" class="text-sm text-red-800">{{ error }}</p>

@@ -21,7 +21,7 @@ app.get("/api/agent/:resource", async (c) => {
       const caps = k.capabilities();
       // The business's own MCP servers (CNX-1) join the deployment's; never their address's secrets.
       const org = (await orgMcpServers(c.env).catch(() => [])).filter((sv) => !caps.mcp.some((m) => m.id === sv.id)).map(mcpServerInfo);
-      return c.json({ ...caps, freeTier: freePlanInfo(c.env), mcp: [...caps.mcp, ...org], cases: { central: s.CASES_CENTRAL === "on", relay: s.CASES_RELAY === "on", relayHours: s.RELAY_HOURS } });
+      return c.json({ ...caps, freeTier: freePlanInfo(c.env), plan: s.PLAN, mcp: [...caps.mcp, ...org], cases: { central: s.CASES_CENTRAL === "on", relay: s.CASES_RELAY === "on", relayHours: s.RELAY_HOURS } });
     }
     case "sources":
       return c.json({ sources: k.sources() });

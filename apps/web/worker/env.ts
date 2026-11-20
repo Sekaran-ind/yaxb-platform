@@ -68,6 +68,13 @@ const schema = z.object({
    * customers are moved to the paid deployment; the free one asks them to.
    */
   PLAN: z.enum(["free", "paid"]).default("free"),
+  /**
+   * The free plan: how many times a year an account may sync a device's services and configuration up
+   * to the server (counted per account, a rolling year). 0 = no limit. The paid plan has none.
+   */
+  SYNC_PER_YEAR: z.coerce.number().int().min(0).max(1000).default(5),
+  /** A database's size limit in MB for the size alerts; default by plan (500 on free, 10240 on paid). */
+  D1_LIMIT_MB: z.coerce.number().int().min(1).max(1_000_000).optional(),
   /** Where the free plan's messages send someone who needs more (optional; a page on the site). */
   UPGRADE_URL: z.url({ protocol: /^https$/ }).optional(),
   /**

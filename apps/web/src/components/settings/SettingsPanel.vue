@@ -23,6 +23,7 @@ import FrontDeskSetup from "./FrontDeskSetup.vue";
 import ChildLockSetup from "./ChildLockSetup.vue";
 import BoxSync from "./BoxSync.vue";
 import StorageMeter from "./StorageMeter.vue";
+import SyncAllowance from "./SyncAllowance.vue";
 import HouseholdSetup from "./HouseholdSetup.vue";
 import FamilyRoutines from "./FamilyRoutines.vue";
 import AccountIdentity from "@/components/account/AccountIdentity.vue";
@@ -54,6 +55,11 @@ const CHILD_SECTIONS = new Set(["profile", "language", "kiosk", "child"]);
 // The section comes from the kiosk's address (/kiosk?prefs=model), so a kiosk command can open one (CMD-1).
 // fill: take the parent's height (the Full and Mini kiosks), so the section list stays put.
 defineProps<{ fill?: boolean }>();
+
+/** Server storage (conversations and memory kept on the server) is the paid plan's: shown, but not selectable on the free plan. */
+const storageOptions = computed(() =>
+  (caps.value?.storage ?? []).map((o) => (o.id === "server" && caps.value?.plan === "free" ? { ...o, disabled: true, description: "Part of the paid plan: your conversations and memory stay on this device on the free plan." } : o)),
+);
 
 /** Where requests are kept: devices first; central storage in the cloud is the paid plan. */
 const CASE_STORAGE = computed(() => [
@@ -329,7 +335,7 @@ async function clearBrowser() {
         <section v-else class="card p-5">
           <h2 class="text-lg font-semibold text-ink">Storage</h2>
           <p class="mt-1 mb-4 text-sm text-gray-500">Where notebooks, conversations and memory are kept. Switching doesn't move what's already stored.</p>
-          <ChoiceGrid name="storage" :options="caps.storage" :value="agent.storage" @change="(storage) => setAgent({ storage })" />
+          <ChoiceGrid name="storage" :options="storageOptions" :value="agent.storage" @change="(storage) => setAgent({ storage })" />
           <BoxConnection v-if="agent.storage === 'box'" />
           <BoxSync v-if="agent.storage === 'box'" />
           <div class="mt-4 flex flex-wrap items-center gap-3">
@@ -345,6 +351,7 @@ async function clearBrowser() {
         </section>
         <!-- What this device keeps, and asking the browser to keep it (STO-1, STO-2). -->
         <StorageMeter class="mt-4" />
+        <SyncAllowance class="mt-4" />
         <!-- Requests (cases, LIB-42..48): devices first; the cloud keeps service data only on the paid plan. -->
         <section v-if="caps" class="card mt-4 p-5">
           <h2 class="text-lg font-semibold text-ink">Where requests are kept</h2>

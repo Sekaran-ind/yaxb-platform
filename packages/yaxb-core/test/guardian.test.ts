@@ -75,6 +75,9 @@ describe("the Legal Guardian", () => {
   });
 
   it("drafts a form per role, in plain words, valid as the service's consent block", () => {
+    const server = (retainDays?: number) => JSON.stringify(draftConsent(consentFacts(doc(), { storage: "server", retainDays })));
+    expect(server()).toContain("for 30 days after it is made, then deleted");
+    expect(server(2555)).toContain("for 2555 days after it is made, then deleted");
     const c = draftConsent(consentFacts(doc(), { storage: "none", relayHours: 48 }));
     expect(c.forms.map((f) => f.role)).toEqual(["visitor", "marshal", "medic"]);
     const visitor = c.forms[0]!;

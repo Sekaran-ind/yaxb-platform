@@ -196,9 +196,16 @@ journeys:
       await expectError(svc.setEntryStorage(admin, entry.id, "cloud"), 422);
       expect((await svc.setEntryStorage(admin, entry.id, "box")).storage).toBe("box");
       expect((await svc.published()).services[0]!.storage).toBe("box");
+      // How long its records are kept on the server (RET-1): 30 days until its author says otherwise.
+      expect((await svc.published()).services[0]!.retain_days).toBeNull();
+      for (const bad of [10, 30.5, 99999, "90", undefined]) await expectError(svc.setEntryRetain(mod, entry.id, bad), 422);
+      await expectError(svc.setEntryRetain(guest, entry.id, 365), 404);
+      expect((await svc.setEntryRetain(mod, entry.id, 365)).retain_days).toBe(365);
+      expect((await svc.published()).services[0]!.retain_days).toBe(365);
+      expect((await svc.setEntryRetain(mod, entry.id, null)).retain_days).toBeNull();
 
       const trail = await svc.auditTrail(reviewer, entry.id);
-      expect(trail.map((e) => e.action)).toEqual(["library.entry_storage", "library.entry_saved", "library.entry_accepted", "library.entry_submitted", "library.entry_created"]);
+      expect(trail.map((e) => e.action)).toEqual(["library.entry_retain", "library.entry_retain", "library.entry_storage", "library.entry_saved", "library.entry_accepted", "library.entry_submitted", "library.entry_created"]);
       expect(trail.every((e) => !JSON.stringify(e).includes("Your name"))).toBe(true);
       await expectError(svc.auditTrail(guest, entry.id), 404);
 
