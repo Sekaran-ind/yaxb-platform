@@ -34,6 +34,12 @@ export const JOURNEY_SERVICES = [
   "identity.space.open",
   "identity.space.start",
   "identity.space.join",
+  // Website access (SIT-5): read an approved site into the notebook, open one, ask for one to be
+  // added; lookups (a bill or a status) wait for the sandboxed capture (WEB-30).
+  "web.read",
+  "web.link-out",
+  "web.request",
+  "web.lookup",
 ] as const;
 
 /** Screen components the kiosk renders. */

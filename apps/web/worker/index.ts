@@ -335,6 +335,21 @@ const siteCall = async (c: Context<AppEnv>, fn: () => Promise<unknown>) => {
   }
 };
 const siteUseSchema = z.enum(SITE_USES);
+/**
+ * May this kiosk use a site this way (SIT-5's web.link_out): the approved list's verdict, nothing
+ * fetched. Anyone; same origin; the chat limit.
+ */
+app.post("/api/sites/verdict", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, `site-verdict:${await clientId(c)}`))) return jsonError(c, 429, "Too many requests. Please wait a minute.");
+  const b = z.object({ url: z.string().max(500), use: siteUseSchema }).safeParse((await readJson(c, MAX_FORM_BODY)).body);
+  if (!b.success) return jsonError(c, 422, "Give the site's address and what it is for.");
+  return siteCall(c, async () => {
+    const v = await siteHere(c, b.data.url, b.data.use);
+    return { allowed: v.allowed, why: v.why };
+  });
+});
+
 /** "Ask to add this site" (anyone; same origin; a form's limit). */
 app.post("/api/sites/requests", async (c) => {
   if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");

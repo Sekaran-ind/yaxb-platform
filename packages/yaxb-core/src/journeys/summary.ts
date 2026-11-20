@@ -41,6 +41,12 @@ export const SERVICE_INFO: Record<string, ServiceInfo> = {
   "identity.space.open": { label: "your spaces", where: "account" },
   "identity.space.start": { label: "a new space for you", where: "account" },
   "identity.space.join": { label: "a join code", where: "account" },
+  // Website access (SIT-5): the address goes to the kiosk's server, which checks it against the
+  // approved sites and reads the page; nothing about the person goes with it.
+  "web.read": { label: "reading a website (the address only, checked against the approved sites)", where: "outside" },
+  "web.link-out": { label: "opening an approved website", where: "outside" },
+  "web.request": { label: "asking for a website to be approved (the address and why, never who asked)", where: "outside" },
+  "web.lookup": { label: "looking something up on an approved website", where: "outside" },
 };
 
 export type JourneyStepSummary = {

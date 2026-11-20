@@ -1,0 +1,70 @@
+# Seeded into the Service Catalogue (SIT-5): Website access, in every catalogue. An administrator
+# can switch it off (archive it) for their kiosks; a seed the catalogue already has, even archived,
+# is never added again. Every site goes through the approved list (SIT-1..6): the platform's and the
+# business's own. Looking things up on a site (a bill or a status) waits for WEB-30.
+kind: service
+id: website-access
+title: Website access
+summary: Add an approved website to your notebook, open one, or ask for one to be added.
+icon: search
+order: 40
+journeys:
+  - id: add-website
+    title: Add a website to my notebook
+    summary: The kiosk reads the page and keeps its text in your notebook, with its address.
+    icon: notebook
+    screens:
+      - id: where
+        title: The website
+        submitLabel: Add it
+        questions:
+          - { id: url, type: text, label: Its address, entity: url, required: true, placeholder: "https://…", description: The web address of the page }
+      - id: read
+        title: Reading it
+        service: web.read
+        with: { url: "{{answers.where.url}}" }
+      - id: done
+        result:
+          title: "Added {{steps.read.title}}"
+          text: "{{steps.read.note}}"
+          outcome: website.added
+  - id: open-site
+    title: Open an approved website
+    summary: Opens a site the kiosk may link to, in a new tab.
+    icon: search
+    screens:
+      - id: where
+        title: The website
+        submitLabel: Open it
+        questions:
+          - { id: url, type: text, label: Its address, entity: url, required: true, placeholder: "https://…" }
+      - id: open
+        title: Opening it
+        service: web.link-out
+        with: { url: "{{answers.where.url}}" }
+      - id: done
+        result: { title: "Opened {{steps.open.host}}", outcome: website.opened }
+  - id: ask-site
+    title: Ask to add a website
+    summary: Ask the moderators to approve a site. It goes in your business's name (or "a family"), never yours.
+    icon: message-square
+    screens:
+      - id: what
+        title: Which site, and why
+        submitLabel: Ask
+        questions:
+          - { id: url, type: text, label: Its address, entity: url, required: true, placeholder: "https://…" }
+          - id: use
+            type: select
+            label: What it is for
+            required: true
+            options:
+              - { value: source, label: Adding its pages to a notebook }
+              - { value: link, label: Opening it from the kiosk }
+          - { id: reason, type: textarea, label: Why it is needed }
+      - id: ask
+        title: Asking
+        service: web.request
+        with: { url: "{{answers.what.url}}", use: "{{answers.what.use}}", reason: "{{answers.what.reason}}" }
+      - id: done
+        result: { title: Asked, text: "It can be used once the site is approved.", outcome: website.asked }
