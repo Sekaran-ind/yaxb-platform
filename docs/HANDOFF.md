@@ -1,6 +1,6 @@
 # Hand-over: where things stand
 
-Last updated 2026-11-19, when the first part of Wave 2 was deployed. The rest of Wave 2 continues on the other laptop. Read this with `CLAUDE.md` (how the code is built) and `docs/specs/` (every requirement and its status). Together they replace the notes a previous Claude session kept outside the repo.
+Last updated 2026-11-19, when the first part of Wave 2 was deployed. The rest of Wave 2 continues on the other laptop. Read this with `CLAUDE.md` and `docs/architecture/` (how the code is built) and `docs/specs/` (every requirement and its status). Together they replace the notes a previous Claude session kept outside the repo.
 
 ## Wave 1 is complete and live
 

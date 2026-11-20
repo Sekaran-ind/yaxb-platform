@@ -6,7 +6,8 @@ import { NOTEBOOK_LIMITS } from "@sekaran-ind/yaxb-core/notebook";
 import { offers } from "@/lib/surface";
 import { STORAGE_OPTIONS } from "@sekaran-ind/yaxb-core/settings";
 import { Brain, ClipboardPaste, Eye, FileText, Globe, Loader2, MessagesSquare, Plus, RefreshCw, Trash2, Upload } from "@lucide/vue";
-import { ConfirmAction } from "@sekaran-ind/yaxb-journeys/vue";
+import { ConfirmAction, EventTimeline } from "@sekaran-ind/yaxb-journeys/vue";
+import { sourceEvents } from "@sekaran-ind/yaxb-core/timeline";
 import { askText } from "@/composables/dialog";
 import { computed, ref } from "vue";
 import type { NotebookApi } from "@/composables/notebook";
@@ -34,6 +35,9 @@ const memoryDraft = ref<string | null>(null);
 
 const notebook = computed(() => props.nb.notebook.value);
 const storage = computed(() => STORAGE_OPTIONS.find((s) => s.id === props.nb.store.value.kind));
+/** VIS-4: the sources on a timeline, by when each was added or read (titles only). */
+const sourcesAsTimeline = ref(false);
+const sourceTimeline = computed(() => sourceEvents(notebook.value?.sources ?? []));
 const used = computed(() => notebook.value?.sources.reduce((n, s) => n + s.text.length, 0) ?? 0);
 
 async function addFiles(files: FileList | null) {
@@ -214,7 +218,11 @@ async function deleteThread(id: string) {
         </div>
       </form>
       <p v-if="!notebook.sources.length" class="rounded-lg bg-mist px-3 py-4 text-center text-sm text-gray-500">No sources yet. Add leaflets, reports or notes, then ask about them in the Transcript.</p>
-      <ul v-else class="divide-y divide-gray-100 rounded-lg ring-1 ring-gray-100">
+      <div v-if="notebook.sources.length > 2" class="mb-2 flex justify-end">
+        <button type="button" class="btn-ghost h-8 px-2 text-xs" @click="sourcesAsTimeline = !sourcesAsTimeline">{{ sourcesAsTimeline ? "As a list" : "On a timeline" }}</button>
+      </div>
+      <EventTimeline v-if="notebook.sources.length && sourcesAsTimeline" :items="sourceTimeline" title="When each source was added or read" />
+      <ul v-else-if="notebook.sources.length" class="divide-y divide-gray-100 rounded-lg ring-1 ring-gray-100">
         <li v-for="s in notebook.sources" :key="s.id" class="px-3 py-2">
           <div class="flex items-center justify-between gap-2">
             <div class="min-w-0">

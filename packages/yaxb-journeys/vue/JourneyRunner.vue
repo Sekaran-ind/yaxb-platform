@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DisplayBlocks from "./DisplayBlocks.vue";
 // Runs a journey: progress, the current questions (a questionnaire's sections in the adaptive
 // nav), services as they run, and the result. Handlers are the host's (or the studio's stand-ins).
 // It starts again whenever the journey's definition changes, so an editor's preview stays live.
@@ -142,6 +143,7 @@ async function copy() {
     <JourneyTasks v-if="state?.tasks?.length" :tasks="state.tasks" @focus="(step) => runner?.focus(step)" />
     <form v-if="state?.status === 'asking' && state.prompt" class="yj-card yj-stack" novalidate @submit.prevent="submit">
       <p class="yj-title">{{ state.prompt.text }}</p>
+      <DisplayBlocks v-if="state.prompt.show?.length" :blocks="state.prompt.show" />
       <QuestionnaireForm
         ref="form"
         v-model="values"
@@ -169,6 +171,7 @@ async function copy() {
     <div v-if="state?.status === 'done' && state.result" class="yj-card yj-stack" role="status">
       <h4 class="yj-title">{{ state.result.title }}</h4>
       <p class="yj-result-text">{{ state.result.text }}</p>
+      <DisplayBlocks v-if="state.result.show?.length" :blocks="state.result.show" />
       <div class="yj-row">
         <button type="button" class="yj-btn" @click="copy">{{ copied ? "Copied" : "Copy" }}</button>
         <button type="button" class="yj-btn" @click="start">Start again</button>

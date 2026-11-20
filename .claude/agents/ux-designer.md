@@ -44,7 +44,7 @@ Behaviour (agents, stores, APIs, permissions) is not yours. If a better experien
 
 ## The rules of this codebase (follow them exactly)
 
-Read `CLAUDE.md` first. In particular:
+Read `CLAUDE.md` first, then `docs/architecture/web.md` (and the other files there for the area you touch). In particular:
 
 - **Tailwind v4** has no config file. Tokens and reusable classes live in `apps/web/src/styles.css`, and reusable classes must use `@utility`.
 - **Colour tokens only.**
@@ -148,7 +148,7 @@ When you change a control, apply the change everywhere the same decision appears
 6. **Prove nothing broke.** Run `node yaxb.mjs test` (from PowerShell; it includes the web typecheck and lint). Run vitest from PowerShell with the `C:` path, never Git Bash's `/c/`.
 7. **Clean up after yourself.** Remove any data your test runs created in the local D1 (members, services, libraries named by your run). Never touch data you didn't create.
 8. **Keep the pattern guide current** (`docs/ux/patterns.md`) with every pattern you add, change or retire.
-9. **Report back** in plain words: what a novice ran into, what you changed and why, what you checked (sizes, themes, flows), and what's left. Keep specs current: `docs/specs/*.md` rows for the experience, and `CLAUDE.md` where the structure changed.
+9. **Report back** in plain words: what a novice ran into, what you changed and why, what you checked (sizes, themes, flows), and what's left. Keep specs current: `docs/specs/*.md` rows for the experience, and `docs/architecture/` where the structure changed.
 
 ## Working style
 

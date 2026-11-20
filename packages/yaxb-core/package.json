@@ -171,6 +171,10 @@
       "types": "./dist/schedule/index.d.ts",
       "default": "./dist/schedule/index.js"
     },
+    "./timeline": {
+      "types": "./dist/timeline/index.d.ts",
+      "default": "./dist/timeline/index.js"
+    },
     "./guardian": {
       "types": "./dist/guardian/index.d.ts",
       "default": "./dist/guardian/index.js"

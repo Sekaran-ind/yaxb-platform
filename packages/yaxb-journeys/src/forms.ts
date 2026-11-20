@@ -151,6 +151,8 @@ export type StepForm = {
   level: number | null;
   /** ask: its guard (RTN-9) as YAML, kept as written; "" for none. */
   guardYaml: string;
+  /** ask and result: its display blocks (VIS-6) as YAML, kept as written; "" for none. */
+  showYaml: string;
 };
 
 export type JourneyForm = {
@@ -190,6 +192,7 @@ export const newStep = (id = "", kind: StepKind = "ask"): StepForm => ({
   after: "",
   level: null,
   guardYaml: "",
+  showYaml: "",
 });
 
 export const newJourneyForm = (id = ""): JourneyForm => {
@@ -417,6 +420,7 @@ export function designFromDoc(doc: Record<string, unknown>): { design: ServiceDe
         after: Array.isArray(s.after) ? (s.after as unknown[]).map(str).join(", ") : "",
         level: typeof s.level === "number" ? s.level : null,
         guardYaml: s.guard === undefined ? "" : yamlOf(s.guard),
+        showYaml: s.show === undefined ? "" : yamlOf(s.show),
         resultTitle: str(result.title),
         resultText: str(result.text),
         resultOk: result.ok === undefined ? "" : str(result.ok),
@@ -469,12 +473,12 @@ export function designToDoc(d: ServiceDesign): { ok: true; doc: Record<string, u
       const after = task ? s.after.split(/[\s,]+/).filter(Boolean) : [];
       const base = { id: s.id.trim(), title: s.label.trim(), stage: s.stage.trim(), icon: s.icon.trim() };
       let screen: Record<string, unknown>;
-      if (s.kind === "ask") screen = { ...base, ask: s.ask.trim(), questions: parse(at, s.fieldsYaml, "list") ?? [], submitLabel: s.submitLabel.trim(), role: s.role.trim(), next: then, after: after.length ? after : undefined, level: s.level && s.level > (j.level ?? 0) ? s.level : undefined, guard: s.guardYaml.trim() ? parse(at, s.guardYaml, "mapping") : undefined };
+      if (s.kind === "ask") screen = { ...base, ask: s.ask.trim(), questions: parse(at, s.fieldsYaml, "list") ?? [], submitLabel: s.submitLabel.trim(), role: s.role.trim(), next: then, after: after.length ? after : undefined, level: s.level && s.level > (j.level ?? 0) ? s.level : undefined, guard: s.guardYaml.trim() ? parse(at, s.guardYaml, "mapping") : undefined, show: s.showYaml.trim() ? parse(at, s.showYaml, "list") : undefined };
       else if (s.kind === "service") screen = { ...base, service: s.service.trim(), with: parse(at, s.withYaml, "mapping"), onError: s.onError === "continue" ? "continue" : undefined, next: then, after: after.length ? after : undefined };
       else if (s.kind === "decide") screen = { ...base, decide: branches(s.branches) };
       else {
         const ok = s.resultOk.trim();
-        screen = { ...base, result: compact({ title: s.resultTitle.trim(), text: s.resultText, ok: ok === "true" ? true : ok === "false" ? false : ok, outcome: s.resultOutcome.trim() }) };
+        screen = { ...base, result: compact({ title: s.resultTitle.trim(), text: s.resultText, ok: ok === "true" ? true : ok === "false" ? false : ok, outcome: s.resultOutcome.trim() }), show: s.showYaml.trim() ? parse(at, s.showYaml, "list") : undefined };
       }
       return Object.fromEntries(Object.entries(screen).filter(([k, v]) => k === "questions" || !blank(v)));
     });

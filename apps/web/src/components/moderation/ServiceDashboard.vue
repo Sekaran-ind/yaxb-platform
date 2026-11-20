@@ -3,9 +3,11 @@
 // journeys go (started, finished, completion, requests open and closed, a funnel per journey, how
 // long people take, how long each role takes to pick a request up, where services fail) and the
 // activity log (what staff did, by name). Built from events, which are facts, never answers.
-// A service without storage keeps no records, so it has no dashboard: it says so.
+// A service without storage keeps no records, so it has no dashboard: it says so. Charts are
+// Observable Plot (VIS-3), themed from the tokens.
 import { activityLog, serviceMetrics, type ServiceEvent } from "@sekaran-ind/yaxb-core/metrics";
 import { compileBundle } from "@sekaran-ind/yaxb-journeys";
+import { PlotChart } from "@sekaran-ind/yaxb-journeys/vue";
 import { JOURNEY_SERVICES } from "@sekaran-ind/yaxb-core/content";
 import { Activity, BarChart3, Loader2, RotateCcw } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
@@ -59,7 +61,6 @@ const journeys = computed(() => {
 const m = computed(() => serviceMetrics(events.value, journeys.value));
 const log = computed(() => activityLog(events.value).slice(0, 50));
 const weeks = computed(() => m.value.weeks.slice(-8));
-const maxWeek = computed(() => Math.max(1, ...weeks.value.map((w) => w.started)));
 
 const pct = (x: number | null) => (x === null ? "–" : `${Math.round(x * 100)}%`);
 const dur = (ms: number | null) => {
@@ -128,16 +129,10 @@ const STORAGE: Record<string, string> = { box: "on the organisation's box", serv
         </ul>
       </div>
 
-      <!-- Journeys started per week (one series: no legend; finished is the text beside each bar) -->
+      <!-- Journeys started per week (VIS-3: Observable Plot, themed; the numbers are in its table too) -->
       <div v-if="weeks.length" class="space-y-2">
-        <h3 class="font-semibold text-ink">Journeys started per week</h3>
-        <ul class="space-y-1.5">
-          <li v-for="w in weeks" :key="w.week" class="grid grid-cols-[4.5rem_minmax(0,1fr)_auto] items-center gap-3 text-sm" :title="`Week of ${weekLabel(w.week)}: ${w.started} started, ${w.finished} finished`">
-            <span class="text-gray-600">{{ weekLabel(w.week) }}</span>
-            <span class="h-3 rounded-r-[4px] bg-brand" :style="{ width: `${Math.max(2, (w.started / maxWeek) * 100)}%` }" />
-            <span class="tabular-nums text-body">{{ w.started }} <span class="text-gray-500">· {{ w.finished }} finished</span></span>
-          </li>
-        </ul>
+        <PlotChart :data="weeks.map((w) => ({ label: weekLabel(w.week), value: w.started }))" title="Journeys started per week" />
+        <p class="text-xs text-gray-500">{{ weeks.map((w) => `${weekLabel(w.week)}: ${w.finished} finished`).join(" · ") }}</p>
       </div>
 
       <!-- Each journey -->
@@ -148,13 +143,8 @@ const STORAGE: Record<string, string> = { box: "on the organisation's box", serv
         </div>
         <div v-if="j.funnel.length">
           <h4 class="eyebrow mb-1.5">Where people get to</h4>
-          <ul class="space-y-1">
-            <li v-for="f in j.funnel" :key="f.step" class="grid grid-cols-[minmax(6rem,12rem)_minmax(0,1fr)_auto] items-center gap-3 text-sm" :title="`${f.label}: ${f.reached} reached, ${f.stoppedHere} stopped here`">
-              <span class="truncate text-body">{{ f.label }}</span>
-              <span class="h-2.5 rounded-r-[4px] bg-brand/70" :style="{ width: `${Math.max(2, (f.reached / Math.max(1, j.started)) * 100)}%` }" />
-              <span class="tabular-nums text-gray-600">{{ f.reached }}<template v-if="f.stoppedHere"> · {{ f.stoppedHere }} stopped</template></span>
-            </li>
-          </ul>
+          <PlotChart :data="j.funnel.map((f) => ({ label: f.label, value: f.reached }))" :height="180" />
+          <p v-if="j.funnel.some((f) => f.stoppedHere)" class="text-xs text-gray-500">Stopped at: {{ j.funnel.filter((f) => f.stoppedHere).map((f) => `${f.label} (${f.stoppedHere})`).join(", ") }}</p>
         </div>
         <dl class="grid gap-x-6 gap-y-1 text-sm @lg:grid-cols-2">
           <template v-if="j.waits.length">

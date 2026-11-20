@@ -4,6 +4,8 @@
 // marathon's race day). "Tell the Scheduler" reads a sentence into an entry to confirm (the
 // Scheduler agent: on the device, then the AI model for what it couldn't tell); or add one by hand.
 import { REPEATS, SCHEDULE_KINDS, dayOf, isoDay, occurrences, type Occurrence, type ScheduleDraft, type ScheduleItem } from "@sekaran-ind/yaxb-core/schedule";
+import { occurrenceEvents } from "@sekaran-ind/yaxb-core/timeline";
+import { EventTimeline } from "@sekaran-ind/yaxb-journeys/vue";
 import { ConfirmAction } from "@sekaran-ind/yaxb-journeys/vue";
 import { ArrowLeft, Cake, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Circle, Heart, Loader2, Pencil, Plus, Sparkles, Trash2 } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
@@ -63,16 +65,22 @@ const KIND: Record<string, string> = { todo: "To-do", birthday: "Birthday", anni
 const REPEAT: Record<string, string> = { none: "Doesn't repeat", weekly: "Every week", monthly: "Every month", yearly: "Every year" };
 
 // ---- views --------------------------------------------------------------------------------------
-type View = "upcoming" | "month" | "todos" | "people";
+type View = "upcoming" | "month" | "timeline" | "todos" | "people";
 const view = ref<View>("upcoming");
 const VIEWS = [
   { value: "upcoming" as const, label: "Upcoming" },
   { value: "month" as const, label: "Month" },
+  { value: "timeline" as const, label: "Timeline" },
   { value: "todos" as const, label: "To-dos" },
   { value: "people" as const, label: "Birthdays" },
 ];
 const today = s.today();
 const soon = computed(() => s.upcoming(30));
+/** VIS-4: the past month and the next three on a timeline, a lane per kind. */
+const timeline = computed(() => {
+  const from = dayOf(today);
+  return occurrenceEvents(occurrences(s.items.value, isoDay(new Date(from.getFullYear(), from.getMonth() - 1, from.getDate())), isoDay(new Date(from.getFullYear(), from.getMonth() + 3, from.getDate())), s.services.value));
+});
 const label = (iso: string) => {
   const d = dayOf(iso);
   const diff = Math.round((d.getTime() - dayOf(today).getTime()) / 86_400_000);
@@ -155,6 +163,9 @@ const when = (o: Pick<Occurrence, "time">) => (o.time ? ` · ${o.time}` : "");
     <p v-if="notice" role="status" class="rounded-lg bg-mist px-3 py-2 text-sm text-ink">{{ notice }}</p>
 
     <SegmentedControl v-model="view" :options="VIEWS" label="View" />
+
+    <!-- Timeline (VIS-4): the past month and the next three, zoomable; a list on narrow screens -->
+    <EventTimeline v-if="view === 'timeline'" :items="timeline" title="The past month and the next three" />
 
     <!-- Upcoming: the next 30 days, and the to-dos that wait -->
     <div v-if="view === 'upcoming'" class="space-y-4">
@@ -245,7 +256,7 @@ const when = (o: Pick<Occurrence, "time">) => (o.time ? ` · ${o.time}` : "");
     </ul>
 
     <!-- Birthdays and anniversaries, by the next one -->
-    <ul v-else class="space-y-1.5">
+    <ul v-else-if="view === 'people'" class="space-y-1.5">
       <li v-if="!people.length" class="rounded-lg bg-mist px-3 py-4 text-center text-sm text-gray-600">No birthdays or anniversaries yet. Tell the Scheduler: "Mum's birthday on 3 March".</li>
       <li v-for="o in people" :key="o.id" class="card flex items-center gap-3 p-3">
         <component :is="kindIcon(o.kind)" class="size-5 shrink-0 text-brand" aria-hidden="true" />

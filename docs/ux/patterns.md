@@ -170,7 +170,7 @@ What each kiosk layout means for its screens: Full and Mini give the nav a fixed
 
 ## Themes and sizes
 
-- Use theme tokens only (see `CLAUDE.md`), and check every change in Classic, Calm, Warm, Night and High contrast.
+- Use theme tokens only (see `docs/architecture/web.md`), and check every change in Classic, Calm, Warm, Night and High contrast.
 - Check every change at 1440×900, 1024×768 and 390×844.
 - Inside a frame, size by the container (`@container`), not the window.
 

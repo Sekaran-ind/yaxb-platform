@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { DisplayBlocks } from "@sekaran-ind/yaxb-journeys/vue";
 // Runs a journey on yaxb-core's journey engine. Each step is a question for the visitor or a
 // service: the assistant, an on-device model, or the notebook (handlers from the shell).
 // A question can also be answered in the visitor's own words: slot filling reads them into the
@@ -430,6 +431,7 @@ onBeforeUnmount(() => {
     <JourneyTasks v-if="state?.tasks?.length" :tasks="state.tasks" :role-name="roleName" @focus="(step) => runner.focus(step)" />
     <form v-if="state?.status === 'asking' && state.prompt" class="card space-y-3 p-4" @submit.prevent="submit">
       <p class="font-medium text-ink">{{ state.prompt.text }}</p>
+      <DisplayBlocks v-if="state.prompt.show?.length" :blocks="state.prompt.show" />
       <!-- In the conversation, the message box below fills this form (LIB-56); elsewhere, its own box. -->
       <div v-if="state.prompt.fields.some((f) => f.type !== 'source') && (!embedded || slotNote || confirms.length || (missing.length && said.trim()))" class="space-y-2 rounded-lg bg-mist p-3">
         <label v-if="!embedded" :for="`${uid}-said`" class="block text-sm font-medium text-ink">Say or type it in your own words</label>
@@ -483,6 +485,7 @@ onBeforeUnmount(() => {
         <template v-if="state?.status === 'done' && state.result">
           <h4 class="font-semibold text-ink">{{ state.result.title }}</h4>
           <p v-if="state.result.text" class="leading-relaxed whitespace-pre-wrap text-ink">{{ state.result.text }}</p>
+          <DisplayBlocks v-if="state.result.show?.length" :blocks="state.result.show" />
         </template>
         <h4 v-else class="font-semibold text-ink">{{ handed.status === "done" ? "Done" : `Sent to ${handedTo}` }}</h4>
         <p v-if="handed.status !== 'done'" class="text-sm text-ink">
@@ -520,6 +523,7 @@ onBeforeUnmount(() => {
     <div v-if="state?.status === 'done' && state.result && !handed && !handing" class="card space-y-3 p-4">
       <h4 class="font-semibold text-ink">{{ state.result.title }}</h4>
       <p class="leading-relaxed whitespace-pre-wrap text-ink">{{ state.result.text }}</p>
+      <DisplayBlocks v-if="state.result.show?.length" :blocks="state.result.show" />
       <p v-if="completers.length && !handsOver" class="rounded-lg bg-info/10 px-3 py-2 text-sm text-ink">Next: {{ completers.join(" or ") }} will complete this with you.</p>
       <div class="flex flex-wrap gap-2">
         <button type="button" class="btn-light" @click="emit('speak', state.result.text)"><Volume2 class="size-4" aria-hidden="true" /> Read aloud</button>

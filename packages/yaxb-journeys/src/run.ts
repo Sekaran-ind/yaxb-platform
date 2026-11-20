@@ -26,7 +26,7 @@
 import { assign, createActor, createMachine, fromPromise, type AnyActorRef, type AnyMachineSnapshot } from "xstate";
 import { holds, render, type Scope } from "./expressions.js";
 import { formProblems, keptAnswers } from "./fields.js";
-import { GUARD_DEFAULT_MS, guardKey, levelNeeded, mayAnswer, type Journey, type RunActor, type RunSnapshot, type RunState, type ServiceHandler, type Step, type TaskState } from "./journeys.js";
+import { GUARD_DEFAULT_MS, guardKey, levelNeeded, mayAnswer, type DisplayKind, type ShownBlock, type Journey, type RunActor, type RunSnapshot, type RunState, type ServiceHandler, type Step, type TaskState } from "./journeys.js";
 
 /** XState's assign, for this file's events (SUBMIT's answers, a service's output or error). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -210,7 +210,8 @@ export function createRunner(
           const r = (render(step.result ?? {}, scope(c)) ?? {}) as { title?: unknown; text?: unknown; ok?: unknown };
           const ok = r.ok === undefined ? true : r.ok === true || r.ok === "true";
           const outcome = typeof step.result?.outcome === "string" ? step.result.outcome : null;
-          return { trail: trailOf(c, step, true), result: { title: String(r.title ?? journey.title), text: String(r.text ?? ""), ok, outcome } };
+          const show = shown(step, c);
+          return { trail: trailOf(c, step, true), result: { title: String(r.title ?? journey.title), text: String(r.text ?? ""), ok, outcome, ...(show ? { show } : {}) } };
         }),
       };
     if (step.uses) {
@@ -321,9 +322,17 @@ export function createRunner(
   let actor: AnyActorRef | null = null;
   let stopped = false;
 
-  const promptOf = (id: string): RunState["prompt"] => {
+  /** VIS-6: a step's display blocks with their data filled from the run. */
+  const shown = (step: Step, c: Pick<Ctx, "answers" | "steps">): ShownBlock[] | undefined =>
+    step.show?.map((b) => {
+      const type = Object.keys(b)[0] as DisplayKind;
+      const v = b[type]!;
+      return { type, title: v.title ?? null, ...(v.kind ? { kind: v.kind } : {}), data: render(v.from, scope(c)) };
+    });
+  const promptOf = (id: string, c?: Pick<Ctx, "answers" | "steps">): RunState["prompt"] => {
     const s = journey.steps[id]!;
-    return { step: id, text: s.ask ?? "", fields: s.fields ?? [], sections: s.sections, submitLabel: s.submitLabel };
+    const show = c ? shown(s, c) : undefined;
+    return { step: id, text: s.ask ?? "", fields: s.fields ?? [], sections: s.sections, submitLabel: s.submitLabel, ...(show ? { show } : {}) };
   };
 
   function view(snap: AnyMachineSnapshot): RunState {
@@ -339,7 +348,7 @@ export function createRunner(
     const [top, sub] = typeof value === "string" ? [value, null] : (Object.entries(value)[0] as [string, unknown]);
     if (top === "tasks") return taskView(c, sub as Record<string, unknown>, base);
     const id = top.replace(/^s_/, "");
-    if (sub === "asking") return { ...base, status: "asking", current: id, prompt: promptOf(id), refused: c.refused?.step === id ? c.refused : null };
+    if (sub === "asking") return { ...base, status: "asking", current: id, prompt: promptOf(id, c), refused: c.refused?.step === id ? c.refused : null };
     if (sub === "waiting") return { ...base, status: "waiting", current: id, waiting: { step: id, role: journey.steps[id]?.role ?? null } };
     if (sub === "depending") return { ...base, status: "waiting", current: id, waiting: { step: id, role: null, uses: journey.steps[id]!.uses } };
     if (sub === "stepup") return { ...base, status: "step_up", current: id, stepUp: { step: id, level: levelNeeded(journey, journey.steps[id]!) } };

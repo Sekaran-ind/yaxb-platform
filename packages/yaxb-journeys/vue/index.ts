@@ -29,5 +29,11 @@ export { default as MediaCapture } from "./MediaCapture.vue";
 export const GeoPicker = defineAsyncComponent(() => import("./GeoPicker.vue"));
 export const MapView = defineAsyncComponent(() => import("./MapView.vue"));
 export type { MapPlace } from "./MapView.vue";
+// Charts, timelines and display blocks (VIS-3, VIS-4, VIS-6): Observable Plot and d3 load with them only.
+export const PlotChart = defineAsyncComponent(() => import("./PlotChart.vue"));
+export const EventTimeline = defineAsyncComponent(() => import("./EventTimeline.vue"));
+export { default as DisplayBlocks } from "./DisplayBlocks.vue";
+export type { ChartPoint } from "./PlotChart.vue";
+export type { TimelineItem } from "./EventTimeline.vue";
 export { DEFAULT_VIEW, GEO_KEY, OSM_TILES, provideGeo, useGeo, type GeoHost, type PlaceHit } from "./geo";
 export { MEDIA_KEY, mediaRefOf, PHOTO_MAX_BYTES, PHOTO_MAX_SIDE, provideMedia, shrinkPhoto, useMedia, type MediaHost } from "./media";
