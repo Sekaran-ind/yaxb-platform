@@ -41,6 +41,11 @@ const schema = z.object({
    * transient relay (CASES_RELAY, "on" by default), whose envelopes expire after RELAY_HOURS.
    */
   CASES_CENTRAL: z.enum(["on", "off"]).default("off"),
+  /**
+   * Approved sites (SIT-1..6): "on" refuses a site that isn't on the approved list; "off" (until the
+   * list is ready) still adds it, flags it and asks for it to be reviewed.
+   */
+  SITES_ENFORCE: z.enum(["on", "off"]).default("off"),
   CASES_RELAY: z.enum(["on", "off"]).default("on"),
   RELAY_HOURS: z.coerce.number().int().min(1).max(168).default(48),
   /**

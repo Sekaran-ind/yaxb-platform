@@ -12,6 +12,8 @@ import { settings, stringEnv, type Bindings } from "./env";
 import { connectorSecrets } from "./kiosk";
 import { callConnector, connectorSecrets as connectorSecretNames, ConnectorError, parseConnector } from "@sekaran-ind/yaxb-core/connectors";
 import { seal as sealIdentity, unseal as unsealIdentity } from "@sekaran-ind/yaxb-core/identity";
+import { SITE_USES, SiteError, type SiteUse } from "@sekaran-ind/yaxb-core/sites";
+import { sites } from "./kiosk";
 import { cases, catalogue, currentTenant, designer, kiosk, library, moderators, relay, reviews, serviceEvents, tenantContext, tenantOfMember, tenants } from "./kiosk";
 import { DEFAULT_TENANT, SLUG, TenantError } from "@sekaran-ind/yaxb-core/tenants";
 import { offers, resolveContext, servesApi, SURFACE_HEADS } from "@sekaran-ind/yaxb-core/context";
@@ -283,13 +285,110 @@ app.post("/api/sources/web", async (c) => {
   if (!parsed.success) return jsonError(c, 422, "Enter a web address.");
   try {
     // Family DNS (blocks malware, phishing, adult sites), the organisation's allow/block lists, and Safe Browsing if configured.
+    // The approved list (SIT-1..6): refused when enforced; otherwise added, flagged, and asked for.
+    const verdict = await siteHere(c, parsed.data.url, "source");
+    if (!verdict.allowed && settings(c.env).SITES_ENFORCE === "on") return c.json({ error: `${verdict.why} Ask for it to be added.`, ask: true }, 403);
     const site = await fetchSite(parsed.data.url, parsed.data.follow, { resolve: dohResolver(), check: siteGuard(siteRulesFromEnv(stringEnv(c.env))) });
-    return c.json({ pages: site.pages.map(({ url, title, text, fetchedAt }) => ({ url, title, text, fetchedAt })), skipped: site.skipped });
+    // A site this business switched off itself is never asked for again on its behalf.
+    if (!verdict.allowed && !verdict.switchedOff) await askForSite(c, parsed.data.url, "source", "Added to a notebook").catch(() => undefined);
+    return c.json({ pages: site.pages.map(({ url, title, text, fetchedAt }) => ({ url, title, text, fetchedAt })), skipped: site.skipped, unapproved: !verdict.allowed });
   } catch (e) {
     if (e instanceof PageError) return jsonError(c, 422, e.message);
     console.error(JSON.stringify({ msg: "web source failure", error: e instanceof Error ? `${e.name}: ${e.message.slice(0, 120)}` : "unknown" }));
     return jsonError(c, 502, "That page couldn't be loaded.");
   }
+});
+
+// ---- approved sites (SIT-1..6) ---------------------------------------------------------------------------
+
+/** Where this request stands for the approved list: its edition, its business (none for a family) and region. */
+const siteScope = (c: Context<AppEnv>) => {
+  const edition = currentEdition();
+  const family = edition === "family" || c.get("space")?.kind === "family";
+  return { edition, tenant: family ? null : currentTenant(), family, region: "IN" };
+};
+const siteHere = (c: Context<AppEnv>, url: string, use: SiteUse) => sites(c.env).verdict(url, use, siteScope(c));
+/** Ask for a site: in the business's name, or "a family"; the asker kept only so they can't approve it. */
+async function askForSite(c: Context<AppEnv>, url: string, use: SiteUse, reason?: string) {
+  const scope = siteScope(c);
+  const label = scope.family ? "a family" : ((await tenants(c.env).tenant(currentTenant()).catch(() => null))?.name ?? (currentTenant() === DEFAULT_TENANT ? "this kiosk's business" : "a business"));
+  const askedBy = c.get("account")?.sub ?? `session:${await clientId(c)}`;
+  return sites(c.env).request({ url, use, reason, askedByLabel: label, askedBy, edition: scope.edition, tenant: scope.tenant });
+}
+/** The platform's moderators: the portal's administrator, or its members who moderate. */
+async function platformModerator(c: Context<AppEnv>): Promise<{ id: string; name: string } | null> {
+  if (currentEdition() !== "all") return null;
+  if (await isAdmin(c)) return { id: "admin", name: "Platform administrator" };
+  const m = await memberOf(c);
+  return m && (m.roles.includes("moderator") || m.roles.includes("administrator")) ? { id: c.get("account")?.sub ?? m.id, name: m.name } : null;
+}
+const siteCall = async (c: Context<AppEnv>, fn: () => Promise<unknown>) => {
+  try {
+    return c.json(await fn());
+  } catch (e) {
+    if (e instanceof SiteError) return jsonError(c, e.status, e.message);
+    throw e;
+  }
+};
+const siteUseSchema = z.enum(SITE_USES);
+/** "Ask to add this site" (anyone; same origin; a form's limit). */
+app.post("/api/sites/requests", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  if (!(await withinLimit("form", c.env.FORM_LIMITER, `site-ask:${await clientId(c)}`))) return jsonError(c, 429, "Too many requests. Please wait a minute.");
+  const b = z.object({ url: z.string().max(500), use: siteUseSchema, reason: z.string().max(300).optional() }).safeParse((await readJson(c, MAX_FORM_BODY)).body);
+  if (!b.success) return jsonError(c, 422, "Give the site's address and what it is for.");
+  return siteCall(c, async () => {
+    const r = await askForSite(c, b.data.url, b.data.use, b.data.reason);
+    return { asked: true, merged: r.merged };
+  });
+});
+/** The lists: the platform's, this business's own, and (for the platform's moderators) the open requests. */
+app.get("/api/sites", async (c) =>
+  siteCall(c, async () => {
+    const scope = siteScope(c);
+    const lists = await sites(c.env).list({ tenant: scope.tenant, edition: scope.tenant ? scope.edition : null });
+    const mod = await platformModerator(c);
+    const admin = await administrator(c);
+    return { ...lists, requests: mod ? await sites(c.env).openRequests() : [], moderator: Boolean(mod), administrator: Boolean(admin && scope.tenant), enforce: settings(c.env).SITES_ENFORCE === "on" };
+  }),
+);
+app.post("/api/sites/requests/:id/:decision{approve|reject}", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  const mod = await platformModerator(c);
+  if (!mod) return jsonError(c, 403, "Only the platform's moderators decide on sites.");
+  const body = ((await readJson(c, MAX_FORM_BODY)).body ?? {}) as { region?: string; category?: string; uses?: unknown; paths?: unknown; note?: string };
+  return siteCall(c, () => (c.req.param("decision") === "approve" ? sites(c.env).approve(c.req.param("id"), mod, body) : sites(c.env).reject(c.req.param("id"), mod, body.note)));
+});
+/** A business's own list, and switching a platform site off for it (its administrator). */
+app.post("/api/sites/own", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  const admin = await administrator(c);
+  const scope = siteScope(c);
+  if (!admin || !scope.tenant) return jsonError(c, 403, "A business's administrator keeps its own list.");
+  const body = ((await readJson(c, MAX_FORM_BODY)).body ?? {}) as { url?: string; uses?: unknown; paths?: unknown; category?: string; off?: boolean };
+  return siteCall(c, () =>
+    body.off ? sites(c.env).switchOff(String(body.url ?? ""), { edition: scope.edition, tenant: scope.tenant! }, admin) : sites(c.env).addOwn({ url: String(body.url ?? ""), uses: body.uses, paths: body.paths, category: body.category, edition: scope.edition, tenant: scope.tenant! }, admin),
+  );
+});
+app.post("/api/sites/:id/status", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  const status = ((await readJson(c, MAX_FORM_BODY)).body as { status?: string } | null)?.status;
+  if (status !== "active" && status !== "paused" && status !== "revoked") return jsonError(c, 422, "Choose active, paused or revoked.");
+  const mod = await platformModerator(c);
+  const admin = await administrator(c);
+  const scope = siteScope(c);
+  return siteCall(c, async () => {
+    // The platform's moderators change the platform's entries; a business's administrator its own.
+    if (mod) {
+      try {
+        return await sites(c.env).setStatus(c.req.param("id"), status, mod, { tenant: null, edition: null });
+      } catch (e) {
+        if (!(e instanceof SiteError) || !admin) throw e;
+      }
+    }
+    if (!admin || !scope.tenant) throw new SiteError("You can't change that site.", 403);
+    return sites(c.env).setStatus(c.req.param("id"), status, admin, { tenant: scope.tenant, edition: scope.edition });
+  });
 });
 
 // Read-only kiosk resources. `moderation` holds visitors' escalated questions: moderators only.

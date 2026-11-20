@@ -123,6 +123,10 @@
       "types": "./dist/reviews/index.d.ts",
       "default": "./dist/reviews/index.js"
     },
+    "./sites": {
+      "types": "./dist/sites/index.d.ts",
+      "default": "./dist/sites/index.js"
+    },
     "./connectors": {
       "types": "./dist/connectors/index.d.ts",
       "default": "./dist/connectors/index.js"
