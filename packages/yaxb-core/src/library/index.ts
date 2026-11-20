@@ -786,7 +786,7 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
       const services = entries
         .filter((e) => e.kind === "service" && active.has(e.library_id) && e.status !== "archived" && e.published_yaml)
         .flatMap((e) => {
-          const b = compileBundle(e.published_yaml!, opts);
+          const b = compiledOnce(e.published_yaml!, opts);
           const s = b.services[0];
           if (!s) return [];
           for (const r of b.roles) if (!roles.some((x) => x.id === r.id)) roles.push(r);
@@ -890,6 +890,26 @@ export function createMemoryLibraryStore(): LibraryStore {
       revs.push(copy(r));
     },
   };
+}
+
+/**
+ * `compileBundle` is a pure function of its YAML and options, and `published()` runs it for every
+ * published service on every call (a case starting, a dependency looked up, the catalogue opening):
+ * on a Worker's CPU budget that grows with the number of services. A published revision's compile is
+ * kept (per YAML text and options) in this isolate, so each service compiles once until it changes.
+ * Callers only read the result.
+ */
+const COMPILED_MAX = 400;
+const compiledCache = new Map<string, ReturnType<typeof compileBundle>>();
+function compiledOnce(yaml: string, opts: Parameters<typeof compileBundle>[1]) {
+  const key = `${JSON.stringify(opts)}\u0000${yaml}`;
+  let b = compiledCache.get(key);
+  if (!b) {
+    b = compileBundle(yaml, opts);
+    if (compiledCache.size >= COMPILED_MAX) compiledCache.delete(compiledCache.keys().next().value!);
+    compiledCache.set(key, b);
+  }
+  return b;
 }
 
 /**

@@ -84,7 +84,25 @@ One business can use another's service as a step (`uses: { business, service, jo
 - **Everything below** under "Wave 2: where to start" that isn't listed as done here.
 - **When routines are deployed** (built 2026-11-20, RTN-1..5, 7, 13): `deploy` applies migration 0019 to every edition's database, and the Cron Trigger (`*/15 * * * *`) starts with the Worker. The Monday summary needs the service to keep its records on the server (the paid plan); the late check-in alert works with any storage, because kiosks forward the events it waits for. Hooks (RTN-6, 8, 9, 11, 12) are the next PR.
 
-**Order decided 2026-11-19:** one address first (above), then identity steps 2 to 6, the email assistant, media, connectors and routines, and the foundations. **Editions (EDN-6..10, EDN-30..35, households across devices) are deferred.** The vocabulary tool waits for the owner's word-list source.
+**Order decided 2026-11-19, changed 2026-11-20:** one address first (above), then identity steps 2 to 6, media, connectors and routines, and the foundations. **The email assistant (EML, EMN) moved to Wave 3 on 2026-11-20.**
+
+## Wave 3 (decided 2026-11-20)
+
+Not started. In the order to take them, each beginning with a written design review:
+1. **The email assistant** (`16-email-assistant.md`): after the foundations (RET, STO-4..9, AUD) and Phase 0 below. Start Google's `gmail.send` verification (EML-4) early, since it takes 2 to 6 weeks.
+2. **Editions deferred on 2026-11-19:** committees, elections and notices to members (EDN-6..10), children and elders (EDN-30..35), households across several devices. Elections need their own design for ballot secrecy and verifiability; children and elders need a consent and safeguarding design.
+3. **The vocabulary tool** (SPL-11..14), waiting for the owner's word-list source.
+4. **Reading bills from billers' pages** (BIL-3, WEB-30), parked: it needs a headless browser the Worker can't run, and it touches payments.
+
+## Phase 0: hardening (built 2026-11-20, not deployed)
+
+From the architecture review. Details in `docs/architecture/hardening.md`.
+- **Tenant isolation** (SEC-9): migration 0023 adds `tenant_id` to the moderation queue, answers for review, feedback, the designer's data and services' events. **Everything that exists belongs to the `default` business after it runs**; a non-default business's earlier rows in those tables would no longer show for it (check before deploying: `SELECT tenant_id, COUNT(*) FROM moderation GROUP BY 1` and the like on each edition's database).
+- **The free tier** (SEC-10): 3 hosted-model questions per IP every 40 minutes, on a small model with tools (`free: true` in `providers.json`; the first configured, or `FREE_TIER_MODEL`), a daily budget (`FREE_TIER_DAILY`, 2000), members exempt. **Needs the platform database migration `0010_quota.sql`** (`yaxb.mjs deploy` applies it). New visitors start in Kiosk only (no AI model); people who already saved settings keep their choice.
+- **Case references** (SEC-11), **sealing keys** (SEC-12: set `SEALING_SECRET` to keep connectors' secrets apart from the session secret; existing ones keep working) and **a route-by-route authorization snapshot** (SEC-13).
+- **Compiled services are cached** per isolate, so a case starting no longer recompiles every service.
+- **TanStack Query** (`@tanstack/vue-query`, `lib/queries.ts`) now runs the Business links, Join links and Approved sites panels; other panels still load by hand and can move over one at a time.
+- **Still open from the review:** the free plan's 10 ms CPU limit (decide on Workers Paid), D1 size monitoring and a rule for moving a big business to its own database, retention (RET), splitting `worker/index.ts`, the cron's sequential loop over businesses, `cases.list` expiring on read, and a per-tenant fingerprint cache for `published()`'s database reads.
 
 ## Wave 2: where to start
 

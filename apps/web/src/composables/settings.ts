@@ -44,6 +44,13 @@ export type KioskSettings = {
   child: { on: boolean; pinHash: string | null; spaces: string[] };
 };
 
+/**
+ * A new visitor starts in "Kiosk only (no AI model)": answers come from the curated knowledge and the
+ * notebook on the device, and the hosted model is used only when the person chooses it (so the free
+ * tier's few questions are never spent by accident). Settings a person already saved keep their choice.
+ */
+const WEB_AGENT_DEFAULTS: AgentSettings = { ...DEFAULT_AGENT_SETTINGS, knowledge: { ...DEFAULT_AGENT_SETTINGS.knowledge, answers: "local" } };
+
 const DEFAULTS: KioskSettings = {
   provider: null,
   model: null,
@@ -51,7 +58,7 @@ const DEFAULTS: KioskSettings = {
   speakResponses: true,
   voiceName: null,
   speechRate: 1,
-  agent: DEFAULT_AGENT_SETTINGS,
+  agent: WEB_AGENT_DEFAULTS,
   layout: "auto",
   theme: "system",
   activeNotebook: null,
@@ -65,7 +72,7 @@ function load(): KioskSettings {
   try {
     const saved = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) ?? "{}") as Partial<KioskSettings>;
     if (!isThemeChoice(saved.theme)) delete saved.theme;
-    return { ...DEFAULTS, ...saved, agent: { ...DEFAULT_AGENT_SETTINGS, ...saved.agent, knowledge: { ...DEFAULT_AGENT_SETTINGS.knowledge, ...saved.agent?.knowledge } }, box: { ...DEFAULTS.box, ...saved.box }, cases: { ...DEFAULTS.cases, ...saved.cases }, restricted: { ...DEFAULTS.restricted, ...saved.restricted }, child: { ...DEFAULTS.child, ...saved.child } };
+    return { ...DEFAULTS, ...saved, agent: { ...WEB_AGENT_DEFAULTS, ...saved.agent, knowledge: { ...WEB_AGENT_DEFAULTS.knowledge, ...saved.agent?.knowledge } }, box: { ...DEFAULTS.box, ...saved.box }, cases: { ...DEFAULTS.cases, ...saved.cases }, restricted: { ...DEFAULTS.restricted, ...saved.restricted }, child: { ...DEFAULTS.child, ...saved.child } };
   } catch {
     return structuredClone(DEFAULTS);
   }

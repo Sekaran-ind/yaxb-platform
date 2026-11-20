@@ -7,7 +7,7 @@ import type { Selection } from "../schemas/index.js";
 export type Env = Readonly<Record<string, unknown>>;
 
 /** `harness: "lean"` runs the model with only the kiosk tools (small local models). Default "deep". */
-export type CatalogModel = { id: string; label: string; temperature?: boolean; harness?: "deep" | "lean" };
+export type CatalogModel = { id: string; label: string; temperature?: boolean; harness?: "deep" | "lean"; /** A small, cheap model with tool calling, for the free tier. */ free?: boolean };
 /** `credential` is the key; `requires` lists other settings that must also be set (e.g. an account id). */
 export type CatalogProvider = { id: string; label: string; credential: string; requires?: string[]; local?: boolean; models: CatalogModel[] };
 export type Catalog = { default: { provider: string; model: string }; providers: CatalogProvider[] };
@@ -47,6 +47,31 @@ export function defaultSelection(env: Env, cat: Catalog = catalog): { provider: 
   if (preferred && isConfigured(env, preferred)) return cat.default;
   const first = cat.providers.find((p) => isConfigured(env, p) && p.models.length);
   return first ? { provider: first.id, model: first.models[0]!.id } : cat.default;
+}
+
+/**
+ * The model the free tier uses: a small, cheap one that still calls tools (the agent needs them).
+ * `FREE_TIER_MODEL` ("provider/model") picks one from the allowlist; otherwise the first configured
+ * model the catalogue marks `free`. Null when none is configured.
+ */
+export function freeTierSelection(env: Env, cat: Catalog = catalog): { provider: string; model: string } | null {
+  const pick = typeof env.FREE_TIER_MODEL === "string" ? env.FREE_TIER_MODEL.trim() : "";
+  if (pick) {
+    const at = pick.indexOf("/");
+    const sel = { provider: pick.slice(0, at), model: pick.slice(at + 1) };
+    try {
+      resolveSelection(env, sel, cat);
+      return sel;
+    } catch {
+      return null;
+    }
+  }
+  for (const p of cat.providers) {
+    if (!isConfigured(env, p)) continue;
+    const m = p.models.find((x) => x.free);
+    if (m) return { provider: p.id, model: m.id };
+  }
+  return null;
 }
 
 export function listProviders(env: Env, cat: Catalog = catalog): ProvidersResponse {

@@ -62,6 +62,24 @@ const schema = z.object({
   /** Sign in with Google (IDN-14): an OAuth client of a Google Cloud project. Unset = not offered. */
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
+  /**
+   * The free tier (Phase 0): a visitor who isn't a signed-in member gets this many questions to the
+   * hosted AI model per IP address in the window, always on the small model below. 0 = no limit (and
+   * no forced model). Kiosk only answers on the device never count.
+   */
+  FREE_TIER_QUESTIONS: z.coerce.number().int().min(0).max(1000).default(3),
+  FREE_TIER_WINDOW_MINUTES: z.coerce.number().int().min(1).max(1440).default(40),
+  /** Hosted-model questions the free tier may use in a day, for the whole deployment (a spend cap). 0 = none. */
+  FREE_TIER_DAILY: z.coerce.number().int().min(0).max(1_000_000).default(2000),
+  /** The free tier's model ("provider/model" from the allowlist); default: the first configured model the catalogue marks `free`. */
+  FREE_TIER_MODEL: z.string().optional(),
+  /**
+   * Seals connectors' secrets (their API keys), apart from the session secret so rotating one doesn't
+   * lose the other. Unset: SESSION_SECRET is used. Setting it later keeps older secrets readable.
+   */
+  SEALING_SECRET: z.string().min(32, "SEALING_SECRET must be at least 32 characters").optional(),
+  /** Wrong case references one address may try in 15 minutes before it is refused. */
+  CASE_REF_MISSES: z.coerce.number().int().min(1).max(100).default(8),
 });
 
 /** The native app's origins (PLT-14). */

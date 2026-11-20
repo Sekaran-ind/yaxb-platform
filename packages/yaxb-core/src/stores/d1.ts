@@ -55,36 +55,38 @@ export function createD1ThreadStore(db: D1Like): ThreadStore {
   };
 }
 
-export function createD1ModerationStore(db: D1Like): ModerationStore {
+/** The moderation queue, one per business (migration 0023). */
+export function createD1ModerationStore(db: D1Like, { tenant = "default" }: { tenant?: string } = {}): ModerationStore {
   return {
     async add(question, reason) {
       const item = newModerationItem(question, reason);
       await db
-        .prepare("INSERT INTO moderation (id, question, reason, created_at, state) VALUES (?1, ?2, ?3, ?4, 'open')")
-        .bind(item.id, item.question, item.reason, item.created_at)
+        .prepare("INSERT INTO moderation (id, question, reason, created_at, state, tenant_id) VALUES (?1, ?2, ?3, ?4, 'open', ?5)")
+        .bind(item.id, item.question, item.reason, item.created_at, tenant)
         .run();
       return item;
     },
     async list(limit = 100) {
       const { results } = await db
-        .prepare(`SELECT ${MOD_COLS} FROM moderation ORDER BY created_at DESC LIMIT ?1`)
-        .bind(Math.min(Math.max(limit, 1), 500))
+        .prepare(`SELECT ${MOD_COLS} FROM moderation WHERE tenant_id = ?2 ORDER BY created_at DESC LIMIT ?1`)
+        .bind(Math.min(Math.max(limit, 1), 500), tenant)
         .all<ModerationItem>();
       return results;
     },
     async handle(id, note, by) {
       await db
-        .prepare("UPDATE moderation SET state = 'handled', note = ?2, handled_by = ?3, handled_at = ?4 WHERE id = ?1")
-        .bind(id, note.slice(0, MODERATION_NOTE_MAX), by, new Date().toISOString())
+        .prepare("UPDATE moderation SET state = 'handled', note = ?2, handled_by = ?3, handled_at = ?4 WHERE id = ?1 AND tenant_id = ?5")
+        .bind(id, note.slice(0, MODERATION_NOTE_MAX), by, new Date().toISOString(), tenant)
         .run();
-      return db.prepare(`SELECT ${MOD_COLS} FROM moderation WHERE id = ?1`).bind(id).first<ModerationItem>();
+      return db.prepare(`SELECT ${MOD_COLS} FROM moderation WHERE id = ?1 AND tenant_id = ?2`).bind(id, tenant).first<ModerationItem>();
     },
   };
 }
 const MOD_COLS = "id, question, reason, created_at, state, note, handled_by, handled_at";
 
 /** Answers sent for review and moderators' reviews on D1 (migrations/0005_reviews.sql). */
-export function createD1ReviewStore(db: D1Like): ReviewStore {
+/** Answers sent for review: each business's own (migration 0023); a review belongs to its answer's business. */
+export function createD1ReviewStore(db: D1Like, { tenant = "default" }: { tenant?: string } = {}): ReviewStore {
   type ARow = Omit<ReviewAnswer, "refs" | "notebook"> & { refs: string; notebook_id: string | null; notebook_title: string | null };
   type RRow = Omit<Review, "marks" | "missing" | "proposal"> & { marks: string; missing: string; proposal: string | null };
   const A = "a.id, a.created_at, a.origin, a.question, a.answer, a.refs, a.notebook_id, a.notebook_title, a.mode, a.language, a.state";
@@ -94,38 +96,40 @@ export function createD1ReviewStore(db: D1Like): ReviewStore {
   // The latest review of an answer is the one no other review replaces.
   const LATEST = `SELECT ${R} FROM reviews r WHERE r.answer_id = ?1 AND NOT EXISTS (SELECT 1 FROM reviews n WHERE n.replaces = r.id) ORDER BY r.at DESC, r.id DESC LIMIT 1`;
   const getAnswer = async (id: string) => {
-    const r = await db.prepare(`SELECT ${A} FROM review_answers a WHERE a.id = ?1`).bind(id).first<ARow>();
+    const r = await db.prepare(`SELECT ${A} FROM review_answers a WHERE a.id = ?1 AND a.tenant_id = ?2`).bind(id, tenant).first<ARow>();
     return r ? toAnswer(r) : null;
   };
   const latest = async (id: string) => toReview(await db.prepare(LATEST).bind(id).first<RRow>());
   return {
     async addAnswer(a) {
       await db
-        .prepare("INSERT INTO review_answers (id, created_at, origin, question, answer, refs, notebook_id, notebook_title, mode, language, state) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)")
-        .bind(a.id, a.created_at, a.origin, a.question, a.answer, JSON.stringify(a.refs), a.notebook?.id ?? null, a.notebook?.title ?? null, a.mode, a.language, a.state)
+        .prepare("INSERT INTO review_answers (id, created_at, origin, question, answer, refs, notebook_id, notebook_title, mode, language, state, tenant_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)")
+        .bind(a.id, a.created_at, a.origin, a.question, a.answer, JSON.stringify(a.refs), a.notebook?.id ?? null, a.notebook?.title ?? null, a.mode, a.language, a.state, tenant)
         .run();
     },
     getAnswer,
     async listAnswers({ state, notebook, limit = 100 } = {}) {
-      const where: string[] = [];
-      const values: unknown[] = [];
+      const values: unknown[] = [tenant];
+      const where: string[] = ["a.tenant_id = ?1"];
       if (state) where.push(`a.state = ?${values.push(state)}`);
       if (notebook) where.push(`a.notebook_id = ?${values.push(notebook)}`);
       values.push(Math.min(Math.max(limit, 1), 500));
       const { results } = await db
-        .prepare(`SELECT ${A} FROM review_answers a ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY a.created_at DESC, a.id DESC LIMIT ?${values.length}`)
+        .prepare(`SELECT ${A} FROM review_answers a WHERE ${where.join(" AND ")} ORDER BY a.created_at DESC, a.id DESC LIMIT ?${values.length}`)
         .bind(...values)
         .all<ARow>();
       return Promise.all(results.map(async (r) => ({ answer: toAnswer(r), review: await latest(r.id) })));
     },
     async addReview(r) {
+      if (!(await getAnswer(r.answer_id))) throw new Error("There is no such answer to review.");
       await db
         .prepare(`INSERT INTO reviews (${R}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`)
         .bind(r.id, r.answer_id, r.at, r.moderator_id, r.moderator_name, r.rating, JSON.stringify(r.marks), JSON.stringify(r.missing), r.context, r.proposal ? JSON.stringify(r.proposal) : null, r.replaces)
         .run();
-      await db.prepare("UPDATE review_answers SET state = 'reviewed' WHERE id = ?1").bind(r.answer_id).run();
+      await db.prepare("UPDATE review_answers SET state = 'reviewed' WHERE id = ?1 AND tenant_id = ?2").bind(r.answer_id, tenant).run();
     },
     async history(id) {
+      if (!(await getAnswer(id))) return [];
       const { results } = await db.prepare(`SELECT ${R} FROM reviews WHERE answer_id = ?1 ORDER BY at DESC, id DESC`).bind(id).all<RRow>();
       return results.map((r) => toReview(r)!);
     },
@@ -134,10 +138,10 @@ export function createD1ReviewStore(db: D1Like): ReviewStore {
         .prepare(
           `SELECT ${A}, r.id AS r_id, r.at AS r_at, r.moderator_id, r.moderator_name, r.rating, r.marks, r.missing, r.context, r.proposal, r.replaces
            FROM review_answers a JOIN reviews r ON r.answer_id = a.id
-           WHERE a.state = 'reviewed' AND NOT EXISTS (SELECT 1 FROM reviews n WHERE n.replaces = r.id)${since ? " AND a.created_at >= ?1" : ""}
+           WHERE a.tenant_id = ?1 AND a.state = 'reviewed' AND NOT EXISTS (SELECT 1 FROM reviews n WHERE n.replaces = r.id)${since ? " AND a.created_at >= ?2" : ""}
            ORDER BY a.created_at, a.id LIMIT 5000`,
         )
-        .bind(...(since ? [since] : []))
+        .bind(...(since ? [tenant, since] : [tenant]))
         .all<ARow & Omit<RRow, "id" | "at" | "answer_id"> & { r_id: string; r_at: string }>();
       return results.map(({ r_id, r_at, moderator_id, moderator_name, rating, marks, missing, context, proposal, replaces, ...a }) => ({
         answer: toAnswer(a),
@@ -146,8 +150,8 @@ export function createD1ReviewStore(db: D1Like): ReviewStore {
     },
     async proposals(limit = 50) {
       const { results } = await db
-        .prepare(`SELECT ${R} FROM reviews r WHERE r.proposal IS NOT NULL AND NOT EXISTS (SELECT 1 FROM reviews n WHERE n.replaces = r.id) ORDER BY r.at DESC LIMIT ?1`)
-        .bind(Math.min(Math.max(limit, 1), 200))
+        .prepare(`SELECT ${R.split(", ").map((c) => `r.${c}`).join(", ")} FROM reviews r JOIN review_answers a ON a.id = r.answer_id WHERE a.tenant_id = ?2 AND r.proposal IS NOT NULL AND NOT EXISTS (SELECT 1 FROM reviews n WHERE n.replaces = r.id) ORDER BY r.at DESC LIMIT ?1`)
+        .bind(Math.min(Math.max(limit, 1), 200), tenant)
         .all<RRow>();
       const out: { answer: ReviewAnswer; review: Review }[] = [];
       for (const r of results) {
@@ -194,21 +198,22 @@ export function createD1Kv(db: D1Like): Kv {
 }
 
 /** Session feedback on D1 (migrations/0003_feedback.sql). */
-export function createD1FeedbackStore(db: D1Like): FeedbackStore {
+/** Session feedback, one list per business (migration 0023). */
+export function createD1FeedbackStore(db: D1Like, { tenant = "default" }: { tenant?: string } = {}): FeedbackStore {
   type Row = { id: string; rating: FeedbackItem["rating"]; comment: string | null; mode: FeedbackItem["mode"]; language: FeedbackItem["language"]; profile: number; answers: number; created_at: string };
   return {
     async add(input) {
       const item = newFeedbackItem(feedbackSchema.parse(input));
       await db
-        .prepare("INSERT INTO feedback (id, rating, comment, mode, language, profile, answers, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)")
-        .bind(item.id, item.rating, item.comment ?? null, item.mode, item.language, item.profile ? 1 : 0, item.answers, item.created_at)
+        .prepare("INSERT INTO feedback (id, rating, comment, mode, language, profile, answers, created_at, tenant_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)")
+        .bind(item.id, item.rating, item.comment ?? null, item.mode, item.language, item.profile ? 1 : 0, item.answers, item.created_at, tenant)
         .run();
       return item;
     },
     async list(limit = 500) {
       const { results } = await db
-        .prepare("SELECT id, rating, comment, mode, language, profile, answers, created_at FROM feedback ORDER BY created_at DESC LIMIT ?1")
-        .bind(Math.min(Math.max(limit, 1), 2000))
+        .prepare("SELECT id, rating, comment, mode, language, profile, answers, created_at FROM feedback WHERE tenant_id = ?2 ORDER BY created_at DESC LIMIT ?1")
+        .bind(Math.min(Math.max(limit, 1), 2000), tenant)
         .all<Row>();
       return results.map(({ comment, profile, ...r }) => ({ ...r, profile: profile === 1, ...(comment ? { comment } : {}) }));
     },
@@ -401,7 +406,8 @@ export function createD1LibraryStore(db: D1Like, { tenant = "default" }: { tenan
 }
 
 /** The Service Designer's drafts and lessons (migration 0008). */
-export function createD1DesignerStore(db: D1Like): DesignerStore {
+/** The Service Designer's threads, runs and lessons, one set per business (migration 0023). */
+export function createD1DesignerStore(db: D1Like, { tenant = "default" }: { tenant?: string } = {}): DesignerStore {
   const RUN_COLS = "id, owner_id, title, draft_yaml, ok, entry_id, outcome, created_at";
   const LESSON_COLS = "id, text, source, decision, entry_id, run_id, created_at, created_by_name";
   const run = (r: (Omit<DesignRun, "ok"> & { ok: number }) | null): DesignRun | null => (r ? { ...r, ok: Boolean(r.ok) } : null);
@@ -410,50 +416,50 @@ export function createD1DesignerStore(db: D1Like): DesignerStore {
   return {
     async addMessage(m) {
       await db
-        .prepare(`INSERT INTO design_messages (${MSG_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`)
-        .bind(m.id, m.thread_id, m.entry_id, m.author_id, m.author_name, m.role, m.text, m.yaml, m.ok === null ? null : m.ok ? 1 : 0, m.run_id, m.created_at)
+        .prepare(`INSERT INTO design_messages (${MSG_COLS}, tenant_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`)
+        .bind(m.id, m.thread_id, m.entry_id, m.author_id, m.author_name, m.role, m.text, m.yaml, m.ok === null ? null : m.ok ? 1 : 0, m.run_id, m.created_at, tenant)
         .run();
     },
     async messages(id) {
       // In the order written (two messages can share a millisecond), the newest MAX_THREAD.
-      const rows = await db.prepare(`SELECT ${MSG_COLS} FROM design_messages WHERE thread_id = ?1 ORDER BY created_at, rowid`).bind(id).all<MsgRow>();
+      const rows = await db.prepare(`SELECT ${MSG_COLS} FROM design_messages WHERE thread_id = ?1 AND tenant_id = ?2 ORDER BY created_at, rowid`).bind(id, tenant).all<MsgRow>();
       return rows.results.slice(-MAX_THREAD).map((r) => ({ ...r, ok: r.ok === null ? null : Boolean(r.ok) }));
     },
-    threadOfEntry: async (entryId) => (await db.prepare("SELECT thread_id FROM design_messages WHERE entry_id = ?1 ORDER BY created_at LIMIT 1").bind(entryId).first<{ thread_id: string }>())?.thread_id ?? null,
+    threadOfEntry: async (entryId) => (await db.prepare("SELECT thread_id FROM design_messages WHERE entry_id = ?1 AND tenant_id = ?2 ORDER BY created_at LIMIT 1").bind(entryId, tenant).first<{ thread_id: string }>())?.thread_id ?? null,
     async threadInfo(id) {
       const r = await db
-        .prepare("SELECT (SELECT author_id FROM design_messages WHERE thread_id = ?1 ORDER BY created_at LIMIT 1) AS owner_id, (SELECT entry_id FROM design_messages WHERE thread_id = ?1 AND entry_id IS NOT NULL LIMIT 1) AS entry_id")
-        .bind(id)
+        .prepare("SELECT (SELECT author_id FROM design_messages WHERE thread_id = ?1 AND tenant_id = ?2 ORDER BY created_at LIMIT 1) AS owner_id, (SELECT entry_id FROM design_messages WHERE thread_id = ?1 AND tenant_id = ?2 AND entry_id IS NOT NULL LIMIT 1) AS entry_id")
+        .bind(id, tenant)
         .first<{ owner_id: string | null; entry_id: string | null }>();
       return r?.owner_id ? { owner_id: r.owner_id, entry_id: r.entry_id } : null;
     },
     async linkThread(id, entryId) {
-      await db.prepare("UPDATE design_messages SET entry_id = ?2 WHERE thread_id = ?1").bind(id, entryId).run();
+      await db.prepare("UPDATE design_messages SET entry_id = ?2 WHERE thread_id = ?1 AND tenant_id = ?3").bind(id, entryId, tenant).run();
     },
     async putRun(r) {
       await db
         .prepare(
-          `INSERT INTO design_runs (${RUN_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT (id) DO UPDATE SET title = ?3, draft_yaml = ?4, ok = ?5, entry_id = ?6, outcome = ?7`,
+          `INSERT INTO design_runs (${RUN_COLS}, tenant_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT (id) DO UPDATE SET title = ?3, draft_yaml = ?4, ok = ?5, entry_id = ?6, outcome = ?7 WHERE design_runs.tenant_id = ?9`,
         )
-        .bind(r.id, r.owner_id, r.title, r.draft_yaml, r.ok ? 1 : 0, r.entry_id, r.outcome, r.created_at)
+        .bind(r.id, r.owner_id, r.title, r.draft_yaml, r.ok ? 1 : 0, r.entry_id, r.outcome, r.created_at, tenant)
         .run();
     },
-    run: async (id) => run(await db.prepare(`SELECT ${RUN_COLS} FROM design_runs WHERE id = ?1`).bind(id).first()),
-    runForEntry: async (entryId) => run(await db.prepare(`SELECT ${RUN_COLS} FROM design_runs WHERE entry_id = ?1 ORDER BY created_at DESC LIMIT 1`).bind(entryId).first()),
+    run: async (id) => run(await db.prepare(`SELECT ${RUN_COLS} FROM design_runs WHERE id = ?1 AND tenant_id = ?2`).bind(id, tenant).first()),
+    runForEntry: async (entryId) => run(await db.prepare(`SELECT ${RUN_COLS} FROM design_runs WHERE entry_id = ?1 AND tenant_id = ?2 ORDER BY created_at DESC LIMIT 1`).bind(entryId, tenant).first()),
     async lessons(limit = MAX_LESSONS) {
-      return (await db.prepare(`SELECT ${LESSON_COLS} FROM design_lessons ORDER BY created_at DESC LIMIT ?1`).bind(limit).all<DesignLesson>()).results;
+      return (await db.prepare(`SELECT ${LESSON_COLS} FROM design_lessons WHERE tenant_id = ?2 ORDER BY created_at DESC LIMIT ?1`).bind(limit, tenant).all<DesignLesson>()).results;
     },
     async putLesson(l) {
       await db
-        .prepare(`INSERT INTO design_lessons (${LESSON_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT (id) DO UPDATE SET text = ?2`)
-        .bind(l.id, l.text, l.source, l.decision, l.entry_id, l.run_id, l.created_at, l.created_by_name)
+        .prepare(`INSERT INTO design_lessons (${LESSON_COLS}, tenant_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT (id) DO UPDATE SET text = ?2 WHERE design_lessons.tenant_id = ?9`)
+        .bind(l.id, l.text, l.source, l.decision, l.entry_id, l.run_id, l.created_at, l.created_by_name, tenant)
         .run();
       // Keep the newest MAX_LESSONS.
-      await db.prepare("DELETE FROM design_lessons WHERE id NOT IN (SELECT id FROM design_lessons ORDER BY created_at DESC LIMIT ?1)").bind(MAX_LESSONS).run();
+      await db.prepare("DELETE FROM design_lessons WHERE tenant_id = ?2 AND id NOT IN (SELECT id FROM design_lessons WHERE tenant_id = ?2 ORDER BY created_at DESC LIMIT ?1)").bind(MAX_LESSONS, tenant).run();
     },
     async removeLesson(id) {
-      const had = await db.prepare("SELECT id FROM design_lessons WHERE id = ?1").bind(id).first();
-      await db.prepare("DELETE FROM design_lessons WHERE id = ?1").bind(id).run();
+      const had = await db.prepare("SELECT id FROM design_lessons WHERE id = ?1 AND tenant_id = ?2").bind(id, tenant).first();
+      await db.prepare("DELETE FROM design_lessons WHERE id = ?1 AND tenant_id = ?2").bind(id, tenant).run();
       return Boolean(had);
     },
   };
@@ -587,21 +593,22 @@ export function createD1Relay(db: D1Like, now = () => new Date()): Mailbox {
 }
 
 /** A service's events on the server (MET-2, migration 0012): the paid plan's storage. */
-export function createD1EventStore(db: D1Like): EventStore {
+/** Services' events, kept to the business that owns the service (migration 0023). */
+export function createD1EventStore(db: D1Like, { tenant = "default" }: { tenant?: string } = {}): EventStore {
   const COLS = "id, service, journey, kind, step, role, run, at, ms, ok, actor, outcome";
   type Row = Omit<ServiceEvent, "ok"> & { ok: number | null };
   return {
     async add(events) {
       for (const e of events)
         await db
-          .prepare(`INSERT OR IGNORE INTO service_events (${COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`)
-          .bind(e.id, e.service, e.journey, e.kind, e.step, e.role, e.run, e.at, e.ms, e.ok === null ? null : e.ok ? 1 : 0, e.actor, e.outcome ?? null)
+          .prepare(`INSERT OR IGNORE INTO service_events (${COLS}, tenant_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`)
+          .bind(e.id, e.service, e.journey, e.kind, e.step, e.role, e.run, e.at, e.ms, e.ok === null ? null : e.ok ? 1 : 0, e.actor, e.outcome ?? null, tenant)
           .run();
     },
     async list(service, { since, limit = 10_000 } = {}) {
       const rows = await db
-        .prepare(`SELECT ${COLS} FROM (SELECT ${COLS} FROM service_events WHERE service = ?1 AND at >= ?2 ORDER BY at DESC LIMIT ?3) ORDER BY at`)
-        .bind(service, since ?? "", limit)
+        .prepare(`SELECT ${COLS} FROM (SELECT ${COLS} FROM service_events WHERE service = ?1 AND tenant_id = ?4 AND at >= ?2 ORDER BY at DESC LIMIT ?3) ORDER BY at`)
+        .bind(service, since ?? "", limit, tenant)
         .all<Row>();
       return rows.results.map((r) => ({ ...r, ok: r.ok === null ? null : Boolean(r.ok), outcome: r.outcome ?? null }));
     },

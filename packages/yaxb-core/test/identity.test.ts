@@ -48,9 +48,9 @@ for (const [name, make] of [
   ["D1", (): IdentityStore => createD1IdentityStore(sqliteD1({ folder: "migrations-platform" }))],
 ] as const) {
   describe(`identity on ${name}`, () => {
-    let clock = new Date("2026-11-19T10:00:00Z");
+    let clock = new Date(BASE);
     const setup = () => {
-      clock = new Date("2026-11-19T10:00:00Z");
+      clock = new Date(BASE);
       const sender = createMemorySender();
       const store = make();
       const id = createIdentityService(store, { sender, secret: "test-secret-0123456789", issuer: "https://anjalai.cc", now: () => clock });
@@ -93,7 +93,7 @@ for (const [name, make] of [
       for (let i = 1; i < OTP_SENDS_PER_HOUR; i++) await s.id.startPhone({ phone: PHONE, client: "1.2.3.4" });
       await fails(s.id.startPhone({ phone: PHONE, client: "1.2.3.4" }), 429);
       // Another hour: allowed again.
-      clock = new Date("2026-11-19T11:05:00Z");
+      clock = new Date(BASE + 65 * 60_000);
       await s.id.startPhone({ phone: PHONE, client: "1.2.3.4" });
     });
 
@@ -179,6 +179,10 @@ for (const [name, make] of [
 
 // ---- the first release's methods: passkeys, Google, recovery codes ---------------------------------------
 import { softAuthenticator } from "./soft-authenticator.js";
+
+// The tests' clock starts at a fixed minute of the real present: the D1 store forgets challenges that
+// ended a day ago by the real clock, so a clock set in the past would have its challenges swept away.
+const BASE = Math.floor(Date.now() / 60_000) * 60_000;
 
 const RP = { id: "anjalai.cc", name: "Anjal", origins: ["https://family.anjalai.cc", "https://business.anjalai.cc"] };
 
@@ -409,7 +413,7 @@ describe("signing in on a kiosk by scanning (IDN-19)", () => {
     ["D1", (): IdentityStore => createD1IdentityStore(sqliteD1({ folder: "migrations-platform" }))],
   ] as const)
     it(`the phone approves, the kiosk gets a short session at the phone's level, on ${name}`, async () => {
-      let clock = new Date("2026-11-19T10:00:00Z");
+      let clock = new Date(BASE);
       const id = createIdentityService(make(), { secret: "test-secret-0123456789", issuer: "https://anjalai.cc", now: () => clock });
       const r = await id.oidcSignIn({ provider: "google", subject: "s", email: "a@b.in", emailVerified: true, consent: true });
       if (!("session" in r)) throw new Error();

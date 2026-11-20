@@ -6,57 +6,42 @@
 import { LINK_SHAPES, type BusinessLink, type LinkOffer, type LinkShape } from "@sekaran-ind/yaxb-core/links";
 import { ConfirmAction } from "@sekaran-ind/yaxb-journeys/vue";
 import { Handshake, Loader2 } from "@lucide/vue";
-import { computed, onMounted, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { api } from "@/lib/api";
+import { errorText, useApiMutation, useApiQuery } from "@/lib/queries";
 
 type Offerable = { service: string; service_title: string; journey: string; journey_title: string };
-const me = ref("");
-const links = ref<BusinessLink[]>([]);
-const offerable = ref<Offerable[]>([]);
+const query = useApiQuery<{ me: string; links: BusinessLink[]; offerable: Offerable[] }>(["links"], "/api/links");
+const me = computed(() => query.data.value?.me ?? "");
+const links = computed(() => query.data.value?.links ?? []);
+const offerable = computed(() => query.data.value?.offerable ?? []);
 const business = ref("");
-const busy = ref(false);
-const error = ref<string | null>(null);
 /** The offers being chosen, per link: "service/journey" → the shape accepted ("" for not offered). */
 const draft = ref<Record<string, Record<string, LinkShape | "">>>({});
 
 const keyOf = (o: { service: string; journey: string }) => `${o.service}/${o.journey}`;
-function start(l: BusinessLink) {
-  draft.value[l.id] = Object.fromEntries(offerable.value.map((o) => [keyOf(o), l.offers.find((x) => keyOf(x) === keyOf(o))?.accepts ?? ""]));
-}
-async function load() {
-  error.value = null;
-  try {
-    const r = await api<{ me: string; links: BusinessLink[]; offerable: Offerable[] }>("/api/links");
-    me.value = r.me;
-    links.value = r.links;
-    offerable.value = r.offerable;
-    for (const l of r.links) if (l.provider === r.me && l.status !== "ended") start(l);
-  } catch (e) {
-    error.value = (e as Error).message;
-  }
-}
-onMounted(load);
+// What the server holds is the starting point each time it is read again.
+watch(
+  () => query.data.value,
+  (r) => {
+    if (!r) return;
+    for (const l of r.links)
+      if (l.provider === r.me && l.status !== "ended") draft.value[l.id] = Object.fromEntries(r.offerable.map((o) => [keyOf(o), l.offers.find((x) => keyOf(x) === keyOf(o))?.accepts ?? ""]));
+  },
+  { immediate: true },
+);
 
-async function run(fn: () => Promise<unknown>) {
-  busy.value = true;
-  error.value = null;
-  try {
-    await fn();
-    await load();
-  } catch (e) {
-    error.value = (e as Error).message;
-  } finally {
-    busy.value = false;
-  }
-}
 const chosen = (id: string): LinkOffer[] =>
   Object.entries(draft.value[id] ?? {})
     .filter(([, shape]) => shape)
     .map(([k, shape]) => ({ service: k.split("/")[0]!, journey: k.split("/")[1]!, accepts: shape as LinkShape }));
-const invite = () => run(async () => (await api("/api/links", { business: business.value.trim() }), (business.value = "")));
-const accept = (l: BusinessLink) => run(() => api(`/api/links/${l.id}/accept`, { offers: chosen(l.id) }));
-const save = (l: BusinessLink) => run(() => api(`/api/links/${l.id}/offers`, { offers: chosen(l.id) }, "PUT"));
-const end = (l: BusinessLink) => run(() => api(`/api/links/${l.id}/end`, {}));
+const invite = useApiMutation((name: string) => api("/api/links", { business: name }), [["links"]]);
+const accept = useApiMutation((l: BusinessLink) => api(`/api/links/${l.id}/accept`, { offers: chosen(l.id) }), [["links"]]);
+const save = useApiMutation((l: BusinessLink) => api(`/api/links/${l.id}/offers`, { offers: chosen(l.id) }, "PUT"), [["links"]]);
+const end = useApiMutation((l: BusinessLink) => api(`/api/links/${l.id}/end`, {}), [["links"]]);
+const busy = computed(() => [invite, accept, save, end].some((m) => m.isPending.value));
+const error = computed(() => errorText(query.error.value, invite.error.value, accept.error.value, save.error.value, end.error.value));
+const ask = () => invite.mutate(business.value.trim(), { onSuccess: () => (business.value = "") });
 
 const asking = computed(() => links.value.filter((l) => l.status === "invited" && l.provider === me.value));
 const waiting = computed(() => links.value.filter((l) => l.status === "invited" && l.requester === me.value));
@@ -76,7 +61,7 @@ const when = (iso: string) => new Date(iso).toLocaleDateString([], { day: "numer
     </div>
     <p v-if="error" role="alert" class="text-sm text-red-800">{{ error }}</p>
 
-    <form class="flex flex-wrap items-end gap-2" @submit.prevent="invite">
+    <form class="flex flex-wrap items-end gap-2" @submit.prevent="ask">
       <label class="block min-w-48 flex-1 text-sm"><span class="mb-1 block font-medium text-ink">Ask a business to let you use its services</span>
         <input v-model="business" class="input" placeholder="Its short name, such as parts-co" maxlength="48" autocomplete="off" required />
       </label>
@@ -98,8 +83,8 @@ const when = (iso: string) => new Date(iso).toLocaleDateString([], { day: "numer
           </li>
         </ul>
         <div class="flex gap-2">
-          <button type="button" class="btn-primary h-9 text-sm" :disabled="busy" @click="accept(l)">Accept</button>
-          <ConfirmAction label="Decline" :message="`Decline ${l.requester_name}'s request?`" trigger-class="btn-ghost h-9 text-sm" @confirm="end(l)" />
+          <button type="button" class="btn-primary h-9 text-sm" :disabled="busy" @click="accept.mutate(l)">Accept</button>
+          <ConfirmAction label="Decline" :message="`Decline ${l.requester_name}'s request?`" trigger-class="btn-ghost h-9 text-sm" @confirm="end.mutate(l)" />
         </div>
       </div>
     </div>
@@ -107,7 +92,7 @@ const when = (iso: string) => new Date(iso).toLocaleDateString([], { day: "numer
     <ul v-if="waiting.length" class="space-y-1 text-sm text-gray-600">
       <li v-for="l in waiting" :key="l.id" class="flex flex-wrap items-center justify-between gap-2">
         <span>Waiting for {{ l.provider_name }} to answer (asked {{ when(l.created_at) }})</span>
-        <ConfirmAction label="Withdraw" :message="`Withdraw your request to ${l.provider_name}?`" trigger-class="btn-ghost h-8 text-sm" @confirm="end(l)" />
+        <ConfirmAction label="Withdraw" :message="`Withdraw your request to ${l.provider_name}?`" trigger-class="btn-ghost h-8 text-sm" @confirm="end.mutate(l)" />
       </li>
     </ul>
 
@@ -116,7 +101,7 @@ const when = (iso: string) => new Date(iso).toLocaleDateString([], { day: "numer
       <div v-for="l in active" :key="l.id" class="space-y-2 rounded-xl bg-mist p-3">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <p class="font-medium text-ink">{{ other(l) }} <span class="text-xs font-normal text-gray-500">· {{ l.requester === me ? "you use their services" : "they use yours" }} · agreement {{ l.consent_version }}</span></p>
-          <ConfirmAction label="End link" :message="`End the link with ${other(l)}? New requests stop at once; ones already started carry on.`" trigger-class="btn-ghost h-8 text-sm" @confirm="end(l)" />
+          <ConfirmAction label="End link" :message="`End the link with ${other(l)}? New requests stop at once; ones already started carry on.`" trigger-class="btn-ghost h-8 text-sm" @confirm="end.mutate(l)" />
         </div>
         <template v-if="l.provider === me">
           <ul class="space-y-1">
@@ -128,7 +113,7 @@ const when = (iso: string) => new Date(iso).toLocaleDateString([], { day: "numer
               </select>
             </li>
           </ul>
-          <button type="button" class="btn-light h-9 text-sm" :disabled="busy" @click="save(l)">Save what is offered</button>
+          <button type="button" class="btn-light h-9 text-sm" :disabled="busy" @click="save.mutate(l)">Save what is offered</button>
         </template>
         <ul v-else class="list-inside list-disc text-sm text-body">
           <li v-for="o in l.offers" :key="keyOf(o)">{{ o.service }} · {{ o.journey }} (an {{ o.accepts }}): <code class="text-xs">uses: { business: {{ l.provider_name.toLowerCase().replace(/\s+/g, "-") }}, service: {{ o.service }}, journey: {{ o.journey }}, as: {{ o.accepts }} }</code></li>
@@ -140,6 +125,7 @@ const when = (iso: string) => new Date(iso).toLocaleDateString([], { day: "numer
     <ul v-if="ended.length" class="text-sm text-gray-600">
       <li v-for="l in ended" :key="l.id">{{ other(l) }} · ended {{ l.ended_at ? when(l.ended_at) : "" }}<template v-if="l.ended_by"> by {{ l.ended_by }}</template></li>
     </ul>
-    <p v-if="!links.length && !error" class="text-sm text-gray-500">No links yet.</p>
+    <p v-if="query.isPending.value" class="text-sm text-gray-500">Loading…</p>
+    <p v-else-if="!links.length && !error" class="text-sm text-gray-500">No links yet.</p>
   </section>
 </template>

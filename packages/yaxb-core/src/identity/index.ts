@@ -573,7 +573,7 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
       const mine = await store.pendingJoins(accountId);
       if (mine.length >= MAX_PENDING_JOINS) throw new IdentityError("You have too many requests to join waiting already.", 409);
       const { claim, ...rest } = p;
-      await store.putPendingJoin({ id: crypto.randomUUID(), account_id: accountId, ...rest, space_name: rest.space_name.slice(0, 80), sealed_claim: await seal(options.secret, claim), created_at: iso(now()) });
+      await store.putPendingJoin({ id: crypto.randomUUID(), account_id: accountId, ...rest, space_name: rest.space_name.slice(0, 80), sealed_claim: await seal(options.secret, claim, "pending-claim"), created_at: iso(now()) });
     },
     /** The account's waiting join requests on an edition, with their claims (the Worker checks each). */
     async pendingJoins(accountId: string, edition: Edition) {
@@ -761,7 +761,7 @@ export function createIdentityService(store: IdentityStore, options: IdentityOpt
         tenant_id: tenantId,
         issuer: input.issuer.trim(),
         client_id: clientId,
-        sealed_secret: input.client_secret ? await seal(options.secret, input.client_secret) : old!.sealed_secret,
+        sealed_secret: input.client_secret ? await seal(options.secret, input.client_secret, "oidc-client") : old!.sealed_secret,
         label,
         default_role: input.default_role,
         updated_at: iso(now()),

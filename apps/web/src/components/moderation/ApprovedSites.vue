@@ -7,39 +7,27 @@
 //   platform site off for the business (never looser).
 import { ConfirmAction } from "@sekaran-ind/yaxb-journeys/vue";
 import { Globe } from "@lucide/vue";
-import { onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import { api } from "@/lib/api";
+import { errorText, useApiMutation, useApiQuery } from "@/lib/queries";
 
 type Site = { id: string; origin: string; paths: string[]; region: string; category: string; uses: string[]; status: string; approved_by: string; review_at: string };
 type Request = { id: string; origin: string; use: string; reason: string | null; asked_by_label: string; count: number; created_at: string };
 type Lists = { platform: Site[]; own: Site[]; requests: Request[]; moderator: boolean; administrator: boolean; enforce: boolean };
 const USE: Record<string, string> = { source: "notebook source", link: "link to open", analyse: "analysed when designing", lookup: "looked up while a journey runs" };
 
-const data = ref<Lists | null>(null);
-const error = ref<string | null>(null);
+const query = useApiQuery<Lists>(["sites"], "/api/sites");
+const data = computed(() => query.data.value ?? null);
 const decide = ref<Record<string, { region: string; category: string }>>({});
 const own = ref({ url: "", uses: ["source", "link"] as string[] });
-async function load() {
-  try {
-    data.value = await api<Lists>("/api/sites");
-  } catch (e) {
-    error.value = (e as Error).message;
-  }
-}
-onMounted(load);
-async function act(fn: () => Promise<unknown>) {
-  error.value = null;
-  try {
-    await fn();
-    await load();
-  } catch (e) {
-    error.value = (e as Error).message;
-  }
-}
+// Every change below refreshes the lists.
+const change = useApiMutation((call: () => Promise<unknown>) => call(), [["sites"]]);
+const error = computed(() => errorText(query.error.value, change.error.value));
+const act = (call: () => Promise<unknown>, done?: () => void) => change.mutate(call, { onSuccess: done });
 const approve = (r: Request) => act(() => api(`/api/sites/requests/${r.id}/approve`, { region: decide.value[r.id]?.region || "IN", category: decide.value[r.id]?.category || "general", uses: [r.use] }));
 const reject = (r: Request) => act(() => api(`/api/sites/requests/${r.id}/reject`, {}));
 const status = (s: Site, st: string) => act(() => api(`/api/sites/${s.id}/status`, { status: st }));
-const addOwn = () => act(async () => (await api("/api/sites/own", { url: own.value.url, uses: own.value.uses }), (own.value.url = "")));
+const addOwn = () => act(() => api("/api/sites/own", { url: own.value.url, uses: own.value.uses }), () => (own.value.url = ""));
 const switchOff = (s: Site) => act(() => api("/api/sites/own", { url: s.origin, off: true }));
 const host = (o: string) => o.replace(/^https:\/\//, "");
 </script>

@@ -11,7 +11,7 @@ import { z } from "zod";
 import { settings, stringEnv, type Bindings } from "./env";
 import { connectorSecrets } from "./kiosk";
 import { callConnector, connectorSecrets as connectorSecretNames, ConnectorError, parseConnector } from "@sekaran-ind/yaxb-core/connectors";
-import { seal as sealIdentity, unseal as unsealIdentity } from "@sekaran-ind/yaxb-core/identity";
+import { sealConnectorSecret, unsealConnectorSecret } from "./secrets";
 import { SITE_USES, SiteError, type SiteUse } from "@sekaran-ind/yaxb-core/sites";
 import { sites } from "./kiosk";
 import { connectorCalled, orgMcpServers } from "./kiosk";
@@ -19,12 +19,13 @@ import { mcpServerInfo } from "@sekaran-ind/yaxb-core/mcp";
 import { cases, catalogue, currentTenant, designer, kiosk, library, links, moderators, relay, reviews, serviceEvents, tenantContext, tenantOfMember, tenants } from "./kiosk";
 import { DEFAULT_TENANT, SLUG, TenantError } from "@sekaran-ind/yaxb-core/tenants";
 import { LinkError, type LinkActor } from "@sekaran-ind/yaxb-core/links";
+import { callerKey, modelGate, quota, type ModelGate } from "./limits";
 import { offers, resolveContext, servesApi, SURFACE_HEADS } from "@sekaran-ind/yaxb-core/context";
 import { currentEdition, editionContext, editionFor, EDITIONS, firstEdition, withEdition, type Edition } from "./edition";
 import { eventBatchSchema } from "@sekaran-ind/yaxb-core/metrics";
 import { FAMILY_ROUTINES, isDue, parseRoutine, ROUTINE_STARTERS, routineLimits, runsFromEvents, localClock } from "@sekaran-ind/yaxb-core/routines";
 import { decideApproval, dryRun, fireEvents, routineContext, routineStore, runOnce, sampleEvent, signingKey, sweep } from "./routines";
-import { beaconSchema, CaseError, envelopeSchema, MAX_CASE_RUN, MAX_ENVELOPE, mayReassign, RELAY_MAX_HOURS, staffingOf, type Envelope } from "@sekaran-ind/yaxb-core/cases";
+import { beaconSchema, CASE_REF, CaseError, envelopeSchema, MAX_CASE_RUN, MAX_ENVELOPE, mayReassign, RELAY_MAX_HOURS, staffingOf, type Envelope } from "@sekaran-ind/yaxb-core/cases";
 import { DesignerError, historyOf, LESSONS_IN_MEMORY, MAX_NARRATIVE } from "@sekaran-ind/yaxb-core/designer";
 import { ADMIN_ACTOR_ID, LibraryError, MAX_ENTRY_BYTES, permissionsOf, writesRoutines, type LibraryActor } from "@sekaran-ind/yaxb-core/library";
 import { proposalEntry, ReviewError, type Reviewer } from "@sekaran-ind/yaxb-core/reviews";
@@ -95,6 +96,21 @@ async function withinLimit(kind: keyof typeof fallbacks, limiter: RateLimit | un
   if (limiter) return (await limiter.limit({ key: `${kind}:${key}` })).success;
   return fallbacks[kind].limit(`${kind}:${key}`);
 }
+
+/**
+ * A burst limit per IP address as well as per session: a caller who throws their cookie away gets a
+ * new session every time, so the session alone limits nothing. No address (a local run): not limited.
+ */
+async function withinIpBurst(c: Context<AppEnv>, purpose: string) {
+  const key = await callerKey(c, c.env);
+  return !key || (await withinLimit("chat", c.env.CHAT_LIMITER, `ip:${purpose}:${key}`));
+}
+/** A signed-in member of a business, or a device signed in with a code: not the free tier. */
+const isMember = async (c: Context<AppEnv>) => Boolean(c.get("device")) || Boolean(await memberOf(c));
+const refusal = (c: Context<AppEnv>, g: Extract<ModelGate, { ok: false }>) => {
+  if (g.retryAfterS) c.header("Retry-After", String(g.retryAfterS));
+  return jsonError(c, g.status, g.message);
+};
 
 /** Read a JSON body up to a size; null when it's missing, too large or not JSON. */
 async function readJson(c: Context<AppEnv>, max: number): Promise<{ body: unknown; tooLarge: boolean }> {
@@ -197,7 +213,7 @@ app.use("/api/*", async (c, next) => {
 app.post("/api/agent/chat", async (c) => {
   if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
   const id = await clientId(c);
-  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, id))) return jsonError(c, 429, "Too many questions in a short time. Please wait a minute.");
+  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, id)) || !(await withinIpBurst(c, "chat"))) return jsonError(c, 429, "Too many questions in a short time. Please wait a minute.");
   // A turn may carry the visitor's notebook (up to about 2 MB of text) and conversation.
   const { body, tooLarge } = await readJson(c, MAX_CHAT_BODY);
   if (tooLarge) return jsonError(c, 413, "That notebook is too large to send. Remove a source and try again.");
@@ -205,8 +221,11 @@ app.post("/api/agent/chat", async (c) => {
   if (!parsed.success) return jsonError(c, 422, parsed.error.issues[0]?.message ?? "Invalid request.");
 
   const { threadId, message, provider, model, temperature, settings: agentSettings, client } = parsed.data;
+  // The free tier: a few questions per IP, always on the small tool-calling model and the lean harness.
+  const gate = await modelGate(c, c.env, await isMember(c));
+  if (!gate.ok) return refusal(c, gate);
   const events = kiosk(c.env).ask(
-    { threadId: `${id}:${threadId}`, message, selection: { provider, model, temperature }, settings: agentSettings, client },
+    { threadId: `${id}:${threadId}`, message, selection: gate.selection ? { ...gate.selection, temperature } : { provider, model, temperature }, settings: gate.free ? { ...agentSettings, harness: "lean" } : agentSettings, client },
     { signal: c.req.raw.signal },
   );
   return new Response(toSSEStream(events), {
@@ -222,7 +241,7 @@ app.post("/api/agent/chat", async (c) => {
 app.post("/api/agent/flag", async (c) => {
   if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
   const id = await clientId(c);
-  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, id))) return jsonError(c, 429, "Too many questions in a short time. Please wait a minute.");
+  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, id)) || !(await withinIpBurst(c, "flag"))) return jsonError(c, 429, "Too many questions in a short time. Please wait a minute.");
   const parsed = flagSchema.safeParse((await readJson(c, MAX_FORM_BODY)).body);
   if (!parsed.success) return jsonError(c, 422, "Invalid request.");
   const item = await kiosk(c.env).flag(parsed.data.question, parsed.data.reason);
@@ -238,7 +257,7 @@ const searchSchema = z.strictObject({ question: z.string().trim().min(1).max(100
 app.post("/api/agent/search", async (c) => {
   if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
   const id = await clientId(c);
-  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, id))) return jsonError(c, 429, "Too many questions in a short time. Please wait a minute.");
+  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, id)) || !(await withinIpBurst(c, "search"))) return jsonError(c, 429, "Too many questions in a short time. Please wait a minute.");
   const parsed = searchSchema.safeParse((await readJson(c, MAX_FORM_BODY)).body);
   if (!parsed.success) return jsonError(c, 422, "Invalid request.");
   try {
@@ -256,11 +275,13 @@ app.post("/api/agent/search", async (c) => {
 app.post("/api/agent/extract", async (c) => {
   if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
   const id = await clientId(c);
-  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, id))) return jsonError(c, 429, "Too many requests in a short time. Please wait a minute.");
+  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, id)) || !(await withinIpBurst(c, "extract"))) return jsonError(c, 429, "Too many requests in a short time. Please wait a minute.");
   const parsed = extractRequestSchema.safeParse((await readJson(c, MAX_FORM_BODY)).body);
   if (!parsed.success) return jsonError(c, 422, parsed.error.issues[0]?.message ?? "Invalid request.");
   const { journey, step, text, provider, model } = parsed.data;
-  const out = await kiosk(c.env).extract({ journey, step, text, selection: { provider, model, temperature: 0 } }, { signal: c.req.raw.signal });
+  const gate = await modelGate(c, c.env, await isMember(c));
+  if (!gate.ok) return refusal(c, gate);
+  const out = await kiosk(c.env).extract({ journey, step, text, selection: { ...(gate.selection ?? { provider, model }), temperature: 0 } }, { signal: c.req.raw.signal });
   if ("error" in out) return jsonError(c, 422, out.error);
   return c.json(out);
 });
@@ -459,7 +480,7 @@ app.get("/api/agent/:resource", async (c) => {
       const caps = k.capabilities();
       // The business's own MCP servers (CNX-1) join the deployment's; never their address's secrets.
       const org = (await orgMcpServers(c.env).catch(() => [])).filter((sv) => !caps.mcp.some((m) => m.id === sv.id)).map(mcpServerInfo);
-      return c.json({ ...caps, mcp: [...caps.mcp, ...org], cases: { central: s.CASES_CENTRAL === "on", relay: s.CASES_RELAY === "on", relayHours: s.RELAY_HOURS } });
+      return c.json({ ...caps, freeTier: s.FREE_TIER_QUESTIONS > 0 ? { questions: s.FREE_TIER_QUESTIONS, minutes: s.FREE_TIER_WINDOW_MINUTES } : null, mcp: [...caps.mcp, ...org], cases: { central: s.CASES_CENTRAL === "on", relay: s.CASES_RELAY === "on", relayHours: s.RELAY_HOURS } });
     }
     case "sources":
       return c.json({ sources: k.sources() });
@@ -991,11 +1012,20 @@ async function caseCall(c: Context<AppEnv>, fn: (a: LibraryActor & { level: numb
   // theirs counts too (like chat: a visit takes a few), and references (30^6) can't be guessed.
   if (limited && !(await withinLimit("form", c.env.FORM_LIMITER, `case:${actor.id}`))) return jsonError(c, 429, "Too many requests. Please wait a minute.");
   if (actor.guest && !(await withinLimit("chat", c.env.CHAT_LIMITER, `case:${actor.id}`))) return jsonError(c, 429, "Too many requests. Please wait a minute.");
+  // A reference (30^6 of them) is a password for one request: wrong ones are counted per IP address,
+  // so guessing is cut off however many sessions the guesser opens.
+  const byRef = CASE_REF.test(caseKey(c));
+  const who = byRef ? await callerKey(c, c.env) : null;
+  const rule = { limit: settings(c.env).CASE_REF_MISSES, windowMs: 15 * 60_000 };
+  if (who && !(await quota(c.env).allows(`ref:${who}`, rule))) return jsonError(c, 429, "Too many wrong references. Please wait a while and check the reference.");
   const body = c.req.method === "GET" ? null : (await readJson(c, MAX_CASE_RUN + 8192)).body;
   try {
     return c.json(await fn(actor, body));
   } catch (e) {
-    if (e instanceof CaseError) return jsonError(c, e.status, e.message);
+    if (e instanceof CaseError) {
+      if (who && e.status === 404) await quota(c.env).note(`ref:${who}`);
+      return jsonError(c, e.status, e.message);
+    }
     throw e;
   }
 }
@@ -1131,7 +1161,6 @@ async function connectorFor(c: Context<AppEnv>, id: string) {
   if (!parsed?.ok) return null;
   return { connector: parsed.connector, entry_id: entry.entry_id, used: (handler: string) => pub.services.some((s) => s.yaml.includes(handler)) };
 }
-const sealKey = (c: Context<AppEnv>) => settings(c.env).SESSION_SECRET;
 
 /**
  * A journey's connector step (CNX-2, CNX-5): the kiosk sends the step's input; the server adds the
@@ -1147,7 +1176,7 @@ app.post("/api/connectors/:id/:op", async (c) => {
   const body = (await readJson(c, MAX_FORM_BODY)).body as { input?: unknown } | null;
   const input = body?.input && typeof body.input === "object" && !Array.isArray(body.input) ? (body.input as Record<string, unknown>) : {};
   const secrets: Record<string, string> = {};
-  for (const r of await connectorSecrets(c.env).list(currentTenant(), found.connector.id)) secrets[r.name] = await unsealIdentity(sealKey(c), r.sealed);
+  for (const r of await connectorSecrets(c.env).list(currentTenant(), found.connector.id)) secrets[r.name] = await unsealConnectorSecret(c.env, r.sealed);
   const started = Date.now();
   try {
     const out = await callConnector(found.connector, c.req.param("op"), input, secrets, { resolve: dohResolver() });
@@ -1176,7 +1205,7 @@ app.put("/api/library/connectors/:id/secrets/:name", (c) =>
     const value = String((body as { value?: unknown } | null)?.value ?? "");
     if (!/^[A-Z][A-Z0-9_]{1,47}$/.test(c.req.param("name"))) throw new LibraryError("A secret's name is UPPER_CASE.");
     if (!value || value.length > 4000) throw new LibraryError("Give the secret's value.");
-    await connectorSecrets(c.env).put({ tenant_id: currentTenant(), connector_id: c.req.param("id"), name: c.req.param("name"), sealed: await sealIdentity(sealKey(c), value), set_at: new Date().toISOString(), set_by: a.name });
+    await connectorSecrets(c.env).put({ tenant_id: currentTenant(), connector_id: c.req.param("id"), name: c.req.param("name"), sealed: await sealConnectorSecret(c.env, value), set_at: new Date().toISOString(), set_by: a.name });
     await audited(c, "connector.secret_set", a.name, c.req.param("id"), { name: c.req.param("name") });
     return { set: true };
   }),
@@ -1608,11 +1637,15 @@ const guardianRequestSchema = z.strictObject({
 app.post("/api/library/consent", async (c) => {
   await catalogue(c.env);
   const actor = await libraryActor(c);
-  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, `guardian:${actor.id}`))) return jsonError(c, 429, "Too many requests in a short time. Please wait a minute.");
+  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, `guardian:${actor.id}`)) || !(await withinIpBurst(c, "guardian"))) return jsonError(c, 429, "Too many requests in a short time. Please wait a minute.");
   if (actor.guest && !(await withinLimit("form", c.env.FORM_LIMITER, `guardian:${actor.id}`))) return jsonError(c, 429, "Too many drafts in a short time. Please wait a minute.");
   const parsed = guardianRequestSchema.safeParse((await readJson(c, MAX_ENTRY_BYTES + MAX_FORM_BODY)).body);
   if (!parsed.success) return jsonError(c, 422, parsed.error.issues[0]?.message ?? "Invalid request.");
-  const { yaml, storage, provider, model } = parsed.data;
+  const gate = await modelGate(c, c.env, !actor.guest);
+  if (!gate.ok) return refusal(c, gate);
+  const { yaml, storage, provider: askedProvider, model: askedModel } = parsed.data;
+  const provider = gate.selection?.provider ?? askedProvider;
+  const model = gate.selection?.model ?? askedModel;
   const { roles } = await library(c.env).published([], { all: true });
   const out = await kiosk(c.env).guardian(
     { yaml, storage, relayHours: settings(c.env).RELAY_HOURS, roles, selection: provider && model ? { provider, model, temperature: 0.2 } : null },
@@ -1630,11 +1663,15 @@ app.post("/api/library/consent", async (c) => {
 app.post("/api/library/design", async (c) => {
   await catalogue(c.env);
   const actor = await libraryActor(c);
-  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, `design:${actor.id}`))) return jsonError(c, 429, "Too many requests in a short time. Please wait a minute.");
+  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, `design:${actor.id}`)) || !(await withinIpBurst(c, "design"))) return jsonError(c, 429, "Too many requests in a short time. Please wait a minute.");
   if (actor.guest && !(await withinLimit("form", c.env.FORM_LIMITER, `design:${actor.id}`))) return jsonError(c, 429, "Too many drafts in a short time. Please wait a minute.");
   const parsed = designRequestSchema.safeParse((await readJson(c, MAX_ENTRY_BYTES + MAX_FORM_BODY)).body);
   if (!parsed.success) return jsonError(c, 422, parsed.error.issues[0]?.message ?? "Invalid request.");
-  const { narrative, provider, model, entry: entryId, thread: threadId, current } = parsed.data;
+  const gate = await modelGate(c, c.env, !actor.guest);
+  if (!gate.ok) return refusal(c, gate);
+  const { narrative, provider: askedProvider, model: askedModel, entry: entryId, thread: threadId, current } = parsed.data;
+  const provider = gate.selection?.provider ?? askedProvider;
+  const model = gate.selection?.model ?? askedModel;
   let t: Awaited<ReturnType<typeof designThread>>;
   try {
     t = await designThread(c, actor, { entry: entryId, thread: threadId });
@@ -1899,6 +1936,9 @@ app.get("*", async (c) => {
   for (const [k, v] of Object.entries(securityHeaders(c.env, url))) out.headers.set(k, v);
   return out;
 });
+
+/** The routes, for the authorization test (worker/test/authorization.test.ts). */
+export { app };
 
 /**
  * The Worker: requests through Hono, and the Cron Trigger (wrangler.jsonc `triggers.crons`, every

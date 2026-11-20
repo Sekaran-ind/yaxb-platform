@@ -4,66 +4,44 @@
 import type { JoinRequest, JoinToken } from "@sekaran-ind/yaxb-core/tenants";
 import { ConfirmAction } from "@sekaran-ind/yaxb-journeys/vue";
 import { Copy, Link2, Loader2, UserPlus } from "@lucide/vue";
-import { computed, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import { api } from "@/lib/api";
+import { errorText, useApiMutation, useApiQuery } from "@/lib/queries";
 import { roleName } from "@/composables/library";
 
 const props = defineProps<{ roles: readonly string[] }>();
-const links = ref<JoinToken[]>([]);
-const requests = ref<JoinRequest[]>([]);
-const tenant = ref<{ name: string; slug: string } | null>(null);
+const tenantQuery = useApiQuery<{ tenant: { name: string; slug: string } | null }>(["join", "tenant"], "/api/tenant");
+const linksQuery = useApiQuery<{ links: JoinToken[] }>(["join", "links"], "/api/tenant/join-links");
+const requestsQuery = useApiQuery<{ requests: JoinRequest[] }>(["join", "requests"], "/api/tenant/join-requests");
+const tenant = computed(() => tenantQuery.data.value?.tenant ?? null);
+const links = computed(() => linksQuery.data.value?.links ?? []);
+const requests = computed(() => requestsQuery.data.value?.requests ?? []);
 const form = ref({ role: props.roles[0] ?? "moderator", hours: 72, uses: 1, label: "" });
 const made = ref<string | null>(null);
 const copied = ref(false);
-const busy = ref(false);
-const error = ref<string | null>(null);
 const choose = ref<Record<string, string>>({});
 
-async function load() {
-  error.value = null;
-  try {
-    const [t, l, r] = await Promise.all([
-      api<{ tenant: { name: string; slug: string } | null }>("/api/tenant"),
-      api<{ links: JoinToken[] }>("/api/tenant/join-links"),
-      api<{ requests: JoinRequest[] }>("/api/tenant/join-requests"),
-    ]);
-    tenant.value = t.tenant;
-    links.value = l.links;
-    requests.value = r.requests;
-  } catch (e) {
-    error.value = (e as Error).message;
-  }
-}
-onMounted(load);
-
-async function issue() {
-  busy.value = true;
-  error.value = null;
-  try {
-    const r = await api<{ link: string }>("/api/tenant/join-links", { ...form.value, label: form.value.label.trim() || undefined });
-    made.value = r.link;
-    copied.value = false;
-    await load();
-  } catch (e) {
-    error.value = (e as Error).message;
-  } finally {
-    busy.value = false;
-  }
-}
+const issue = useApiMutation(
+  async () => (await api<{ link: string }>("/api/tenant/join-links", { ...form.value, label: form.value.label.trim() || undefined })).link,
+  [["join", "links"]],
+);
+const withdraw = useApiMutation((id: string) => api(`/api/tenant/join-links/${id}`, undefined, "DELETE"), [["join", "links"]]);
+const decideRequest = useApiMutation((v: { r: JoinRequest; decision: "accept" | "decline" }) => api(`/api/tenant/join-requests/${v.r.id}/decide`, { decision: v.decision, role: choose.value[v.r.id] ?? v.r.role }), [["join", "requests"]]);
+const busy = computed(() => issue.isPending.value);
+const error = computed(() => errorText(tenantQuery.error.value, linksQuery.error.value, requestsQuery.error.value, issue.error.value, withdraw.error.value, decideRequest.error.value));
+const make = () =>
+  issue.mutate(undefined, {
+    onSuccess: (link) => {
+      made.value = link;
+      copied.value = false;
+    },
+  });
 async function copy() {
   if (!made.value) return;
   await navigator.clipboard?.writeText(made.value).catch(() => {});
   copied.value = true;
 }
-const withdraw = async (id: string) => (await api(`/api/tenant/join-links/${id}`, undefined, "DELETE").catch((e) => (error.value = (e as Error).message)), await load());
-async function decide(r: JoinRequest, decision: "accept" | "decline") {
-  try {
-    await api(`/api/tenant/join-requests/${r.id}/decide`, { decision, role: choose.value[r.id] ?? r.role });
-    await load();
-  } catch (e) {
-    error.value = (e as Error).message;
-  }
-}
+const decide = (r: JoinRequest, decision: "accept" | "decline") => decideRequest.mutate({ r, decision });
 const pending = computed(() => requests.value.filter((r) => r.status === "pending"));
 const decided = computed(() => requests.value.filter((r) => r.status !== "pending").slice(0, 10));
 const open = computed(() => links.value.filter((l) => !l.revoked && l.uses_left > 0 && l.expires_at > new Date().toISOString()));
@@ -81,7 +59,7 @@ const STATUS: Record<JoinRequest["status"], string> = { pending: "Waiting", acce
     </div>
     <p v-if="error" role="alert" class="text-sm text-red-800">{{ error }}</p>
 
-    <form class="grid gap-3 @lg:grid-cols-[1fr_auto_auto] items-end" @submit.prevent="issue">
+    <form class="grid gap-3 @lg:grid-cols-[1fr_auto_auto] items-end" @submit.prevent="make">
       <label class="block text-sm"><span class="mb-1 block font-medium text-ink">Role</span>
         <select v-model="form.role" class="input"><option v-for="r in roles" :key="r" :value="r">{{ roleName(r) }}</option></select>
       </label>
@@ -123,7 +101,7 @@ const STATUS: Record<JoinRequest["status"], string> = { pending: "Waiting", acce
       <ul class="divide-y divide-gray-100 text-sm">
         <li v-for="l in open" :key="l.id" class="flex flex-wrap items-center justify-between gap-2 py-2">
           <span class="text-body">{{ roleName(l.role) }}<template v-if="l.label"> · {{ l.label }}</template> · {{ l.uses_left }} use{{ l.uses_left === 1 ? "" : "s" }} left · until {{ when(l.expires_at) }}</span>
-          <ConfirmAction label="Withdraw" :message="`Withdraw this ${roleName(l.role)} link? Nobody can join with it after.`" trigger-class="btn-ghost h-8 text-sm" @confirm="withdraw(l.id)" />
+          <ConfirmAction label="Withdraw" :message="`Withdraw this ${roleName(l.role)} link? Nobody can join with it after.`" trigger-class="btn-ghost h-8 text-sm" @confirm="withdraw.mutate(l.id)" />
         </li>
       </ul>
     </div>

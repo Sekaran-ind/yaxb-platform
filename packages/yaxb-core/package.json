@@ -167,6 +167,10 @@
       "types": "./dist/metrics/index.d.ts",
       "default": "./dist/metrics/index.js"
     },
+    "./quota": {
+      "types": "./dist/quota/index.d.ts",
+      "default": "./dist/quota/index.js"
+    },
     "./links": {
       "types": "./dist/links/index.d.ts",
       "default": "./dist/links/index.js"

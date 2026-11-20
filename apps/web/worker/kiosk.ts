@@ -10,9 +10,9 @@ import { auditEvent, createModeratorService, statusOf, type ModeratorService } f
 import { createReviewService, type ReviewService } from "@sekaran-ind/yaxb-core/reviews";
 import { createD1CaseStore, createD1ConnectorSecretStore, createD1EventStore, createD1FeedbackStore, createD1Relay, createD1DesignerStore, createD1Kv, createD1LibraryStore, createD1ModerationStore, createD1ModeratorStore, createD1ReviewStore, createD1ThreadStore } from "@sekaran-ind/yaxb-core/stores/d1";
 import { KvStore } from "@sekaran-ind/yaxb-core/stores/kv";
-import { settings, stringEnv, type Bindings } from "./env";
+import { stringEnv, type Bindings } from "./env";
 import { guardedFetch, mcpServerOfConnector } from "@sekaran-ind/yaxb-core/connectors";
-import { unseal } from "@sekaran-ind/yaxb-core/identity";
+import { unsealConnectorSecret } from "./secrets";
 import type { McpServer } from "@sekaran-ind/yaxb-core/mcp";
 import { dohResolver } from "@sekaran-ind/yaxb-core/web/pages";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -183,7 +183,7 @@ export async function orgMcpServers(env: Bindings): Promise<McpServer[]> {
   for (const { connector: c } of await lib.publishedConnectors()) {
     if (!c.mcp) continue;
     const secrets: Record<string, string> = {};
-    for (const r of await connectorSecrets(env).list(currentTenant(), c.id)) secrets[r.name] = await unseal(settings(env).SESSION_SECRET, r.sealed);
+    for (const r of await connectorSecrets(env).list(currentTenant(), c.id)) secrets[r.name] = await unsealConnectorSecret(env, r.sealed);
     const server = mcpServerOfConnector(c, secrets);
     if (server) out.push(server);
   }
@@ -196,19 +196,19 @@ export async function connectorCalled(env: Bindings, entryId: string, op: string
 }
 
 /** Services' events kept on the server (MET-2): the paid plan's storage. */
-export const serviceEvents = (env: Bindings) => createD1EventStore(db(env));
+export const serviceEvents = (env: Bindings, tenant = currentTenant()) => createD1EventStore(db(env), { tenant });
 
 /** The cloud relay (LIB-44): transient envelopes and beacons, in D1. */
 export const relay = (env: Bindings) => createD1Relay(db(env));
 
 /** The Service Designer's drafts and lessons, in D1 (LIB-27..32). */
-export function designer(env: Bindings): DesignerService {
-  return scoped(designerServices, env, () => createDesignerService(createD1DesignerStore(db(env))));
+export function designer(env: Bindings, tenant = currentTenant()): DesignerService {
+  return scoped(designerServices, env, () => createDesignerService(createD1DesignerStore(db(env), { tenant })), tenant);
 }
 
 /** Answers sent for review and moderators' reviews, in D1 (MOD-10..13, MOD-30..34). */
 export function reviews(env: Bindings, tenant = currentTenant()): ReviewService {
-  return scoped(reviewServices, env, () => createReviewService(createD1ReviewStore(db(env)), moderators(env, tenant).store), tenant);
+  return scoped(reviewServices, env, () => createReviewService(createD1ReviewStore(db(env), { tenant }), moderators(env, tenant).store), tenant);
 }
 
 /** Moderators, their keys and profiles, and the audit log, in D1 (MOD-20..25). */
@@ -231,13 +231,14 @@ export async function tenantOfMember(env: Bindings, id: string): Promise<string 
  * agent's long-term store in the edition's D1, Vectorize search when VECTORIZE and AI are bound. One
  * instance per edition per isolate, so compiled agents are reused across requests.
  */
-export function kiosk(env: Bindings): Kiosk {
+export function kiosk(env: Bindings, tenant = currentTenant()): Kiosk {
   return scoped(kiosks, env, () =>
     createKiosk({
       env: stringEnv(env),
       threads: createD1ThreadStore(db(env)),
-      moderation: createD1ModerationStore(db(env)),
-      feedback: createD1FeedbackStore(db(env)),
+      // What visitors flag, and their feedback, belong to the business whose kiosk they used.
+      moderation: createD1ModerationStore(db(env), { tenant }),
+      feedback: createD1FeedbackStore(db(env), { tenant }),
       // Storage "server": the agent's /memories/ in D1 through Deep Agents' StoreBackend.
       store: new KvStore(createD1Kv(db(env))),
       vector: env.VECTORIZE && env.AI ? createVectorizeRetriever({ index: env.VECTORIZE, ai: env.AI }) : undefined,
@@ -257,5 +258,5 @@ export function kiosk(env: Bindings): Kiosk {
           }),
         ),
     }),
-  );
+  tenant);
 }
