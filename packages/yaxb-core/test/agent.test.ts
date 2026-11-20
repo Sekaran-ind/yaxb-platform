@@ -33,6 +33,24 @@ async function collect(stream: AsyncIterable<AgentEvent>) {
 
 const answerOf = (events: AgentEvent[]) => events.flatMap((e) => (e.type === "token" ? [e.text] : [])).join("");
 
+describe("the free plan's short answers", () => {
+  it("caps the model's reply and tells it to keep short, only when the server asks (brief)", async () => {
+    const picked: unknown[] = [];
+    const model = new ScriptedModel([{ text: "Short answer (sources: curated:qa-001)." }, { text: "Normal answer." }]);
+    const kiosk = createKiosk({ env: { ANTHROPIC_API_KEY: "test-key" }, threads: createMemoryThreadStore(), moderation: createMemoryModerationStore(), modelFactory: async (sel) => (picked.push(sel), model) });
+    const lean = { settings: { storage: "server", harness: "lean" } } as const;
+    await collect(kiosk.ask({ threadId: THREAD, message: "How do I raise a concern?", selection: SELECTION, ...lean }, { brief: { maxTokens: 400, words: 160 } }));
+    expect(picked[0]).toMatchObject({ model: "claude-sonnet-5-5", maxTokens: 400 });
+    expect(JSON.stringify(model.calls)).toContain("free plan");
+    expect(JSON.stringify(model.calls)).toContain("at most 160 words");
+    // Without it, no cap and no instruction.
+    const before = JSON.stringify(model.calls).length;
+    await collect(kiosk.ask({ threadId: "test:1f8fad5b-d9cb-469f-a165-70867728950e", message: "How do I raise a concern?", selection: SELECTION, ...lean }));
+    expect(picked[1]).not.toHaveProperty("maxTokens");
+    expect(JSON.stringify(model.calls).slice(before)).not.toContain("free plan");
+  });
+});
+
 describe("kiosk agent", () => {
   it("streams tool use, then the answer, then done; and saves the thread", async () => {
     const { kiosk, threads, errors } = setup([

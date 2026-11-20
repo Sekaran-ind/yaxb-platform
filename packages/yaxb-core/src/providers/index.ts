@@ -134,13 +134,13 @@ export function plainTextContentFetch(base: typeof fetch = (...a) => fetch(...a)
  * Every provider except Anthropic speaks the OpenAI Chat Completions API, so one SDK
  * (@langchain/openai) serves them all and keeps the Worker small.
  */
-async function openAiCompatible(model: string, apiKey: string, temperature: number | undefined, baseURL: string) {
+async function openAiCompatible(model: string, apiKey: string, temperature: number | undefined, baseURL: string, maxTokens = 2048) {
   const { ChatOpenAI } = await import("@langchain/openai");
   return new ChatOpenAI({
     model,
     apiKey,
     temperature,
-    maxTokens: 2048,
+    maxTokens,
     maxRetries: 2,
     streamUsage: false,
     configuration: { baseURL, fetch: plainTextContentFetch() },
@@ -148,34 +148,38 @@ async function openAiCompatible(model: string, apiKey: string, temperature: numb
 }
 
 /** Build the chat model for a selection. Two SDKs: Anthropic's, and OpenAI's for everything else. */
-export async function createChatModel(env: Env, sel: Selection, cat: Catalog = catalog): Promise<BaseChatModel> {
+/** A selection, and optionally a cap on the reply's length (the free plan's short answers). */
+export type RunSelection = Selection & { maxTokens?: number };
+
+export async function createChatModel(env: Env, sel: RunSelection, cat: Catalog = catalog): Promise<BaseChatModel> {
   const { provider, model, key } = resolveSelection(env, sel, cat);
   const temperature = model.temperature === false ? undefined : sel.temperature;
+  const maxTokens = sel.maxTokens ?? 2048;
   switch (provider.id) {
     case "anthropic": {
       const { ChatAnthropic } = await import("@langchain/anthropic");
-      return new ChatAnthropic({ model: model.id, apiKey: key, temperature, maxTokens: 2048, maxRetries: 2 });
+      return new ChatAnthropic({ model: model.id, apiKey: key, temperature, maxTokens, maxRetries: 2 });
     }
     case "openai": {
       const { ChatOpenAI } = await import("@langchain/openai");
       // Responses API with zero data retention: OpenAI keeps no copy of the conversation.
-      return new ChatOpenAI({ model: model.id, apiKey: key, temperature, useResponsesApi: true, zdrEnabled: true, maxRetries: 2 });
+      return new ChatOpenAI({ model: model.id, apiKey: key, temperature, useResponsesApi: true, zdrEnabled: true, maxRetries: 2, ...(sel.maxTokens ? { maxTokens: sel.maxTokens } : {}) });
     }
     case "google_genai":
       // Gemini's OpenAI-compatible endpoint.
-      return openAiCompatible(model.id, key, temperature, GEMINI_OPENAI_URL);
+      return openAiCompatible(model.id, key, temperature, GEMINI_OPENAI_URL, maxTokens);
     case "huggingface":
       // Hugging Face Inference Providers: an OpenAI-compatible router in front of Groq, Cerebras,
       // Novita and others. The model id's `:<provider>` suffix picks who serves it.
-      return openAiCompatible(model.id, key, temperature, HF_ROUTER_URL);
+      return openAiCompatible(model.id, key, temperature, HF_ROUTER_URL, maxTokens);
     case "workers_ai":
       // Cloudflare Workers AI, with an API token that has Workers AI permission.
-      return openAiCompatible(model.id, key, temperature, workersAiUrl(credential(env, "CLOUDFLARE_ACCOUNT_ID")!));
+      return openAiCompatible(model.id, key, temperature, workersAiUrl(credential(env, "CLOUDFLARE_ACCOUNT_ID")!), maxTokens);
     case "mistralai":
-      return openAiCompatible(model.id, key, temperature, MISTRAL_OPENAI_URL);
+      return openAiCompatible(model.id, key, temperature, MISTRAL_OPENAI_URL, maxTokens);
     case "ollama":
       // Ollama's OpenAI-compatible API. The credential is the base URL; Ollama ignores the key.
-      return openAiCompatible(model.id, "ollama", temperature, `${key.replace(/\/+$/, "")}/v1`);
+      return openAiCompatible(model.id, "ollama", temperature, `${key.replace(/\/+$/, "")}/v1`, maxTokens);
     default:
       throw new ProviderError(`No adapter for provider "${provider.id}".`);
   }

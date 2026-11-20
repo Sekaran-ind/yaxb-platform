@@ -57,6 +57,11 @@ export function turnPromptAddendum({ language, localKnowledge, web = "none", chi
   return parts.length ? `\n\nThis turn:\n${parts.map((p) => `- ${p}`).join("\n")}` : "";
 }
 
+/** The free plan's short answers: how to answer when the visitor isn't on the paid plan. */
+export const briefRules = (words: number) =>
+  `\n\nThis visitor is on the free plan, which gives short answers. Reply in at most ${words} words, with the most important facts first and the sources line. ` +
+  "If a complete answer needs more than that, say so in one sentence: a longer answer is part of the paid plan. Never pad, never offer to write more here.";
+
 /** The child safety lock (CHL-3): how to answer when a child is using the kiosk. */
 export const CHILD_RULES =
   "A child is using the kiosk (the child safety lock is on). Answer for a child: short, kind, simple words. " +
