@@ -35,6 +35,7 @@ import { extractWithModel, matchOnDevice } from "@/lib/browser/slots";
 import { languageLabel, speechLangFor } from "@/lib/languages";
 import type { CommandCard, DesignTurn, JourneyTurn, KioskStatus } from "@/lib/types";
 import { api } from "@/lib/api";
+import { NOTEBOOK_LIMITS } from "@sekaran-ind/yaxb-core/notebook";
 import { catalogue, entryOfJourney, kioskJourneys, kioskViewer, loadCatalogue, loadIntoKiosk } from "@/composables/library";
 import { startCaseNetwork } from "@/composables/cases";
 import { readDocument } from "@/lib/browser/documents";
@@ -783,6 +784,44 @@ const builtInServices: Record<string, ServiceHandler> = {
   "notebook.remember": async (input) => {
     await nb.remember(text(input));
     return { saved: true };
+  },
+  // Website access (SIT-5): every site through the approved list (SIT-1..6). The server reads the
+  // page (only its address goes); the notebook keeps it with its address.
+  "web.read": async (input, { signal }) => {
+    const url = String((input as { url?: unknown }).url ?? "").trim();
+    const res = await fetch("/api/sources/web", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url, follow: 0 }), signal });
+    const body = (await res.json().catch(() => null)) as { pages?: { url: string; title: string; text: string; fetchedAt: string }[]; unapproved?: boolean; error?: string; ask?: boolean } | null;
+    if (!res.ok || !body?.pages?.length) throw new Error(`${body?.error ?? "That page couldn't be loaded."}${body?.ask ? " Use \"Ask to add a website\"." : ""}`);
+    const p = body.pages[0]!;
+    await nb.addSource({ title: p.title, mime: "text/html", text: p.text.slice(0, NOTEBOOK_LIMITS.sourceChars), url: p.url, fetchedAt: p.fetchedAt });
+    return { title: p.title, url: p.url, note: body.unapproved ? "This site isn't on the approved list yet: it has been asked for." : "It is in your notebook now." };
+  },
+  "web.link-out": async (input, { signal }) => {
+    const url = String((input as { url?: unknown }).url ?? "").trim();
+    let host = "";
+    try {
+      const u = new URL(url);
+      if (u.protocol !== "https:" && u.protocol !== "http:") throw new Error();
+      host = u.host;
+    } catch {
+      throw new Error("That isn't a web address.");
+    }
+    const v = await api<{ allowed: boolean; why: string }>("/api/sites/verdict", { url, use: "link" }).catch((e: Error) => ({ allowed: false, why: e.message }));
+    if (signal?.aborted) throw new Error("Stopped.");
+    if (!v.allowed) throw new Error(`${v.why} Use "Ask to add a website".`);
+    window.open(url, "_blank", "noopener,noreferrer");
+    return { host, url };
+  },
+  "web.request": async (input) => {
+    const i = input as { url?: unknown; use?: unknown; reason?: unknown };
+    const use = i.use === "link" || i.use === "lookup" || i.use === "analyse" ? i.use : "source";
+    const reason = String(i.reason ?? "").trim().slice(0, 300);
+    const r = await api<{ asked: boolean; merged: boolean }>("/api/sites/requests", { url: String(i.url ?? "").trim(), use, ...(reason ? { reason } : {}) });
+    return { asked: r.asked, merged: r.merged };
+  },
+  // Looking something up on a site (a bill, a status) waits for the sandboxed capture (WEB-30).
+  "web.lookup": async () => {
+    throw new Error("Looking things up on a website isn't available yet.");
   },
   // Signing in and spaces: the your-account journey (15-identity.md, SPC-2..8). Each step is safe to
   // run again: opening a space starts the app again, and the journey carries on from the conversation.

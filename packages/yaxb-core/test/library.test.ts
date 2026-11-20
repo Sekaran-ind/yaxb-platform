@@ -241,7 +241,7 @@ journeys:
     it("is seeded once with the kiosk's own services, published", async () => {
       const svc = setup();
       const seeds = kioskContent.catalogue.map((c) => c.yaml);
-      expect((await svc.seed(seeds)).sort()).toEqual(["attendance", "hall", "repairs", "visits"]);
+      expect((await svc.seed(seeds)).sort()).toEqual(["attendance", "hall", "repairs", "visits", "website-access"]);
       expect(await svc.seed(seeds)).toEqual([]);
       const pub = await svc.published();
       expect(pub.services.map((s) => [s.id, s.journeys.map((j) => j.id)]).sort()).toEqual([
@@ -249,13 +249,14 @@ journeys:
         ["hall", ["book-hall"]],
         ["repairs", ["report-repair"]],
         ["visits", ["visit-check-in"]],
+        ["website-access", ["add-website", "open-site", "ask-site"]],
       ]);
       expect(pub.roles.map((r) => r.id)).toEqual(expect.arrayContaining(["front-desk", "secretary"]));
       // Archived, it stays archived: seeding again doesn't bring it back.
       const visits = pub.services.find((s) => s.id === "visits")!.entry_id;
       await svc.setEntryArchived(admin, visits, true);
       expect(await svc.seed(seeds)).toEqual([]);
-      expect((await svc.published()).services.map((s) => s.id).sort()).toEqual(["attendance", "hall", "repairs"]);
+      expect((await svc.published()).services.map((s) => s.id).sort()).toEqual(["attendance", "hall", "repairs", "website-access"]);
     });
 
     it("keeps libraries for members to organise, and archives them", async () => {

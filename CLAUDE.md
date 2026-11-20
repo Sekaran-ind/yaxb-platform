@@ -375,6 +375,7 @@ Surfaces import the core's `dist/`, so rebuild the core (or keep `start` running
 ## Approved sites (SIT-1..6)
 
 - Core `sites/` (export `./sites`): `ApprovedSite`, `SiteRequest`, `siteVerdict(url, use, sites, { edition, tenant, family, region })`, `createSiteService` (`request` merged by site and use, `openRequests` without the asker, `approve`/`reject` never by the asker, `addOwn` (no lookups), `switchOff`, `setStatus`, `list`), stores memory and `createD1SiteStore` (platform migration 0009). Worker: `sites(env)` (PLATFORM_DB), `/api/sources/web` checks it (`SITES_ENFORCE` on: 403 with `ask`; off: added, `unapproved`, asked for unless the business switched it off), `/api/sites` (lists; requests for the platform's moderators: `platformModerator`, the portal's administrator or moderating members), `/api/sites/requests[/:id/approve|reject]`, `/api/sites/own`, `/api/sites/:id/status`. Web: NotebookScreen's flag and "Ask to add this site", `moderation/ApprovedSites.vue` in Administration.
+- Website access (SIT-5): the seeded service `website-access` (`content/catalogue/website.service.yaml`: add-website, open-site, ask-site) and handlers in `KioskShell` (`web.read` → `/api/sources/web`, kept with `nb.addSource`; `web.link-out` → `POST /api/sites/verdict` with use `link`, then a new tab; `web.request` → `/api/sites/requests`; `web.lookup` refuses until WEB-30); `SERVICE_INFO` marks them `outside` (only the address goes).
 
 ## Attendance (ATT-1..4, 6)
 
