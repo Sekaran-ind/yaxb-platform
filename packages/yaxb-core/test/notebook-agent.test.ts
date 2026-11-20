@@ -17,7 +17,7 @@ const NOTEBOOK = {
   ],
 };
 
-function setup(steps: Step[], env: Record<string, string> = {}, fetchImpl?: typeof fetch) {
+function setup(steps: Step[], env: Record<string, string> = {}, fetchImpl?: typeof fetch, extra: Partial<Parameters<typeof createKiosk>[0]> = {}) {
   const model = new ScriptedModel(steps);
   const threads = createMemoryThreadStore();
   const errors: unknown[] = [];
@@ -28,6 +28,7 @@ function setup(steps: Step[], env: Record<string, string> = {}, fetchImpl?: type
     modelFactory: async () => model,
     onError: (e) => errors.push(e),
     fetch: fetchImpl,
+    ...extra,
   });
   return { kiosk, model, threads, errors };
 }
@@ -157,6 +158,22 @@ describe("MCP tools", () => {
     expect(seen.map((s) => s.method)).toEqual(["initialize", "notifications/initialized", "tools/list", "tools/call"]);
     expect(seen.every((s) => s.auth === "Bearer secret")).toBe(true);
     expect(seen.at(-1)?.session).toBe("s1");
+  });
+
+  it("offers a business's own MCP server through its own fetch, never in child mode (CNX-1)", async () => {
+    const { impl, seen } = fakeMcp();
+    const org = { id: "org-our-docs", label: "Our docs", url: "https://mcp.example.com/mcp", headers: { Authorization: "Bearer org" }, tools: ["search_docs"] };
+    let asked = 0;
+    const { kiosk, model } = setup([{ calls: [{ name: "mcp_org_our_docs_search_docs", args: { q: "hours" } }] }, { text: "ok" }], {}, undefined, {
+      orgMcp: async () => (asked++, [org]),
+      orgMcpFetch: impl,
+    });
+    await collect(kiosk.ask({ threadId: THREAD, message: "q", selection: SELECTION, settings: { ...DEFAULT_AGENT_SETTINGS, mcp: ["org-our-docs"] } }));
+    expect(model.boundTools[0]).toContain("mcp_org_our_docs_search_docs");
+    expect(seen.every((x) => x.auth === "Bearer org")).toBe(true);
+    expect(asked).toBe(1);
+    await collect(kiosk.ask({ threadId: THREAD, message: "q", selection: SELECTION, settings: { ...DEFAULT_AGENT_SETTINGS, mcp: ["org-our-docs"], child: true } }));
+    expect(asked).toBe(1);
   });
 
   it("leaves MCP out when it isn't switched on", async () => {

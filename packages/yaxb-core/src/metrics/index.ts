@@ -34,6 +34,9 @@ export const EVENT_KINDS = [
   "media.read",
   // Routines (RTN-4): a run started (step: its trigger), each action (step: "<n>-<type>", ok), and
   // how it ended (step: its status). The routine's entry is the service; its id the journey.
+  // A connector's operation was called (CNX-8): the connector's entry is the service, the operation
+  // the journey; how long it took and whether it worked. Never what was sent or answered.
+  "connector.called",
   "routine.started",
   "routine.action",
   "routine.finished",

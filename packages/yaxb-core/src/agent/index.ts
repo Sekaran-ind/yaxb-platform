@@ -93,6 +93,12 @@ export type KioskDeps = {
   /** fetch for MCP servers (tests). */
   fetch?: typeof fetch;
   /**
+   * CNX-1: the business's own MCP servers (published MCP connectors, secrets added), asked each turn
+   * in the request's context. Their ids start `org-`; `orgMcpFetch` (the SSRF-guarded fetch) calls them.
+   */
+  orgMcp?: () => Promise<McpServer[]>;
+  orgMcpFetch?: typeof fetch;
+  /**
    * Long-term store for the agent's /memories/ (Deep Agents StoreBackend) when storage is "server":
    * a KvStore over D1 on the web, over a yaxb-box for the CLI. Without it, memory travels with the notebook.
    */
@@ -239,12 +245,24 @@ export function createKiosk(deps: KioskDeps) {
   const mcpLoads = new Map<string, Promise<StructuredToolInterface[]>>();
   const routeCache = new Map<string, number[]>();
 
-  /** MCP tools for a set of server ids, listed once per kiosk. */
-  function mcpToolsFor(ids: readonly string[]): Promise<StructuredToolInterface[]> {
-    const key = [...ids].sort().join(",");
+  /** A short fingerprint of a business's server (its address, tools and header), so a changed one is listed again. */
+  const fingerprint = (sv: McpServer) => {
+    const text = `${sv.url}|${(sv.tools ?? []).join(",")}|${JSON.stringify(sv.headers ?? {})}`;
+    let h = 0;
+    for (let i = 0; i < text.length; i++) h = (Math.imul(31, h) + text.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(36);
+  };
+  /** MCP tools for a set of server ids, listed once per kiosk (a business's servers: per version of them). */
+  function mcpToolsFor(ids: readonly string[], org: readonly McpServer[] = []): Promise<StructuredToolInterface[]> {
+    const mine = org.filter((sv) => ids.includes(sv.id));
+    const key = [...ids].sort().join(",") + (mine.length ? `|${mine.map(fingerprint).join(",")}` : "");
     let load = mcpLoads.get(key);
     if (!load) {
-      load = loadMcpTools(mcp.servers as McpServer[], ids, { fetch: deps.fetch, onError: (server, e) => deps.onError?.(e, { where: `mcp:${server}` }) });
+      const onError = (server: string, e: unknown) => deps.onError?.(e, { where: `mcp:${server}` });
+      load = Promise.all([
+        loadMcpTools(mcp.servers as McpServer[], ids, { fetch: deps.fetch, onError }),
+        mine.length ? loadMcpTools([...mine], ids, { fetch: deps.orgMcpFetch ?? deps.fetch, onError }) : Promise.resolve([]),
+      ]).then(([a, b]) => [...a, ...b]);
       load.catch(() => mcpLoads.delete(key));
       mcpLoads.set(key, load);
     }
@@ -428,7 +446,9 @@ ${JSON.stringify({ forms: draft.forms }, null, 1)}
       return;
     }
     const { threadId, message, selection, client } = parsed.data;
-    const settings = effectiveSettings(parsed.data.settings, { mcp: mcp.servers.map((s) => s.id) });
+    // The business's own MCP servers (CNX-1), never in child mode; a deployment server's id wins.
+    const org = parsed.data.settings.child || !deps.orgMcp ? [] : ((await deps.orgMcp().catch((e) => (deps.onError?.(e, { where: "mcp-org" }), []))) ?? []).filter((sv) => !mcp.servers.some((m) => m.id === sv.id));
+    const settings = effectiveSettings(parsed.data.settings, { mcp: [...mcp.servers.map((s) => s.id), ...org.map((s) => s.id)] });
     const ctx = { threadTail: threadId.slice(-8), provider: selection.provider, model: selection.model };
     const notebook = client?.notebook ?? null;
     const serverStorage = settings.storage === "server";
@@ -498,7 +518,7 @@ ${JSON.stringify({ forms: draft.forms }, null, 1)}
       plan = planTurn(settings, { modelHarness, hasNotebook: Boolean(notebook), memoryStore: deps.store, localKnowledge: passed.length + serverPassages.length > 0, web });
       // Semantic routing: only the MCP tools that match the message are offered.
       if (plan.harness === "deep" && settings.mcp.length && !settings.child) {
-        const all = await mcpToolsFor(settings.mcp);
+        const all = await mcpToolsFor(settings.mcp, org);
         let extraTools = all;
         if (embed && all.length > ROUTE_LIMIT) {
           try {
