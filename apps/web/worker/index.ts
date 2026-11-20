@@ -19,9 +19,11 @@ import { DEFAULT_TENANT, SLUG, TenantError } from "@sekaran-ind/yaxb-core/tenant
 import { offers, resolveContext, servesApi, SURFACE_HEADS } from "@sekaran-ind/yaxb-core/context";
 import { currentEdition, editionContext, editionFor, EDITIONS, firstEdition, withEdition, type Edition } from "./edition";
 import { eventBatchSchema } from "@sekaran-ind/yaxb-core/metrics";
+import { isDue, parseRoutine, ROUTINE_STARTERS, routineLimits, runsFromEvents, localClock } from "@sekaran-ind/yaxb-core/routines";
+import { dryRun, fireEvents, routineContext, routineStore, runOnce, sampleEvent, sweep } from "./routines";
 import { beaconSchema, CaseError, envelopeSchema, MAX_CASE_RUN, MAX_ENVELOPE, mayReassign, RELAY_MAX_HOURS, staffingOf, type Envelope } from "@sekaran-ind/yaxb-core/cases";
 import { DesignerError, historyOf, LESSONS_IN_MEMORY, MAX_NARRATIVE } from "@sekaran-ind/yaxb-core/designer";
-import { ADMIN_ACTOR_ID, LibraryError, MAX_ENTRY_BYTES, permissionsOf, type LibraryActor } from "@sekaran-ind/yaxb-core/library";
+import { ADMIN_ACTOR_ID, LibraryError, MAX_ENTRY_BYTES, permissionsOf, writesRoutines, type LibraryActor } from "@sekaran-ind/yaxb-core/library";
 import { proposalEntry, ReviewError, type Reviewer } from "@sekaran-ind/yaxb-core/reviews";
 import { auditEvent, hashKey, looksLikeKey, machineMayCall, MODERATOR_ROLES, statusOf, TeamRuleError, verifyAuditChain, type Moderator } from "@sekaran-ind/yaxb-core/moderators";
 import { AVAILABILITY, hubName, memberStatus, roomName, teamMember } from "@sekaran-ind/yaxb-core/team";
@@ -1123,6 +1125,8 @@ app.post("/api/events", async (c) => {
   const services = [...new Set(parsed.data.map((e) => e.service))];
   for (const s of services) if ((await serviceStorage(c, s)) !== "server") return jsonError(c, 409, "That service doesn't keep its records on the server.");
   await serviceEvents(c.env).add(parsed.data);
+  // Routines these events set off (RTN-1) run after the answer; each event runs a routine once.
+  c.executionCtx.waitUntil(fireEvents(c.env, parsed.data).catch((e) => console.error(JSON.stringify({ msg: "routine events failed", error: e instanceof Error ? e.message.slice(0, 200) : "unknown" }))));
   return c.json({ ok: true, count: parsed.data.length });
 });
 
@@ -1134,6 +1138,127 @@ app.get("/api/events", async (c) => {
   const service = c.req.query("service") ?? "";
   if (!service || (await serviceStorage(c, service)) !== "server") return jsonError(c, 404, "That service doesn't keep its records on the server.");
   return c.json({ items: await serviceEvents(c.env).list(service, { since: c.req.query("since") ?? undefined }) });
+});
+
+// ---- routines (RTN-1..5, 7, 13) ------------------------------------------------------------------------
+
+/** Who may read routines and their runs: administrators, automators, moderators and reviewers. */
+const readsRoutines = (a: LibraryActor) => a.admin || a.roles.some((r) => ["administrator", "automator", "moderator", "reviewer"].includes(r));
+const refuse = (message: string, status = 403) => {
+  throw new LibraryError(message, status);
+};
+
+/** The business's published routines (when each runs next), its settings and today's use, and the starters. */
+app.get("/api/routines", (c) =>
+  libraryCall(c, async (a) => {
+    if (a.guest) refuse("Sign in as a member to see the routines.");
+    const ctx = await routineContext(c.env);
+    const store = routineStore(c.env);
+    const now = new Date();
+    const routines = ctx.routines.map(({ entry, routine: r }) => {
+      const due = "event" in r.on ? null : isDue(r, now, now, () => null);
+      return {
+        entry_id: entry.id,
+        id: r.id,
+        title: r.title,
+        summary: r.summary ?? null,
+        on: r.on,
+        actions: r.actions.map((x) => x.type),
+        next: due && !due.due && due.next ? due.next.toISOString() : null,
+      };
+    });
+    const [s, usage] = await Promise.all([store.settings(currentTenant()), store.usage(currentTenant(), localClock(now).date)]);
+    return { routines, settings: s, usage, writer: writesRoutines(a), manage: permissionsOf(a).manage, starters: ROUTINE_STARTERS };
+  }),
+);
+
+/** A routine's runs, newest first, from its events (RTN-4). */
+app.get("/api/routines/:entry/runs", (c) =>
+  libraryCall(c, async (a) => {
+    if (!readsRoutines(a)) refuse("Administrators, automators, moderators and reviewers see a routine's runs.");
+    const since = new Date(Date.now() - 60 * 86_400_000).toISOString();
+    return { runs: runsFromEvents(await serviceEvents(c.env).list(c.req.param("entry"), { since })).slice(0, 100) };
+  }),
+);
+
+/**
+ * A dry run (RTN-3) of a routine's YAML, saved or not: what each action would do, with nothing
+ * sent, called or recorded. An event routine gets a made-up event of the kind it waits for.
+ */
+app.post("/api/routines/dry-run", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, `routine:${await clientId(c)}`))) return jsonError(c, 429, "Too many requests. Please wait a minute.");
+  return libraryCall(c, async (a, body) => {
+    if (!writesRoutines(a) && !readsRoutines(a)) refuse("Only members who write or review routines try them.");
+    const parsed = parseRoutine(String((body as { yaml?: unknown } | null)?.yaml ?? ""));
+    if (!parsed.ok) return { ok: false, problems: parsed.problems };
+    const at = new Date();
+    const trigger = "schedule" in parsed.routine.on ? "schedule" : "date" in parsed.routine.on ? "date" : "event";
+    const run = await dryRun(c.env, await routineContext(c.env), parsed.routine, { at, trigger, event: sampleEvent(parsed.routine, at) });
+    return { ok: true, run };
+  });
+});
+
+/** Run a published routine now, for real (administrators), audited. */
+app.post("/api/routines/:entry/run", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  return libraryCall(c, async (a) => {
+    if (!permissionsOf(a).manage) refuse("Only an administrator runs a routine now.");
+    const ctx = await routineContext(c.env);
+    const found = ctx.routines.find((x) => x.entry.id === c.req.param("entry"));
+    if (!found) refuse("There's no published routine with that id.", 404);
+    const at = new Date();
+    const run = await runOnce(c.env, ctx, { entry: found!.entry, routine: found!.routine, input: { at, trigger: "manual", event: sampleEvent(found!.routine, at) }, key: `manual|${crypto.randomUUID()}` });
+    await audited(c, "routine.run_now", a.name, found!.entry.id, { status: run?.status ?? "claimed" });
+    return { run };
+  });
+});
+
+/** The switch that pauses every routine, and the daily limits (RTN-5): administrators, audited. */
+app.put("/api/routines/settings", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  return libraryCall(c, async (a, body) => {
+    if (!permissionsOf(a).manage) refuse("Only an administrator changes the routines' settings.");
+    const b = (body ?? {}) as { paused?: unknown; limits?: unknown };
+    const next = { paused: b.paused === true, limits: routineLimits(b.limits) };
+    await routineStore(c.env).putSettings(currentTenant(), next);
+    await audited(c, "routine.settings", a.name, null, { paused: next.paused, ...next.limits });
+    return { settings: next };
+  });
+});
+
+/** Notices routines left for this member's roles (My work). */
+app.get("/api/routines/notices", (c) =>
+  libraryCall(c, async (a) => {
+    if (a.guest) return { items: [] };
+    return { items: await routineStore(c.env).notices(currentTenant(), a.roles, { limit: 100 }) };
+  }),
+);
+app.post("/api/routines/notices/:id/done", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  return libraryCall(c, async (a) => {
+    if (a.guest) refuse("Sign in as a member first.");
+    const mine = await routineStore(c.env).notices(currentTenant(), a.roles, { limit: 500 });
+    if (!mine.some((n) => n.id === c.req.param("id"))) refuse("There's no such notice for you.", 404);
+    return { done: await routineStore(c.env).doneNotice(currentTenant(), c.req.param("id"), a.name, new Date().toISOString()) };
+  });
+});
+
+/**
+ * Kiosks forward the events a published routine waits for when their service keeps its events on
+ * the device or the box (the catalogue's `routines` say which). The events aren't kept; only the runs
+ * they set off are. A service that keeps its events here fires through POST /api/events instead.
+ */
+app.post("/api/routines/events", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  if (!(await withinLimit("chat", c.env.CHAT_LIMITER, `routine-events:${await clientId(c)}`))) return jsonError(c, 429, "Too many requests. Please wait a minute.");
+  const parsed = eventBatchSchema.safeParse((await readJson(c, 256 * 1024)).body);
+  if (!parsed.success) return jsonError(c, 422, "That isn't a batch of events.");
+  await catalogue(c.env);
+  const ctx = await routineContext(c.env);
+  const server = new Set(ctx.pub.services.filter((s) => s.storage === "server").map((s) => s.entry_id));
+  const runs = await fireEvents(c.env, parsed.data.filter((e) => !server.has(e.service)), ctx);
+  return c.json({ ok: true, runs: runs.length });
 });
 
 // ---- the cloud relay: transient envelopes between devices (LIB-44..48) -----------------------------
@@ -1623,4 +1748,13 @@ app.get("*", async (c) => {
   return out;
 });
 
-export default app;
+/**
+ * The Worker: requests through Hono, and the Cron Trigger (wrangler.jsonc `triggers.crons`, every
+ * 15 minutes) sweeping every business's time routines (RTN-2).
+ */
+export default {
+  fetch: app.fetch,
+  scheduled(_event: ScheduledController, env: AppEnv["Bindings"], ctx: ExecutionContext) {
+    ctx.waitUntil(sweep(env).then((n) => void (n && console.log(JSON.stringify({ msg: "routines swept", runs: n })))));
+  },
+} satisfies ExportedHandler<AppEnv["Bindings"]>;

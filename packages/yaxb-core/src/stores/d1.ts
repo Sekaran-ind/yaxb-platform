@@ -579,14 +579,14 @@ export function createD1Relay(db: D1Like, now = () => new Date()): Mailbox {
 
 /** A service's events on the server (MET-2, migration 0012): the paid plan's storage. */
 export function createD1EventStore(db: D1Like): EventStore {
-  const COLS = "id, service, journey, kind, step, role, run, at, ms, ok, actor";
+  const COLS = "id, service, journey, kind, step, role, run, at, ms, ok, actor, outcome";
   type Row = Omit<ServiceEvent, "ok"> & { ok: number | null };
   return {
     async add(events) {
       for (const e of events)
         await db
-          .prepare(`INSERT OR IGNORE INTO service_events (${COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`)
-          .bind(e.id, e.service, e.journey, e.kind, e.step, e.role, e.run, e.at, e.ms, e.ok === null ? null : e.ok ? 1 : 0, e.actor)
+          .prepare(`INSERT OR IGNORE INTO service_events (${COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`)
+          .bind(e.id, e.service, e.journey, e.kind, e.step, e.role, e.run, e.at, e.ms, e.ok === null ? null : e.ok ? 1 : 0, e.actor, e.outcome ?? null)
           .run();
     },
     async list(service, { since, limit = 10_000 } = {}) {
@@ -594,7 +594,55 @@ export function createD1EventStore(db: D1Like): EventStore {
         .prepare(`SELECT ${COLS} FROM (SELECT ${COLS} FROM service_events WHERE service = ?1 AND at >= ?2 ORDER BY at DESC LIMIT ?3) ORDER BY at`)
         .bind(service, since ?? "", limit)
         .all<Row>();
-      return rows.results.map((r) => ({ ...r, ok: r.ok === null ? null : Boolean(r.ok) }));
+      return rows.results.map((r) => ({ ...r, ok: r.ok === null ? null : Boolean(r.ok), outcome: r.outcome ?? null }));
+    },
+  };
+}
+
+/** Routines' notices, settings and daily usage (RTN-1, RTN-5) on D1 (migration 0019). */
+export function createD1RoutineStore(db: D1Like): import("../routines/index.js").RoutineStore {
+  type Notice = import("../routines/index.js").RoutineNotice;
+  const DEFAULTS: import("../routines/index.js").RoutineSettings = { paused: false, limits: { runsPerDay: 200, messagesPerDay: 100, connectorCallsPerDay: 200 } };
+  const COLS = "id, tenant_id, routine_id, role, text, created_at, done_at, done_by";
+  return {
+    addNotice: async (n) =>
+      void (await db.prepare(`INSERT INTO routine_notices (${COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`).bind(n.id, n.tenant_id, n.routine_id, n.role, n.text, n.created_at, n.done_at, n.done_by).run()),
+    async notices(tenant, roles, { all = false, limit = 100 } = {}) {
+      if (!roles.length) return [];
+      const marks = roles.map((_, i) => `?${i + 3}`).join(", ");
+      const rows = await db
+        .prepare(`SELECT ${COLS} FROM routine_notices WHERE tenant_id = ?1 AND role IN (${marks}) ${all ? "" : "AND done_at IS NULL"} ORDER BY created_at DESC LIMIT ?2`)
+        .bind(tenant, limit, ...roles)
+        .all<Notice>();
+      return rows.results;
+    },
+    async doneNotice(tenant, id, by, at) {
+      const r = await db.prepare("UPDATE routine_notices SET done_at = ?3, done_by = ?4 WHERE tenant_id = ?1 AND id = ?2 AND done_at IS NULL").bind(tenant, id, at, by).run();
+      return ((r as { meta?: { changes?: number }; changes?: number | bigint } | null)?.meta?.changes ?? Number((r as { changes?: number | bigint } | null)?.changes ?? 0)) > 0;
+    },
+    async settings(tenant) {
+      const r = await db.prepare("SELECT paused, limits FROM routine_settings WHERE tenant_id = ?1").bind(tenant).first<{ paused: number; limits: string }>();
+      if (!r) return structuredClone(DEFAULTS);
+      let limits = DEFAULTS.limits;
+      try {
+        limits = { ...DEFAULTS.limits, ...(JSON.parse(r.limits) as object) };
+      } catch {
+        /* the defaults */
+      }
+      return { paused: Boolean(r.paused), limits };
+    },
+    putSettings: async (tenant, s) =>
+      void (await db
+        .prepare("INSERT INTO routine_settings (tenant_id, paused, limits) VALUES (?1, ?2, ?3) ON CONFLICT (tenant_id) DO UPDATE SET paused = ?2, limits = ?3")
+        .bind(tenant, s.paused ? 1 : 0, JSON.stringify(s.limits))
+        .run()),
+    async usage(tenant, day) {
+      const r = await db.prepare("SELECT runs, messages, connector_calls FROM routine_usage WHERE tenant_id = ?1 AND day = ?2").bind(tenant, day).first<{ runs: number; messages: number; connector_calls: number }>();
+      return { day, runs: r?.runs ?? 0, messages: r?.messages ?? 0, connector_calls: r?.connector_calls ?? 0 };
+    },
+    async use(tenant, day, what) {
+      const col = what === "runs" ? "runs" : what === "messages" ? "messages" : "connector_calls";
+      await db.prepare(`INSERT INTO routine_usage (tenant_id, day, ${col}) VALUES (?1, ?2, 1) ON CONFLICT (tenant_id, day) DO UPDATE SET ${col} = ${col} + 1`).bind(tenant, day).run();
     },
   };
 }

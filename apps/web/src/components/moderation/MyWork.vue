@@ -2,9 +2,11 @@
 // My work (WRK-1..3), one page for moderators and reviewers: the requests waiting for one of their
 // roles (journeys handed over to them), the requests they started, the escalated questions still
 // open, and the answers people asked a moderator to check. Each opens where the work is done.
+// Routines' messages to one of their roles come first, as notices to mark done (RTN-1).
 import type { ModerationItem } from "@sekaran-ind/yaxb-core/stores";
 import type { ReviewAnswer } from "@sekaran-ind/yaxb-core/reviews";
-import { ArrowRight, Inbox, Loader2, MessageSquareWarning, RotateCcw, ShieldCheck } from "@lucide/vue";
+import type { RoutineNotice } from "@sekaran-ind/yaxb-core/routines";
+import { ArrowRight, BellRing, Check, Inbox, Loader2, MessageSquareWarning, RotateCcw, ShieldCheck } from "@lucide/vue";
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import ModeratorSignIn from "./ModeratorSignIn.vue";
@@ -16,6 +18,7 @@ import { api, ApiError } from "@/lib/api";
 const router = useRouter();
 const questions = ref<ModerationItem[]>([]);
 const answers = ref<ReviewAnswer[]>([]);
+const notices = ref<RoutineNotice[]>([]);
 const signedOut = ref(false);
 const loading = ref(true);
 const error = ref<string | null>(null);
@@ -25,12 +28,14 @@ async function load() {
   error.value = null;
   try {
     await refreshQueue().catch(() => undefined);
-    const [q, a] = await Promise.all([
+    const [q, a, n] = await Promise.all([
       api<{ items: ModerationItem[] }>("/api/agent/moderation?state=open"),
       api<{ items: ReviewAnswer[] }>("/api/reviews/answers?state=open"),
+      api<{ items: RoutineNotice[] }>("/api/routines/notices").catch(() => ({ items: [] as RoutineNotice[] })),
     ]);
     questions.value = q.items;
     answers.value = a.items;
+    notices.value = n.items;
     signedOut.value = false;
   } catch (e) {
     if (e instanceof ApiError && e.status === 401) signedOut.value = true;
@@ -47,7 +52,15 @@ const roles = computed(() => kioskViewer.value.roles.map(roleName).join(", "));
 const when = (iso: string) => new Date(iso).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const openCase = (ref: string) => void router.push({ path: "/kiosk", query: { screen: "services", case: ref } });
 const openStaff = (staff: string) => void router.push({ path: "/kiosk", query: { screen: "services", staff } });
-const total = computed(() => mine.value.length + questions.value.length + answers.value.length);
+const total = computed(() => notices.value.length + mine.value.length + questions.value.length + answers.value.length);
+async function done(n: RoutineNotice) {
+  try {
+    await api(`/api/routines/notices/${n.id}/done`, {});
+    notices.value = notices.value.filter((x) => x.id !== n.id);
+  } catch (e) {
+    error.value = (e as Error).message;
+  }
+}
 </script>
 
 <template>
@@ -68,6 +81,20 @@ const total = computed(() => mine.value.length + questions.value.length + answer
     <p v-else-if="loading" role="status" class="flex items-center gap-2 text-sm text-gray-600"><Loader2 class="size-4 animate-spin" aria-hidden="true" /> Loading…</p>
 
     <template v-else>
+      <!-- Notices: what routines told one of your roles -->
+      <div v-if="notices.length" class="space-y-2">
+        <h3 class="flex items-center gap-2 font-semibold text-ink"><BellRing class="size-4 text-brand" aria-hidden="true" /> Notices <span class="text-sm font-normal text-gray-500">{{ notices.length }}</span></h3>
+        <ul class="space-y-2">
+          <li v-for="n in notices" :key="n.id" class="card flex items-start justify-between gap-3 p-3">
+            <div class="min-w-0">
+              <p class="text-sm whitespace-pre-line text-ink">{{ n.text }}</p>
+              <p class="text-xs text-gray-500">For {{ roleName(n.role) }} · {{ when(n.created_at) }}</p>
+            </div>
+            <button type="button" class="btn-light h-8 shrink-0 px-2 text-sm" :aria-label="`Mark done: ${n.text.slice(0, 60)}`" @click="done(n)"><Check class="size-4" aria-hidden="true" /> Done</button>
+          </li>
+        </ul>
+      </div>
+
       <!-- Requests: journeys handed to one of your roles -->
       <div class="space-y-2">
         <h3 class="flex items-center gap-2 font-semibold text-ink"><Inbox class="size-4 text-brand" aria-hidden="true" /> Requests for you <span class="text-sm font-normal text-gray-500">{{ mine.length }}</span></h3>

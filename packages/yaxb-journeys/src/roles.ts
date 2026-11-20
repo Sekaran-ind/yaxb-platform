@@ -28,6 +28,7 @@ export const DEFAULT_ROLES: readonly Role[] = [
   { id: "administrator", label: "Admin", description: "Manages the team, roles and libraries; can do everything.", builtin: true },
   { id: "moderator", label: "Moderator", description: "Handles the kiosk's moderation queue; writes and maintains journeys.", builtin: true },
   { id: "reviewer", label: "Reviewer", description: "Reads what is submitted and accepts or rejects it.", builtin: true },
+  { id: "automator", label: "Automator", description: "Writes the routines the kiosk runs on its own; a reviewer approves them.", builtin: true },
 ];
 
 export const ROLE_ID = /^[a-z][a-z0-9-]{0,31}$/;

@@ -72,6 +72,32 @@ for (const [name, make] of [
       return svc;
     };
 
+    it("takes routines only from administrators and automators, published by a reviewer (RTN-7)", async () => {
+      const svc = setup();
+      const routine = `kind: routine
+id: late-alert
+title: Late check-in alert
+on:
+  event: { service: attendance, kind: journey.outcome, outcome: attendance.late }
+actions:
+  - message: { to: manager, text: "A late check-in at {{event.time}}." }
+`;
+      await expectError(svc.createEntry(mod, null, { yaml: routine }), 403, /administrator or an automator/);
+      await expectError(svc.createEntry(guest, null, { yaml: routine }), 403);
+      const automator: LibraryActor = { id: "a1", name: "Arun", roles: ["automator"], admin: false };
+      const bad = await svc.createEntry(automator, null, { yaml: routine.replace("message:", "pay:").replace("id: late-alert", "id: late-bad") });
+      expect(bad.problems.map((p) => p.message).join()).toMatch(/isn't an action/);
+      const { entry } = await svc.createEntry(automator, null, { yaml: routine });
+      expect(entry.kind).toBe("routine");
+      expect(await svc.publishedRoutines()).toEqual([]);
+      await svc.submit(automator, entry.id);
+      await svc.review(reviewer, entry.id, { decision: "accept" });
+      const pub = await svc.publishedRoutines();
+      expect(pub.map((r) => [r.entry.id, r.routine.id])).toEqual([[entry.id, "late-alert"]]);
+      // Not a service: kiosks don't load it.
+      expect((await svc.published([], { all: true })).services.some((s) => s.id === "late-alert")).toBe(false);
+    });
+
     it("publishes a connector, whose operations journeys may then use (CNX-2, CNX-6)", async () => {
       const svc = setup();
       const connector = `kind: connector
@@ -193,7 +219,7 @@ journeys:
         ["check-in", true],
         ["triage", false],
       ]);
-      expect(visitor.roles.map((r) => r.id)).toEqual(["administrator", "moderator", "reviewer", "front-desk", "nurse"]);
+      expect(visitor.roles.map((r) => r.id)).toEqual(["administrator", "moderator", "reviewer", "automator", "front-desk", "nurse"]);
       expect((await svc.published(nurse.roles)).services[0]!.journeys.every((j) => j.allowed)).toBe(true);
       // Kiosks compile the YAML they get.
       expect(compileBundle(visitor.services[0]!.yaml, { services: JOURNEY_SERVICES }).ok).toBe(true);

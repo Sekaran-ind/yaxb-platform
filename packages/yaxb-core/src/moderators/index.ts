@@ -129,6 +129,8 @@ export const AUDIT_ACTIONS = {
   "library.entry_storage": "Storage chosen",
   "connector.secret_set": "Connector secret set",
   "connector.secret_removed": "Connector secret removed",
+  "routine.settings": "Routines paused, resumed or limited",
+  "routine.run_now": "Routine run by hand",
 } as const;
 export type AuditAction = keyof typeof AUDIT_ACTIONS;
 

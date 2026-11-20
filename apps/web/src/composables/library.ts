@@ -37,7 +37,9 @@ export type Staffing = "ready" | "invited" | "nobody";
 type Viewer = { roles: string[]; member: boolean; admin: boolean; id?: string; name?: string };
 /** A published connector (CNX-2): what it does and the secrets it needs (never their values). */
 export type PublishedConnector = { entry_id: string; id: string; title: string; summary: string | null; host: string; operations: { id: string; label: string; method: string; handler: string }[]; secrets: string[] };
-type Published = { roles: Role[]; services: CatalogueService[]; organisation?: Organisation | null; connectors?: PublishedConnector[]; staffing?: Record<string, Staffing>; viewer?: Viewer };
+/** A published routine set off by an event (RTN-1): kiosks forward the events it waits for. */
+export type RoutineTriggerRow = { entry_id: string; id: string; title: string; event: { service: string; kind: string; journey?: string; outcome?: string } };
+type Published = { roles: Role[]; services: CatalogueService[]; organisation?: Organisation | null; connectors?: PublishedConnector[]; routines?: RoutineTriggerRow[]; staffing?: Record<string, Staffing>; viewer?: Viewer };
 
 const KEY = "yaxb.kiosk.catalogue";
 function readLoaded(): string[] {
@@ -64,6 +66,8 @@ const organisation = shallowRef<Organisation | null>(null);
 export const publishedOrganisation = computed(() => organisation.value);
 const connectors = shallowRef<PublishedConnector[]>([]);
 export const publishedConnectors = computed(() => connectors.value);
+const routineTriggers = shallowRef<RoutineTriggerRow[]>([]);
+export const publishedRoutineTriggers = computed(() => routineTriggers.value);
 /** Handler names journeys may use: the built-in ones and the published connectors' (CNX-6). */
 export const journeyServiceNames = computed(() => [...JOURNEY_SERVICES, ...connectors.value.flatMap((c) => c.operations.map((o) => o.handler))]);
 const viewer = shallowRef<Viewer>({ roles: [], member: false, admin: false });
@@ -81,6 +85,7 @@ export function loadCatalogue(): Promise<void> {
       staffing.value = p.staffing ?? {};
       organisation.value = p.organisation ?? null;
       connectors.value = p.connectors ?? [];
+      routineTriggers.value = p.routines ?? [];
       if (p.viewer) viewer.value = p.viewer;
     } catch {
       /* no network or no Worker: built-in content only */

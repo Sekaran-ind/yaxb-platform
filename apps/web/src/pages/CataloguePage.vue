@@ -6,6 +6,7 @@
 //   My services    a guest's own (members: every service)
 //   Review         what is waiting for a reviewer
 //   Organisation   units, roles and reporting lines, from a template (ORG-1..5; members)
+//   Routines       what runs on its own, its starters and limits (RTN-1..5; members)
 //   Roles          the built-in roles, the organisation's, and those services define
 //   Libraries      how members organise services
 //   Designer       what the Service Designer agent has learnt (administrators)
@@ -31,6 +32,7 @@ import { useWidth } from "@/composables/width";
 import DesignerLessons from "@/components/catalogue/DesignerLessons.vue";
 import ServiceWorkspace from "@/components/catalogue/ServiceWorkspace.vue";
 import OrganisationScreen from "@/components/catalogue/OrganisationScreen.vue";
+import RoutinesScreen from "@/components/catalogue/RoutinesScreen.vue";
 import ModeratorSignIn from "@/components/moderation/ModeratorSignIn.vue";
 import { catalogue, loadCatalogue, roleCatalogue, type CatalogueService } from "@/composables/library";
 import { api } from "@/lib/api";
@@ -53,7 +55,7 @@ const signingIn = ref(false);
 
 const q = (k: string) => (typeof route.query[k] === "string" ? (route.query[k] as string) : null);
 const service = computed(() => q("service"));
-const VIEWS = ["ask", "catalogue", "mine", "review", "organisation", "roles", "libraries", "designer"] as const;
+const VIEWS = ["ask", "catalogue", "mine", "review", "organisation", "routines", "roles", "libraries", "designer"] as const;
 /** Preferences (model, layout, theme, voice…) open here, inside the catalogue, as in the kiosk. */
 const prefs = computed(() => q("prefs"));
 const account = useAccount();
@@ -166,6 +168,7 @@ const navScreens = computed<NavScreen[]>(() => [
   { id: "mine", label: me.value?.can.view ? "All services" : "My services", icon: "clipboard-list", badge: String(overview.value?.services.length ?? 0) },
   ...(can.value?.view ? [{ id: "review", label: "Review", icon: "message-square", badge: overview.value?.queue.length ? String(overview.value.queue.length) : undefined }] : []),
   ...(can.value?.view ? [{ id: "organisation", label: "Organisation", icon: "library" }] : []),
+  ...(me.value && !me.value.guest ? [{ id: "routines", label: "Routines", icon: "calendar" }] : []),
   { id: "roles", label: "Roles", icon: "user-round" },
   ...(can.value?.view ? [{ id: "libraries", label: "Libraries", icon: "notebook" }] : []),
   ...(can.value?.manage ? [{ id: "designer", label: "AI designer", icon: "sparkles" }] : []),
@@ -175,7 +178,7 @@ const counts = computed(() => ({ published: catalogue.value.length, mine: overvi
 const STATUS: Record<string, string> = { draft: "Draft", in_review: "In review", accepted: "Published", rejected: "Rejected", archived: "Archived" };
 const current = computed(() => {
   if (!service.value) return null;
-  if (service.value === "new") return { title: "A new service", status: "Not saved yet" };
+  if (service.value === "new") return { title: q("routine") ? "A new routine" : "A new service", status: "Not saved yet" };
   const e = overview.value?.services.find((x) => x.id === service.value);
   if (e) return { title: e.title, status: `${STATUS[e.status]} · revision ${e.revision}` };
   const p = published(service.value);
@@ -224,8 +227,8 @@ watch(signingIn, (v) => !v && void load());
             :roles="overview.roles"
             :libraries="overview.libraries"
             :published="service === 'new' ? null : published(service)"
-            @close="go({ service: null })"
-            @created="(id) => (changed(), go({ service: id }))"
+            @close="go({ service: null, routine: null })"
+            @created="(id) => (changed(), go({ service: id, routine: null }))"
             @changed="changed"
             @step="(st) => (designStep = st)"
           />
@@ -307,6 +310,9 @@ watch(signingIn, (v) => !v && void load());
             </template>
             <template #organisation>
               <OrganisationScreen :entries="overview.services" :can="can" @open="(id) => go({ service: id })" @changed="changed" />
+            </template>
+            <template #routines>
+              <RoutinesScreen :entries="overview.services" @open="(id) => go({ service: id })" @start="(id) => go({ service: 'new', routine: id })" />
             </template>
             <template #roles>
               <section aria-label="Roles" class="max-w-4xl space-y-3">

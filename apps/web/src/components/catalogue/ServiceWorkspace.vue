@@ -9,6 +9,9 @@
 // learns from its review. A new service not created yet is kept in this browser until it is.
 import { parseConnector, connectorSecrets as connectorSecretNames } from "@sekaran-ind/yaxb-core/connectors";
 import ConnectorSecrets from "./ConnectorSecrets.vue";
+import { parseRoutine, ROUTINE_STARTERS } from "@sekaran-ind/yaxb-core/routines";
+import RoutineDryRun from "./RoutineDryRun.vue";
+import RoutineRuns from "./RoutineRuns.vue";
 import type { EntryRevision, Library, LibraryEntry, LibraryPermissions } from "@sekaran-ind/yaxb-core/library";
 import {
   checkDocument,
@@ -74,7 +77,22 @@ const busy = ref(false);
 const draftRun = ref<string | null>(null);
 /** A new service's conversation, linked to the entry when it is created. */
 const threadId = ref<string | null>(null);
-const STARTER = serviceTemplate("new-service");
+/** A new routine starts from one of the starters (`?routine=<id>`, or `blank`), RTN-1. */
+const routineStarter = computed(() => {
+  const id = typeof route.query.routine === "string" ? route.query.routine : null;
+  if (!id) return null;
+  return ROUTINE_STARTERS.find((r) => r.id === id)?.yaml ?? BLANK_ROUTINE;
+});
+const BLANK_ROUTINE = `kind: routine
+id: new-routine
+title: New routine
+summary: What it does, in a sentence.
+on:
+  schedule: { every: day, at: "09:00" }
+actions:
+  - message: { to: manager, text: "Good morning." }
+`;
+const STARTER = routineStarter.value ?? serviceTemplate("new-service");
 function applyDraft(next: string, run: string | null) {
   yaml.value = next;
   if (run) draftRun.value = run;
@@ -93,7 +111,7 @@ function readUnsaved(): Unsaved | null {
   }
 }
 function keepUnsaved() {
-  if (props.entryId || readOnlyCopy.value) return;
+  if (props.entryId || readOnlyCopy.value || routineStarter.value) return;
   try {
     if (yaml.value === STARTER && !threadId.value) localStorage.removeItem(UNSAVED);
     else localStorage.setItem(UNSAVED, JSON.stringify({ yaml: yaml.value, thread: threadId.value, run: draftRun.value } satisfies Unsaved));
@@ -116,12 +134,16 @@ function startOver() {
   openView("design");
 }
 
-type View = "design" | "org" | "yaml" | "preview" | "flow" | "consent" | "summary" | "audit" | "history" | "secrets";
+type View = "design" | "org" | "yaml" | "preview" | "flow" | "consent" | "summary" | "audit" | "history" | "secrets" | "dry" | "runs";
 /** The organisation (ORG-1) is an entry too: it has its own view, YAML, audit and history. */
 const isOrg = computed(() => entry.value?.kind === "organisation" || /^kind:\s*organisation\b/m.test(yaml.value));
 /** A connector (CNX-2) is an entry too: YAML, its secrets, audit and history. */
 const isConnector = computed(() => (entry.value?.kind as string) === "connector" || /^kind:\s*connector\b/m.test(yaml.value));
 const connectorCheck = computed(() => (isConnector.value ? parseConnector(yaml.value) : null));
+/** A routine (RTN-1) is an entry too: YAML, a dry run, its runs, audit and history. */
+const isRoutine = computed(() => (entry.value?.kind as string) === "routine" || /^kind:\s*routine\b/m.test(yaml.value));
+const routineCheck = computed(() => (isRoutine.value ? parseRoutine(yaml.value) : null));
+const published_ = computed(() => Boolean(entry.value?.published_yaml));
 /** The server's problems as of the last save: the organisation's checks need the catalogue and who is staffed (ORG-5). */
 const serverProblems = ref<BundleProblem[]>([]);
 const orgWarnings = computed(() => (dirty.value ? check.value.problems : serverProblems.value).filter((p) => p.level === "warning" && p.kind === "organisation"));
@@ -150,7 +172,8 @@ async function load() {
     entry.value = null;
     revisions.value = [];
     saved.value = "";
-    const kept = readUnsaved();
+    // A new routine starts from its starter; the unsaved new service stays kept for later.
+    const kept = routineStarter.value ? null : readUnsaved();
     yaml.value = kept?.yaml ?? STARTER;
     threadId.value = kept?.thread ?? null;
     draftRun.value = kept?.run ?? null;
@@ -182,6 +205,7 @@ async function load() {
 // ---- checking -------------------------------------------------------------------------------
 const check = computed(() => checkDocument(yaml.value, [], { services: journeyServiceNames.value, roles: props.roles.map((r) => r.id) }));
 const errors = computed(() =>
+  routineCheck.value ? (routineCheck.value.ok ? [] : routineCheck.value.problems.map((message) => ({ level: "error" as const, line: 1, message, kind: "routine", id: "" }))) :
   connectorCheck.value ? (connectorCheck.value.ok ? [] : connectorCheck.value.problems.map((message) => ({ level: "error" as const, line: 1, message, kind: "connector", id: "" }))) : check.value.problems.filter((p) => p.level === "error"),
 );
 /** The Ethics checklist (ETH-1, ETH-4): high findings need the reviewer's reason to accept. */
@@ -214,7 +238,8 @@ function designFromYaml(): boolean {
   return !why;
 }
 function openView(v: View) {
-  if (isConnector.value && v !== "yaml" && v !== "audit" && v !== "history" && v !== "secrets") v = "yaml";
+  if (isRoutine.value && v !== "yaml" && v !== "audit" && v !== "history" && v !== "dry" && v !== "runs") v = "yaml";
+  else if (isConnector.value && v !== "yaml" && v !== "audit" && v !== "history" && v !== "secrets") v = "yaml";
   else if (isOrg.value && v !== "yaml" && v !== "audit" && v !== "history") v = check.value.bundle.organisations[0] ? "org" : "yaml";
   else if (v === "org") v = "design";
   if (v === "design" && !designFromYaml()) v = "yaml";
@@ -316,13 +341,17 @@ function useRevision(r: EntryRevision) {
   notice.value = `Revision ${r.revision} is in the editor. Save to make it the latest.`;
 }
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : "");
-const title = computed(() => entry.value?.title ?? props.published?.title ?? (design.value.title || "New service"));
+const title = computed(() => entry.value?.title ?? props.published?.title ?? (routineCheck.value?.ok ? routineCheck.value.routine.title : isRoutine.value ? "New routine" : design.value.title || "New service"));
 /** Where the service records what happens (LIB-62): the consent forms say so. */
 const entryStorage = computed(() => {
   const st = (entry.value as { storage?: string } | null)?.storage ?? props.published?.storage;
   return st === "box" || st === "server" ? st : "none";
 });
-const VIEWS = computed<{ value: View; label: string }[]>(() => isConnector.value ? [
+const VIEWS = computed<{ value: View; label: string }[]>(() => isRoutine.value ? [
+  { value: "yaml", label: "YAML" },
+  { value: "dry", label: "Dry run" },
+  ...(entry.value ? [...(published_.value ? [{ value: "runs" as const, label: "Runs" }] : []), { value: "audit" as const, label: "Audit" }, { value: "history" as const, label: `History (${revisions.value.length})` }] : []),
+] : isConnector.value ? [
   { value: "yaml", label: "YAML" },
   ...(entry.value ? [{ value: "secrets" as const, label: "Secrets" }, { value: "audit" as const, label: "Audit" }, { value: "history" as const, label: `History (${revisions.value.length})` }] : []),
 ] : isOrg.value ? [
@@ -341,7 +370,7 @@ const VIEWS = computed<{ value: View; label: string }[]>(() => isConnector.value
 
 watch([yaml, threadId], keepUnsaved);
 /** Reviewers of a service in review can talk to the designer too (suggestions); so can whoever may change it. */
-const showChat = computed(() => !isOrg.value && !isConnector.value && !readOnlyCopy.value && (editable.value || canReview.value));
+const showChat = computed(() => !isOrg.value && !isConnector.value && !isRoutine.value && !readOnlyCopy.value && (editable.value || canReview.value));
 
 // Last: load() fills refs declared above (an immediate watcher runs during setup).
 watch(
@@ -407,7 +436,9 @@ watch(
 
     <p v-if="designNote" class="rounded-lg bg-mist px-3 py-2 text-sm text-ink">{{ designNote }}</p>
 
-    <ConnectorSecrets v-if="view === 'secrets' && connectorCheck?.ok" :connector="connectorCheck.connector.id" :needed="connectorSecretNames(connectorCheck.connector)" />
+    <RoutineDryRun v-if="view === 'dry'" :yaml="yaml" :problems="errors.map((p) => p.message)" />
+    <RoutineRuns v-else-if="view === 'runs' && entry" :entry-id="entry.id" />
+    <ConnectorSecrets v-else-if="view === 'secrets' && connectorCheck?.ok" :connector="connectorCheck.connector.id" :needed="connectorSecretNames(connectorCheck.connector)" />
     <OrganisationView v-else-if="view === 'org' && check.bundle.organisations[0]" :organisation="check.bundle.organisations[0]" :services="catalogue" :warnings="orgWarnings" @line="goToLine" />
     <template v-else-if="view === 'design'">
       <ServiceDesigner :model-value="design" :service-names="journeyServiceNames" :readonly="!editable" @update:model-value="onDesign" @last="(v) => (designerAtEnd = v)" @step="(st) => emit('step', st)">
@@ -425,8 +456,8 @@ watch(
       <p v-if="designProblems.length" role="alert" class="text-sm text-red-800">{{ designProblems.join(" ") }}</p>
     </template>
     <div v-else-if="view === 'yaml'" class="space-y-2">
-      <p class="text-xs text-gray-500">{{ isOrg ? "The organisation: its units, their roles, who reports to whom, and the services each runs." : "A service with its journeys and their screens. Changing the design rewrites this YAML, and comments are dropped." }}</p>
-      <YamlEditor ref="editor" v-model="yaml" :problems="check.problems" :label="isOrg ? 'Organisation YAML' : 'Service YAML'" :readonly="!editable" height="32rem" />
+      <p class="text-xs text-gray-500">{{ isRoutine ? "A routine: what sets it off (on), an optional condition (when), and its actions in order. It never pays anything." : isOrg ? "The organisation: its units, their roles, who reports to whom, and the services each runs." : "A service with its journeys and their screens. Changing the design rewrites this YAML, and comments are dropped." }}</p>
+      <YamlEditor ref="editor" v-model="yaml" :problems="isRoutine ? errors : check.problems" :label="isRoutine ? 'Routine YAML' : isOrg ? 'Organisation YAML' : 'Service YAML'" :readonly="!editable" height="32rem" />
     </div>
     <div v-else-if="view === 'preview'" class="rounded-2xl bg-canvas p-3 ring-1 ring-gray-200">
       <FlowPreview :bundle="check.bundle" :layout="resolveLayout(width - 24)" :width="width - 24" storage-key="catalogue.preview" />
@@ -494,7 +525,7 @@ watch(
       </label>
       <!-- In the designer its steps lead (the last one offers Save), so Save is secondary there. -->
       <button v-if="!(view === 'design' && designerAtEnd)" type="button" :class="view === 'design' ? 'btn-light' : 'btn-primary'" :disabled="busy || (!dirty && Boolean(entry))" @click="save">
-        <Loader2 v-if="busy" class="size-4 animate-spin" aria-hidden="true" /><Save v-else class="size-4" aria-hidden="true" /> {{ entry ? "Save revision" : "Create service" }}
+        <Loader2 v-if="busy" class="size-4 animate-spin" aria-hidden="true" /><Save v-else class="size-4" aria-hidden="true" /> {{ entry ? "Save revision" : isRoutine ? "Create routine" : "Create service" }}
       </button>
       <button v-if="entry" type="button" class="btn-light" :disabled="busy || !canSubmit" :aria-describedby="submitBlocked ? 'submit-why' : undefined" @click="submit">
         <Send class="size-4" aria-hidden="true" /> Submit for review

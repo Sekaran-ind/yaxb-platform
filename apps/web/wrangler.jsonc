@@ -70,6 +70,9 @@
   "durable_objects": { "bindings": [{ "name": "TEAM", "class_name": "TeamHub" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TeamHub"] }],
 
+  // Routines (RTN-2): every 15 minutes the Worker's scheduled() runs each business's due routines.
+  "triggers": { "crons": ["*/15 * * * *"] },
+
   // Per-session chat limit and per-IP form limit. namespace_id is any number unique to your account.
   "ratelimits": [
     { "name": "CHAT_LIMITER", "namespace_id": "4101", "simple": { "limit": 20, "period": 60 } },
