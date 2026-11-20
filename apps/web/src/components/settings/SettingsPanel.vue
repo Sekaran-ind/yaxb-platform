@@ -125,7 +125,7 @@ async function clearBrowser() {
           <p v-else-if="!catalog" class="mt-4 text-sm text-gray-500">Loading providers…</p>
           <template v-else>
             <p v-if="caps?.freeTier" class="mt-4 rounded-lg bg-mist px-3 py-2 text-sm text-body">
-              Free tier: {{ caps.freeTier.questions }} AI questions every {{ caps.freeTier.minutes }} minutes from this network, answered by a small model. Kiosk only answers have no limit, and signed-in business members aren't limited.
+              Free plan: {{ caps.freeTier.questions }} AI questions every {{ caps.freeTier.minutes }} minutes from this network, up to {{ caps.freeTier.chars }} characters each, answered by a small model in about {{ caps.freeTier.words }} words. Longer questions and answers, more questions, and drafting a whole service with AI are part of the paid plan<template v-if="caps.freeTier.upgrade">: <a :href="caps.freeTier.upgrade" class="underline" rel="noopener">move to the paid plan</a></template>. Kiosk only answers have no limit.
             </p>
             <fieldset class="mt-4 grid gap-3 @lg:grid-cols-2">
               <legend class="sr-only">Provider</legend>

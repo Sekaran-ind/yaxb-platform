@@ -28,7 +28,7 @@ import { createNotebookRetriever, memoryFrom, notebookFiles, scratchFiles, SKILL
 
 /** The memory file's key in the long-term store (StoreBackend keys are paths under /memories/). */
 const MEMORY_KEY = "/AGENTS.md";
-import { createChatModel, listProviders, ProviderError, resolveSelection, type Env } from "../providers/index.js";
+import { createChatModel, listProviders, ProviderError, resolveSelection, type Env, type RunSelection } from "../providers/index.js";
 import { askSchema, extractSchema, LANGUAGES, type AskInput, type ExtractInput, type Selection } from "../schemas/index.js";
 import { checkExtracted, fieldsJsonSchema, type SlotFill } from "../journeys/slots.js";
 import { journeysText } from "../journeys/summary.js";
@@ -46,7 +46,7 @@ import type { TurnWeb } from "./tools.js";
 import { createMemoryFeedbackStore, feedbackSchema, summarizeFeedback, type FeedbackStore } from "../feedback/index.js";
 import { filterModeration, type ModerationStore, type ThreadState, type ThreadStore } from "../stores/index.js";
 import { compactedMessages, createKioskAgent, createLeanKioskAgent, createServiceDesignerAgent, translate, type FinalState, type Harness, type HarnessOptions, type KioskAgent } from "./harness.js";
-import { deepPromptAddendum, turnPromptAddendum } from "./prompts.js";
+import { briefRules, deepPromptAddendum, turnPromptAddendum } from "./prompts.js";
 import { AUTO_ESCALATION_REASON, looksLikeEmergency } from "./safety.js";
 import { buildTools } from "./tools.js";
 
@@ -269,7 +269,7 @@ export function createKiosk(deps: KioskDeps) {
     return load;
   }
 
-  function agentFor(selection: Selection, harness: Harness, options: HarnessOptions): Promise<KioskAgent> {
+  function agentFor(selection: RunSelection, harness: Harness, options: HarnessOptions): Promise<KioskAgent> {
     const { extraTools = [], memoryStore, ...shape } = options;
     // Routed turns offer different tools, so the tools offered are part of the key.
     const key = JSON.stringify({ selection, harness, shape, extra: extraTools.map((t) => t.name), store: Boolean(memoryStore) });
@@ -439,7 +439,11 @@ ${JSON.stringify({ forms: draft.forms }, null, 1)}
    * Run one turn. Yields token / tool_start / tool_end / todos events, then (browser storage) one
    * `state`, then exactly one `done` or `error`. State is saved or returned only when the run completes.
    */
-  async function* ask(input: AskInput, { signal }: { signal?: AbortSignal } = {}): AsyncGenerator<AgentEvent> {
+  /**
+   * `brief` is the free plan's short answers: the model may write at most `maxTokens`, and is told to
+   * keep to `words`. Set by the server, never by the client.
+   */
+  async function* ask(input: AskInput, { signal, brief }: { signal?: AbortSignal; brief?: { maxTokens: number; words: number } } = {}): AsyncGenerator<AgentEvent> {
     const parsed = askSchema.safeParse(input);
     if (!parsed.success) {
       yield { type: "error", message: parsed.error.issues.find((i) => i.code === "custom")?.message ?? "That request isn't valid." };
@@ -529,7 +533,8 @@ ${JSON.stringify({ forms: draft.forms }, null, 1)}
         }
         plan.options.extraTools = extraTools;
       }
-      agent = await agentFor(selection, plan.harness, plan.options);
+      if (brief) plan.options.promptAddendum = `${plan.options.promptAddendum ?? ""}${briefRules(brief.words)}`;
+      agent = await agentFor(brief ? { ...selection, maxTokens: brief.maxTokens } : selection, plan.harness, plan.options);
     } catch (e) {
       yield failed(e);
       return;

@@ -117,7 +117,7 @@ export type Capabilities = {
   journeys: { id: string; title: string; summary?: string }[];
   defaults: AgentSettings;
   /** The free tier's allowance (set by the Worker): AI questions per window for visitors who aren't members, or absent when there is no limit. */
-  freeTier?: { questions: number; minutes: number } | null;
+  freeTier?: { questions: number; minutes: number; words: number; chars: number; upgrade: string | null } | null;
 };
 
 /** What Settings may offer on this deployment. No secrets: MCP servers show label and host only. */

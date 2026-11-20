@@ -63,10 +63,21 @@ const schema = z.object({
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   /**
-   * The free tier (Phase 0): a visitor who isn't a signed-in member gets this many questions to the
-   * hosted AI model per IP address in the window, always on the small model below. 0 = no limit (and
-   * no forced model). Kiosk only answers on the device never count.
+   * Which plan this deployment serves. "paid" runs on a paid Cloudflare Workers plan with no free-tier
+   * limits; "free" (the default) applies the limits below to everyone, signed in or not. Paid
+   * customers are moved to the paid deployment; the free one asks them to.
    */
+  PLAN: z.enum(["free", "paid"]).default("free"),
+  /** Where the free plan's messages send someone who needs more (optional; a page on the site). */
+  UPGRADE_URL: z.url({ protocol: /^https$/ }).optional(),
+  /**
+   * The free plan: this many questions to the hosted AI model per IP address in the window, always on
+   * the small model below, with short answers (FREE_TIER_MAX_TOKENS) to short questions
+   * (FREE_TIER_MAX_QUESTION_CHARS). Longer questions, longer answers and drafting whole services with
+   * AI are the paid plan. 0 questions = no limit. Kiosk only answers on the device never count.
+   */
+  FREE_TIER_MAX_QUESTION_CHARS: z.coerce.number().int().min(50).max(4000).default(400),
+  FREE_TIER_MAX_TOKENS: z.coerce.number().int().min(100).max(2048).default(400),
   FREE_TIER_QUESTIONS: z.coerce.number().int().min(0).max(1000).default(3),
   FREE_TIER_WINDOW_MINUTES: z.coerce.number().int().min(1).max(1440).default(40),
   /** Hosted-model questions the free tier may use in a day, for the whole deployment (a spend cap). 0 = none. */
