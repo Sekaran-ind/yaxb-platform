@@ -281,8 +281,10 @@ export async function sweep(env: Bindings, now = new Date()): Promise<number> {
     const { results } = await database
       .prepare("SELECT DISTINCT tenant_id FROM library_entries WHERE kind = 'routine' AND published_yaml IS NOT NULL AND status != 'archived'")
       .all<{ tenant_id: string }>();
-    // DEP-3: dependencies past their time, in this edition's central cases.
-    await withEdition(edition, () => cases(env).expire(now)).catch((e) => console.error(JSON.stringify({ msg: "case expiry failed", edition, error: e instanceof Error ? e.message.slice(0, 200) : "unknown" })));
+    // DEP-3: dependencies past their time, in each business's central cases (a business's list is its own).
+    const owners = await database.prepare("SELECT DISTINCT tenant_id FROM cases WHERE status IN ('waiting', 'to_finish') AND links IS NOT NULL").all<{ tenant_id: string }>().catch(() => ({ results: [] as { tenant_id: string }[] }));
+    for (const { tenant_id } of owners.results)
+      await withEdition(edition, () => tenantContext.run(tenant_id, () => cases(env).expire(now))).catch((e) => console.error(JSON.stringify({ msg: "case expiry failed", edition, error: e instanceof Error ? e.message.slice(0, 200) : "unknown" })));
     for (const { tenant_id } of results) {
       try {
         runs += (await withEdition(edition, () => tenantContext.run(tenant_id, () => sweepTenant(env, now)))).length;

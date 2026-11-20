@@ -167,6 +167,10 @@
       "types": "./dist/metrics/index.d.ts",
       "default": "./dist/metrics/index.js"
     },
+    "./links": {
+      "types": "./dist/links/index.d.ts",
+      "default": "./dist/links/index.js"
+    },
     "./schedule": {
       "types": "./dist/schedule/index.d.ts",
       "default": "./dist/schedule/index.js"

@@ -29,7 +29,8 @@
 //       show: [{ map | chart | timeline: { from, title } }]   VIS-6: what a screen or a result shows,
 //                                       from a template (`from: "{{steps.load.items}}"`): places or
 //                                       areas on a map, { label, value } bars, or dated items
-//       uses: { service, journey, timeout, fallback }   DEP-1: another service's journey runs as a
+//       uses: { service, journey, timeout, fallback, business, as }   DEP-1 (DEP-2: `business` is a linked
+//                                       business, `as` Order or Invoice): another service's journey runs as a
 //                                       request of its own (a child case) with only this step's
 //                                       `with:` values; the run waits here until it ends, its outcome
 //                                       then in `steps.<id>`. `timeout` (hours) goes to `fallback`.
@@ -55,7 +56,10 @@ export type DisplayKind = (typeof DISPLAY_KINDS)[number];
 export type DisplayBlock = Partial<Record<DisplayKind, { from: string; title?: string; kind?: "bar" | "line" }>>;
 export type ShownBlock = { type: DisplayKind; title: string | null; kind?: "bar" | "line"; data: unknown };
 /** A dependency (DEP-1): a service's journey run as a request of its own; `timeout` hours lead to `fallback`. */
-export type StepUses = { service: string; journey: string; timeout?: number; fallback?: string };
+export type StepUses = { service: string; journey: string; timeout?: number; fallback?: string; /** DEP-2: a linked business (its slug); then `as` is how the `with:` values are shaped. */ business?: string; as?: UsesShape };
+/** DEP-2: the schema.org types a business accepts from a partner. */
+export const USES_SHAPES = ["Order", "Invoice"] as const;
+export type UsesShape = (typeof USES_SHAPES)[number];
 /** What a finished dependency left in `steps.<id>` (DEP-1): its request, how it ended, its result. */
 export type UsesResult = { case: string; status: "done" | "declined" | "timed_out"; result?: { title: string; text: string; ok: boolean; outcome?: string | null } | null };
 export const USES_MAX_HOURS = 24 * 90;
@@ -443,11 +447,14 @@ function usesProblems(at: string, u: unknown, combined: boolean, parallel: boole
   const out: string[] = [];
   if (!u || typeof u !== "object" || Array.isArray(u)) return [`${at}: uses is { service, journey }`];
   const x = u as Record<string, unknown>;
-  for (const k of Object.keys(x)) if (!["service", "journey", "timeout", "fallback"].includes(k)) out.push(`${at}: uses: unknown key '${k}'`);
+  for (const k of Object.keys(x)) if (!["service", "journey", "timeout", "fallback", "business", "as"].includes(k)) out.push(`${at}: uses: unknown key '${k}'`);
   if (combined) out.push(`${at}: a step that uses another service does nothing else`);
   if (parallel) out.push(`${at}: uses works in a journey that runs in sequence`);
   if (typeof x.service !== "string" || !ROLE_ID.test(x.service)) out.push(`${at}: uses.service is the id of the service it needs`);
   if (typeof x.journey !== "string" || !ROLE_ID.test(x.journey)) out.push(`${at}: uses.journey is the id of that service's journey`);
+  if (x.business !== undefined && (typeof x.business !== "string" || !/^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/.test(x.business))) out.push(`${at}: uses.business is the linked business's short name (lower-case words joined by '-')`);
+  if (x.business !== undefined && !USES_SHAPES.includes(x.as as UsesShape)) out.push(`${at}: uses.as is ${USES_SHAPES.join(" or ")}: how the values are shared with another business`);
+  if (x.business === undefined && x.as !== undefined) out.push(`${at}: uses.as is for a linked business: name it with uses.business`);
   if (x.timeout !== undefined && (typeof x.timeout !== "number" || !Number.isInteger(x.timeout) || x.timeout < 1 || x.timeout > USES_MAX_HOURS)) out.push(`${at}: uses.timeout is hours, 1 to ${USES_MAX_HOURS}`);
   if ((x.timeout === undefined) !== (x.fallback === undefined)) out.push(`${at}: uses.timeout and uses.fallback go together: where the journey goes when it waits too long`);
   else if (x.fallback !== undefined && (typeof x.fallback !== "string" || !hasStep(x.fallback))) out.push(`${at}: uses.fallback: no step '${String(x.fallback)}'`);

@@ -31,6 +31,7 @@ const LEAVES_OUT: Record<Surface, readonly Feature[]> = {
 const API_FEATURES: [prefix: string, feature: Feature][] = [
   ["/api/library", "catalogue"],
   ["/api/cases", "requests"],
+  ["/api/links", "requests"],
   ["/api/relay", "requests"],
   ["/api/events", "staff"],
   ["/api/team", "staff"],
