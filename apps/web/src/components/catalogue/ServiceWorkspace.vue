@@ -437,7 +437,7 @@ watch(
     <p v-if="designNote" class="rounded-lg bg-mist px-3 py-2 text-sm text-ink">{{ designNote }}</p>
 
     <RoutineDryRun v-if="view === 'dry'" :yaml="yaml" :problems="errors.map((p) => p.message)" />
-    <RoutineRuns v-else-if="view === 'runs' && entry" :entry-id="entry.id" />
+    <RoutineRuns v-else-if="view === 'runs' && entry" :entry-id="entry.id" :manage="me.can.manage" :webhook="Boolean(routineCheck?.ok && routineCheck.routine.actions.some((a) => a.type === 'webhook'))" />
     <ConnectorSecrets v-else-if="view === 'secrets' && connectorCheck?.ok" :connector="connectorCheck.connector.id" :needed="connectorSecretNames(connectorCheck.connector)" />
     <OrganisationView v-else-if="view === 'org' && check.bundle.organisations[0]" :organisation="check.bundle.organisations[0]" :services="catalogue" :warnings="orgWarnings" @line="goToLine" />
     <template v-else-if="view === 'design'">

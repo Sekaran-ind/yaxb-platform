@@ -461,6 +461,8 @@ onBeforeUnmount(() => {
         @noted="(e) => record(e.kind, { step: state?.prompt?.step ?? null, ms: e.ms, ok: e.ok })"
       />
       <p v-if="problems.length" role="alert" class="text-sm text-red-800">{{ problems.join(" ") }}</p>
+      <!-- The step's guard stopped these answers (RTN-9): its reason, to change them. -->
+      <p v-if="state?.refused" role="alert" class="caution">{{ state.refused.reason }}</p>
       <div class="flex justify-end"><button type="submit" class="btn-primary">{{ state.prompt.submitLabel ?? "Continue" }}</button></div>
     </form>
 

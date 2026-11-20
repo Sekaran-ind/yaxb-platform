@@ -19,8 +19,8 @@ import { DEFAULT_TENANT, SLUG, TenantError } from "@sekaran-ind/yaxb-core/tenant
 import { offers, resolveContext, servesApi, SURFACE_HEADS } from "@sekaran-ind/yaxb-core/context";
 import { currentEdition, editionContext, editionFor, EDITIONS, firstEdition, withEdition, type Edition } from "./edition";
 import { eventBatchSchema } from "@sekaran-ind/yaxb-core/metrics";
-import { isDue, parseRoutine, ROUTINE_STARTERS, routineLimits, runsFromEvents, localClock } from "@sekaran-ind/yaxb-core/routines";
-import { dryRun, fireEvents, routineContext, routineStore, runOnce, sampleEvent, sweep } from "./routines";
+import { FAMILY_ROUTINES, isDue, parseRoutine, ROUTINE_STARTERS, routineLimits, runsFromEvents, localClock } from "@sekaran-ind/yaxb-core/routines";
+import { decideApproval, dryRun, fireEvents, routineContext, routineStore, runOnce, sampleEvent, signingKey, sweep } from "./routines";
 import { beaconSchema, CaseError, envelopeSchema, MAX_CASE_RUN, MAX_ENVELOPE, mayReassign, RELAY_MAX_HOURS, staffingOf, type Envelope } from "@sekaran-ind/yaxb-core/cases";
 import { DesignerError, historyOf, LESSONS_IN_MEMORY, MAX_NARRATIVE } from "@sekaran-ind/yaxb-core/designer";
 import { ADMIN_ACTOR_ID, LibraryError, MAX_ENTRY_BYTES, permissionsOf, writesRoutines, type LibraryActor } from "@sekaran-ind/yaxb-core/library";
@@ -1241,6 +1241,61 @@ app.post("/api/routines/notices/:id/done", async (c) => {
     const mine = await routineStore(c.env).notices(currentTenant(), a.roles, { limit: 500 });
     if (!mine.some((n) => n.id === c.req.param("id"))) refuse("There's no such notice for you.", 404);
     return { done: await routineStore(c.env).doneNotice(currentTenant(), c.req.param("id"), a.name, new Date().toISOString()) };
+  });
+});
+
+/** Actions routines keep for one of this member's roles to approve (RTN-6), in My work. */
+app.get("/api/routines/approvals", (c) =>
+  libraryCall(c, async (a) => {
+    if (a.guest) return { items: [] };
+    return { items: await routineStore(c.env).approvals(currentTenant(), a.roles, { limit: 100 }) };
+  }),
+);
+app.post("/api/routines/approvals/:id", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  return libraryCall(c, async (a, body) => {
+    if (a.guest) refuse("Sign in as a member first.");
+    const decision = (body as { decision?: unknown } | null)?.decision;
+    if (decision !== "approved" && decision !== "declined") refuse("Approve it or decline it.", 422);
+    const mine = await routineStore(c.env).approvals(currentTenant(), a.roles, { limit: 500 });
+    if (!mine.some((x) => x.id === c.req.param("id"))) refuse("There's nothing waiting for your approval with that id.", 404);
+    const out = await decideApproval(c.env, c.req.param("id"), decision as "approved" | "declined", a.name);
+    if (!out) refuse("Someone else decided it first.", 409);
+    await audited(c, decision === "approved" ? "routine.approved" : "routine.declined", a.name, out!.approval.routine_id, { action: out!.approval.action, type: out!.approval.type, sent: out!.sent?.ok ?? false });
+    return { decision, sent: out!.sent };
+  });
+});
+
+/** A routine's webhook signing key, for whoever sets up the receiving end (administrators, audited). */
+app.get("/api/routines/:entry/signing-key", (c) =>
+  libraryCall(c, async (a) => {
+    if (!permissionsOf(a).manage) refuse("Only an administrator sees a routine's signing key.");
+    const ctx = await routineContext(c.env);
+    if (!ctx.routines.some((x) => x.entry.id === c.req.param("entry"))) refuse("There's no published routine with that id.", 404);
+    await audited(c, "routine.signing_key", a.name, c.req.param("entry"));
+    return { key: await signingKey(c.env, c.req.param("entry")), header: "X-Anjal-Signature", signs: "sha256 HMAC of <X-Anjal-Timestamp>.<body>" };
+  }),
+);
+
+/** A family's ready-made routines (RTN-12): each with whether it is on. */
+app.get("/api/routines/family", (c) =>
+  libraryCall(c, async (a) => {
+    if (a.guest) refuse("Sign in to your family's space first.");
+    const ctx = await routineContext(c.env);
+    const on = new Set(ctx.routines.map((x) => x.routine.id));
+    return { manage: permissionsOf(a).manage, switches: FAMILY_ROUTINES.map((f) => ({ id: f.id, title: f.title, summary: f.summary, on: on.has(f.id) })) };
+  }),
+);
+app.put("/api/routines/family/:id", async (c) => {
+  if (!sameOrigin(c)) return jsonError(c, 403, "Forbidden");
+  return libraryCall(c, async (a, body) => {
+    const f = FAMILY_ROUTINES.find((x) => x.id === c.req.param("id"));
+    if (!f) refuse("There's no such routine.", 404);
+    if (!permissionsOf(a).manage) refuse("Only a parent who runs the family's space switches routines.");
+    const on = (body as { on?: unknown } | null)?.on === true;
+    await library(c.env).switchRoutine(a, f!.yaml, on);
+    await audited(c, "routine.switched", a.name, f!.id, { on });
+    return { id: f!.id, on };
   });
 });
 

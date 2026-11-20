@@ -12,6 +12,11 @@ import { callConnector } from "@sekaran-ind/yaxb-core/connectors";
 import { unseal } from "@sekaran-ind/yaxb-core/identity";
 import { serviceMetrics, type ServiceEvent } from "@sekaran-ind/yaxb-core/metrics";
 import {
+  FAMILY_APPROVER,
+  sendPending,
+  sendWebhook,
+  webhookKey,
+  type RoutineApproval,
   dryRunHandlers,
   isDue,
   localClock,
@@ -27,7 +32,7 @@ import {
 import { createD1RoutineStore } from "@sekaran-ind/yaxb-core/stores/d1";
 import { dohResolver } from "@sekaran-ind/yaxb-core/web/pages";
 import type { LibraryEntry } from "@sekaran-ind/yaxb-core/library";
-import { db, dbFor, EDITIONS, withEdition } from "./edition";
+import { currentEdition, db, dbFor, EDITIONS, withEdition } from "./edition";
 import { settings, type Bindings } from "./env";
 import { catalogue, connectorSecrets, currentTenant, serviceEvents, tenantContext } from "./kiosk";
 
@@ -77,10 +82,22 @@ function summaryHandler(env: Bindings, ctx: RoutineContext, at: Date): RoutineHa
   };
 }
 
+/** A routine's webhook signing key (RTN-8): derived per edition, business and routine, never stored. */
+export const signingKey = (env: Bindings, entryId: string) => webhookKey(settings(env).SESSION_SECRET, `${currentEdition()}|${currentTenant()}|${entryId}`);
+
+/** RTN-12: in Family, a connector call or a webhook waits for a parent, whatever the routine says. */
+const mustApprove = () => (currentEdition() === "family" ? FAMILY_APPROVER : undefined);
+
 /** The real handlers for one run of a routine. */
 function liveHandlers(env: Bindings, ctx: RoutineContext, entry: LibraryEntry, r: Routine, runId: string, at: Date): RoutineHandlers {
   const tenant = currentTenant();
   return {
+    async webhook(url, body) {
+      await sendWebhook(url, body, await signingKey(env, entry.id), { resolve: dohResolver() });
+    },
+    async approval(role, p) {
+      await routineStore(env).addApproval({ ...p, id: crypto.randomUUID(), tenant_id: tenant, routine_id: entry.id, routine_title: r.title, run_id: runId, role, created_at: new Date().toISOString(), decision: null, decided_by: null, decided_at: null });
+    },
     async message(role, text) {
       await routineStore(env).addNotice({ id: crypto.randomUUID(), tenant_id: tenant, routine_id: entry.id, role, text, created_at: new Date().toISOString(), done_at: null, done_by: null });
     },
@@ -146,7 +163,7 @@ export async function runOnce(env: Bindings, ctx: RoutineContext, req: RunReques
   let run: RoutineRun;
   try {
     const [s, usage] = await Promise.all([store.settings(tenant), store.usage(tenant, day)]);
-    run = await runRoutine(r, input, liveHandlers(env, ctx, entry, r, id, input.at), { settings: s, usage, use: (w) => store.use(tenant, day, w), operationLabel: operationLabel(ctx), id });
+    run = await runRoutine(r, input, liveHandlers(env, ctx, entry, r, id, input.at), { settings: s, usage, use: (w) => store.use(tenant, day, w), operationLabel: operationLabel(ctx), mustApprove: mustApprove(), id });
   } catch (e) {
     run = { id, routine: r.id, trigger: input.trigger, dry: false, at: input.at.toISOString(), status: "failed", steps: [], reason: (e as Error).message.slice(0, 200) };
   }
@@ -156,7 +173,29 @@ export async function runOnce(env: Bindings, ctx: RoutineContext, req: RunReques
 
 /** A dry run (RTN-3): stand-ins for messages, connectors and records; the summary is read for real (it changes nothing). */
 export async function dryRun(env: Bindings, ctx: RoutineContext, r: Routine, input: RoutineInput): Promise<RoutineRun> {
-  return runRoutine(r, input, { ...dryRunHandlers, summary: summaryHandler(env, ctx, input.at) }, { dry: true, operationLabel: operationLabel(ctx) });
+  return runRoutine(r, input, { ...dryRunHandlers, summary: summaryHandler(env, ctx, input.at) }, { dry: true, operationLabel: operationLabel(ctx), mustApprove: mustApprove() });
+}
+
+/**
+ * A member decides an action waiting for approval (RTN-6). Approved, it is sent now, under the
+ * routine's rules and today's limits, and logged as the run's action; a routine no longer published
+ * sends nothing. Null when it wasn't open (someone else decided first).
+ */
+export async function decideApproval(env: Bindings, id: string, decision: "approved" | "declined", by: string): Promise<{ approval: RoutineApproval; sent: { ok: boolean; note: string } | null } | null> {
+  const store = routineStore(env);
+  const tenant = currentTenant();
+  const a = await store.decideApproval(tenant, id, decision, by, new Date().toISOString());
+  if (!a) return null;
+  if (decision === "declined") return { approval: a, sent: null };
+  const ctx = await routineContext(env);
+  const found = ctx.routines.find((x) => x.entry.id === a.routine_id);
+  if (!found) return { approval: a, sent: { ok: false, note: "The routine isn't published any more, so nothing was sent." } };
+  const now = new Date();
+  const day = localClock(now, found.routine.utc_offset).date;
+  const [s, usage] = await Promise.all([store.settings(tenant), store.usage(tenant, day)]);
+  const step = await sendPending(a, liveHandlers(env, ctx, found.entry, found.routine, a.run_id, now), { settings: s, usage, use: (w) => store.use(tenant, day, w), operationLabel: operationLabel(ctx) });
+  await serviceEvents(env).add([{ id: crypto.randomUUID(), service: found.entry.id, journey: found.routine.id, kind: "routine.action", step: `${a.action}-${a.type}`, role: null, run: a.run_id, at: now.toISOString(), ms: null, ok: step.ok, actor: null, outcome: null }]);
+  return { approval: a, sent: { ok: step.ok, note: step.note } };
 }
 
 /** A made-up event for a dry run of an event routine: what its trigger names, now. */

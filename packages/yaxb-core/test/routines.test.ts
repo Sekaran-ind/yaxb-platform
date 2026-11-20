@@ -14,6 +14,13 @@ import {
   runRoutine,
   runsFromEvents,
   summaryText,
+  FAMILY_APPROVER,
+  FAMILY_ROUTINES,
+  sendPending,
+  sendWebhook,
+  webhookKey,
+  webhookSignature,
+  type PendingAction,
   type Routine,
   type RoutineHandlers,
 } from "../src/routines/index.js";
@@ -30,13 +37,16 @@ const [MONDAY, LATE] = ROUTINE_STARTERS.map((s) => routine(s.yaml)) as [Routine,
 function recorder() {
   const sent: { role: string; text: string }[] = [];
   const calls: string[] = [];
+  const pending: ({ role: string } & PendingAction)[] = [];
   const handlers: RoutineHandlers = {
     message: async (role, text) => void sent.push({ role, text }),
     summary: async (service, days) => ({ text: `${service}: ${days} days, 3 late` }),
     connector: async (h) => (calls.push(h), { ok: true }),
+    webhook: async (url) => void calls.push(`webhook ${url}`),
     record: async () => {},
+    approval: async (role, p) => void pending.push({ role, ...p }),
   };
-  return { sent, calls, handlers };
+  return { sent, calls, pending, handlers };
 }
 
 describe("a routine document (RTN-1, RTN-13)", () => {
@@ -201,6 +211,90 @@ actions: [{ connector: { call: connector.books.send } }]
     expect((await store.list("entry-1"))[0]!.outcome).toBe("attendance.late");
   });
 
+  it("keeps an action marked approve for that role, sending nothing yet (RTN-6)", async () => {
+    const r = routine(`kind: routine
+id: stock-out
+title: Stock out
+on:
+  event: { service: stock, kind: journey.outcome, outcome: stock.out }
+actions:
+  - webhook: { url: "https://hooks.example.com/stock", with: { item: "{{event.journey}}" }, approve: manager }
+  - message: { to: manager, text: "Stock ran out." }
+`);
+    const rec = recorder();
+    const run = await runRoutine(r, { at: new Date("2026-11-23T05:00:00Z"), trigger: "event", event: { kind: "journey.outcome", service: "stock", journey: "count", outcome: "stock.out", actor: null, step: null, at: "2026-11-23T05:00:00Z" } }, rec.handlers);
+    expect(run.status).toBe("done");
+    expect(rec.calls).toEqual([]);
+    expect(rec.sent).toHaveLength(1);
+    expect(rec.pending).toHaveLength(1);
+    const p = rec.pending[0]!;
+    expect(p).toMatchObject({ role: "manager", action: 1, type: "webhook", payload: { url: "https://hooks.example.com/stock" } });
+    expect(p.payload.body).toMatchObject({ routine: "stock-out", run: run.id, trigger: "event", event: { kind: "journey.outcome", outcome: "stock.out" }, data: { item: "count" } });
+    expect(run.steps[0]).toMatchObject({ ok: true, note: "waiting for manager to approve" });
+
+    // Approved: sent now, under the same limits.
+    expect(await sendPending(p, rec.handlers)).toMatchObject({ ok: true });
+    expect(rec.calls).toEqual(["webhook https://hooks.example.com/stock"]);
+    expect(await sendPending(p, rec.handlers, { settings: { ...DEFAULT_ROUTINE_SETTINGS, paused: true } })).toMatchObject({ ok: false });
+
+    // An approval can't keep a result, and a summary never waits.
+    expect(parseRoutine(`kind: routine
+id: x
+title: X
+on: { schedule: { every: day, at: "09:00" } }
+actions:
+  - connector: { call: connector.a.b, as: out, approve: manager }
+  - summary: { service: s, approve: manager }
+  - webhook: { url: "http://plain.example.com" }
+`).problems).toEqual(["action 1: an action that waits for approval can't keep its result (as)", "action 2: only a message, a connector call or a webhook waits for approval", "action 3: webhook.url is an https address"]);
+  });
+
+  it("in Family, outside sends wait for a parent, and the switches are plain routines (RTN-12)", async () => {
+    const r = routine(`kind: routine
+id: f
+title: F
+on: { schedule: { every: day, at: "09:00" } }
+actions:
+  - message: { to: administrator, text: Hello }
+  - webhook: { url: "https://hooks.example.com/f" }
+`);
+    const rec = recorder();
+    await runRoutine(r, { at: new Date(), trigger: "schedule" }, rec.handlers, { mustApprove: FAMILY_APPROVER });
+    expect(rec.sent).toHaveLength(1);
+    expect(rec.calls).toEqual([]);
+    expect(rec.pending.map((p) => p.role)).toEqual(["administrator"]);
+    for (const f of FAMILY_ROUTINES) {
+      const c = parseRoutine(f.yaml);
+      expect(c.ok, f.id).toBe(true);
+      if (c.ok) expect(c.routine.actions.every((a) => a.type === "message")).toBe(true);
+    }
+    // The school note skips the nights before Saturday and Sunday.
+    const school = routine(FAMILY_ROUTINES.find((f) => f.id === "family-school")!.yaml);
+    const friday = await runRoutine(school, { at: new Date("2026-11-20T14:30:00Z"), trigger: "schedule" }, rec.handlers, { dry: true });
+    const thursday = await runRoutine(school, { at: new Date("2026-11-19T14:30:00Z"), trigger: "schedule" }, rec.handlers, { dry: true });
+    expect([friday.status, thursday.status]).toEqual(["skipped", "done"]);
+  });
+
+  it("signs a webhook, and refuses private addresses (RTN-8)", async () => {
+    const key = await webhookKey("s".repeat(40), "business|t1|e1");
+    expect(key).toBe(await webhookKey("s".repeat(40), "business|t1|e1"));
+    expect(key).not.toBe(await webhookKey("s".repeat(40), "business|t1|e2"));
+    let seen: { url: string; headers: Record<string, string>; body: string } | null = null;
+    const fetchImpl = (async (url: string, init: RequestInit) => {
+      seen = { url, headers: init.headers as Record<string, string>, body: String(init.body) };
+      return new Response("ok", { status: 200 });
+    }) as unknown as typeof fetch;
+    const resolve = async () => ["93.184.216.34"];
+    await sendWebhook("https://hooks.example.com/in", { routine: "r", data: { n: 1 } }, key, { fetchImpl, resolve, now: () => new Date("2026-11-23T05:00:00Z") });
+    const got = seen as unknown as { headers: Record<string, string>; body: string };
+    expect(got.headers["X-Anjal-Timestamp"]).toBe("1795410000");
+    expect(got.headers["X-Anjal-Signature"]).toBe(`sha256=${await webhookSignature(key, "1795410000", got.body)}`);
+    await expect(sendWebhook("https://10.0.0.5/in", {}, key, { fetchImpl, resolve })).rejects.toThrow();
+    await expect(sendWebhook("https://inside.example.com/in", {}, key, { fetchImpl, resolve: async () => ["192.168.1.4"] })).rejects.toThrow();
+    const failing = (async () => new Response("no", { status: 500 })) as unknown as typeof fetch;
+    await expect(sendWebhook("https://hooks.example.com/in", {}, key, { fetchImpl: failing, resolve })).rejects.toThrow(/answered 500/);
+  });
+
   it("says a service's week in words", () => {
     const m = serviceMetrics([event, newEvent({ service: "entry-1", journey: "check-in", kind: "journey.started", run: "run-1" })]);
     expect(summaryText("Attendance", 7, m)).toBe("Attendance, the last 7 days: 1 started, 0 finished (0%). Outcomes: attendance.late 1.");
@@ -212,6 +306,18 @@ for (const [name, make] of [
   ["D1", () => createD1RoutineStore(sqliteD1())],
 ] as const) {
   describe(`the routine store on ${name}`, () => {
+    it("keeps approvals per role until one member decides (RTN-6)", async () => {
+      const s = make();
+      const a = (id: string, role: string) => ({ id, tenant_id: "t1", routine_id: "e1", routine_title: "Stock alert", run_id: "r1", role, action: 1, type: "webhook" as const, summary: "Send to hooks.example.com", payload: { url: "https://hooks.example.com/x", body: { n: 1 } }, created_at: new Date().toISOString(), decision: null, decided_by: null, decided_at: null });
+      await s.addApproval(a("a1", "manager"));
+      await s.addApproval(a("a2", "accountant"));
+      expect((await s.approvals("t1", ["manager"])).map((x) => [x.id, x.payload])).toEqual([["a1", { url: "https://hooks.example.com/x", body: { n: 1 } }]]);
+      expect(await s.approvals("t2", ["manager"])).toEqual([]);
+      expect(await s.decideApproval("t1", "a1", "approved", "Asha", new Date().toISOString())).toMatchObject({ id: "a1", decision: null });
+      expect(await s.decideApproval("t1", "a1", "declined", "Ravi", new Date().toISOString())).toBeNull();
+      expect(await s.approvals("t1", ["manager"])).toEqual([]);
+    });
+
     it("keeps notices per tenant and role, settings and the day's usage", async () => {
       const s = make();
       const n = (id: string, tenant: string, role: string, created_at: string) => ({ id, tenant_id: tenant, routine_id: "late-alert", role, text: `notice ${id}`, created_at, done_at: null, done_by: null });

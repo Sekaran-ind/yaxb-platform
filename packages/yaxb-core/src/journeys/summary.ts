@@ -104,7 +104,13 @@ export function summarizeJourney(journey: Journey): JourneySummary {
     return { id, label: labelOf(id, s), kind: kindOf(s), asks, service: info && s.service ? { name: s.service, ...info } : null };
   });
   const asks = [...new Set(steps.flatMap((s) => s.asks))];
-  const uses = steps.flatMap((s) => (s.service ? [s.service] : [])).filter((u, i, all) => all.findIndex((x) => x.name === u.name) === i);
+  // A guard's call (RTN-9) sends the step's answers somewhere too, so it counts like a service.
+  const guards = order(journey).flatMap((id) => {
+    const call = journey.steps[id]!.guard?.call;
+    const info = call ? serviceInfo(call) : null;
+    return call && info ? [{ name: call, ...info }] : [];
+  });
+  const uses = [...steps.flatMap((s) => (s.service ? [s.service] : [])), ...guards].filter((u, i, all) => all.findIndex((x) => x.name === u.name) === i);
   const toAssistant = uses.some((u) => u.where === "assistant");
   // A journey other people answer or finish is handed over: its answers are kept as a request (a case).
   const handedTo = [...new Set(journeyRolesNeeded(journey).filter((n) => n.for.includes("answer") || n.for.includes("finish")).map((n) => n.role))];

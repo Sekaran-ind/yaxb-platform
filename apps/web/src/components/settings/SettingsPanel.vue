@@ -24,6 +24,7 @@ import ChildLockSetup from "./ChildLockSetup.vue";
 import BoxSync from "./BoxSync.vue";
 import StorageMeter from "./StorageMeter.vue";
 import HouseholdSetup from "./HouseholdSetup.vue";
+import FamilyRoutines from "./FamilyRoutines.vue";
 import AccountIdentity from "@/components/account/AccountIdentity.vue";
 import { useChildMode } from "@/composables/child";
 import { casesCaps } from "@/composables/case-network";
@@ -45,6 +46,7 @@ const SECTIONS = [
   { id: "front-desk", label: "Front desk", icon: "lock" },
   { id: "child", label: "Child safety lock", icon: "shield" },
   { id: "household", label: "Household", icon: "user-round" },
+  { id: "routines", label: "Family routines", icon: "calendar" },
 ];
 /** In child mode (CHL-6) only these stay; the rest need the parent's PIN. */
 const CHILD_SECTIONS = new Set(["profile", "language", "kiosk", "child"]);
@@ -66,7 +68,7 @@ const route = useRoute();
 const child = useChildMode();
 /** The surface's own sections (SUR-3), then the child lock's limits. */
 const SURFACE_SECTIONS = SECTIONS.filter(
-  (x) => (x.id !== "front-desk" || offers("front-desk")) && (x.id !== "child" || offers("child-lock")) && (x.id !== "profile" || offers("profiles")) && (x.id !== "household" || offers("household")),
+  (x) => (x.id !== "front-desk" || offers("front-desk")) && (x.id !== "child" || offers("child-lock")) && (x.id !== "profile" || offers("profiles")) && (x.id !== "household" || offers("household")) && (x.id !== "routines" || offers("household")),
 );
 const sections = computed(() => (child.on.value ? SURFACE_SECTIONS.filter((x) => CHILD_SECTIONS.has(x.id)) : SURFACE_SECTIONS));
 const sectionFrom = (q: unknown) => (typeof q === "string" && sections.value.some((x) => x.id === q) ? q : (sections.value[0]?.id ?? "language"));
@@ -311,6 +313,9 @@ async function clearBrowser() {
       <!-- Keep my things across devices (15-identity.md): never for a child (IDN-5). -->
       <template #account>
         <AccountIdentity />
+      </template>
+      <template #routines>
+        <FamilyRoutines />
       </template>
       <template #household>
         <HouseholdSetup />

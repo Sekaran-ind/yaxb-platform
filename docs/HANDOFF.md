@@ -99,7 +99,7 @@ Each spec file ends with an "Order of work". Requirements still Planned or Partl
 ## How the owner likes to work
 
 - **Momentum over questions.** Pick sensible defaults, carry on, and list the choices in the summary.
-- **One PR per item.** For a wave the owner has started, merge each PR once its Android (`apk`) check passes, then go on to the next item.
+- **One PR per item.** For a wave the owner has started, merge each PR once the local tests pass (no waiting for the Android check), then go on to the next item. The Android (`apk`) build and check run after the merge, always before a deploy.
 - **Deploying needs the owner's go-ahead each time.** Creating Cloudflare resources too.
 - **Ask before adding a dependency.**
 - **Check UI changes with Playwright screenshots:** desktop 1440, tablet 1024 and phone 390, in the light and dark themes. Install Playwright in a scratch folder, not in the repo.

@@ -12,6 +12,10 @@
 //                           service task runs as soon as it is ready. When every task is done the
 //                           run carries on from the first step that isn't a task (a decision or a
 //                           result), in sequence.
+//   guards (RTN-9, 11)      an ask step with `guard` checks its answers before taking them: a
+//                           condition, or a service's yes or no within its time limit. A no (or
+//                           no answer in time) puts the step back to asking with the reason; a
+//                           call's answer is kept in steps["guard:<id>"], which replay reads back.
 //
 // The API is the one the surfaces always had (createRunner: start, answer, snapshot, resume,
 // continueAs, stop, plus focus), so the kiosk, the preview, hand-overs and the server's replay all
@@ -19,7 +23,7 @@
 import { assign, createActor, createMachine, fromPromise, type AnyActorRef, type AnyMachineSnapshot } from "xstate";
 import { holds, render, type Scope } from "./expressions.js";
 import { formProblems, keptAnswers } from "./fields.js";
-import { levelNeeded, mayAnswer, type Journey, type RunActor, type RunSnapshot, type RunState, type ServiceHandler, type Step, type TaskState } from "./journeys.js";
+import { GUARD_DEFAULT_MS, guardKey, levelNeeded, mayAnswer, type Journey, type RunActor, type RunSnapshot, type RunState, type ServiceHandler, type Step, type TaskState } from "./journeys.js";
 
 /** XState's assign, for this file's events (SUBMIT's answers, a service's output or error). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -38,7 +42,20 @@ type Ctx = {
   /** Parallel: the tasks done so far. */
   done: string[];
   hops: number;
+  /** The last answers a guard stopped, and why (RTN-9). */
+  refused: { step: string; reason: string } | null;
 };
+
+/** A guard's answer read as yes or no: `{ allow }` (or a connector's `{ ok, data: { allow, reason } }`). */
+export function guardVerdict(out: unknown): { allow: boolean; reason: string | null } {
+  let o = (out && typeof out === "object" ? out : {}) as Record<string, unknown>;
+  if (o.untrusted === true) {
+    if (o.ok !== true) return { allow: false, reason: null };
+    o = (o.data && typeof o.data === "object" ? o.data : {}) as Record<string, unknown>;
+  }
+  const v = typeof out === "boolean" ? out : o.allow;
+  return { allow: v === true, reason: typeof o.reason === "string" && o.reason.trim() ? o.reason.trim().slice(0, 300) : null };
+}
 
 const isTask = (s: Step) => !s.final && !s.decide && (s.ask !== undefined || Boolean(s.service));
 const isParallel = (j: Journey) => j.flow === "parallel";
@@ -122,14 +139,60 @@ export function createRunner(
     };
   }
 
+  /** An ask step's guard (RTN-9): a state between its answers and its run. */
+  function guardState(step: Step) {
+    const g = step.guard!;
+    const pass = (extra: (c: Ctx, output?: unknown) => Partial<Ctx> = () => ({})) =>
+      set(({ context: c, event }: { context: Ctx; event: { output?: unknown } }) => ({
+        ...extra(c, event.output),
+        refused: null,
+        trail: step.service ? c.trail : trailOf(c, step, true),
+        done: step.service ? c.done : [...c.done, step.id],
+      }));
+    const refuse = (why: (c: Ctx, output?: unknown) => string) =>
+      set(({ context: c, event }: { context: Ctx; event: { output?: unknown } }) => {
+        const answers = { ...c.answers };
+        delete answers[step.id];
+        const steps = { ...c.steps };
+        delete steps[guardKey(step.id)];
+        return { answers, steps, refused: { step: step.id, reason: why(c, event.output) } };
+      });
+    if (g.allow !== undefined)
+      return { always: [{ guard: ({ context: c }: { context: Ctx }) => holds(g.allow!, scope(c)), target: "run", actions: pass() }, { target: "asking", actions: refuse(() => g.reason) }] };
+    const handler = g.call && Object.hasOwn(services, g.call) ? services[g.call] : undefined;
+    const within = g.within ?? GUARD_DEFAULT_MS;
+    return {
+      invoke: {
+        src: fromPromise(async ({ input, signal }: { input: { value: unknown; scope: Scope }; signal: AbortSignal }) => {
+          if (!handler) throw new Error(`"${g.call}" isn't available here.`);
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          const late = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error("late")), within)));
+          try {
+            return await Promise.race([handler(input.value, { journey, step, scope: input.scope, signal, guard: true }), late]);
+          } finally {
+            clearTimeout(timer);
+          }
+        }),
+        input: ({ context: c }: { context: Ctx }) => ({ value: render(g.with ?? {}, scope(c)), scope: scope(c) }),
+        onDone: [
+          { guard: ({ event }: { event: { output: unknown } }) => guardVerdict(event.output).allow, target: "run", actions: pass((c, out) => ({ steps: { ...c.steps, [guardKey(step.id)]: { allow: true, reason: guardVerdict(out).reason } } })) },
+          { target: "asking", actions: refuse((_c, out) => guardVerdict(out).reason ?? g.reason) },
+        ],
+        // No answer in time, or the check failed: the step stays, so nothing goes on unchecked.
+        onError: { target: "asking", actions: refuse(() => g.reason) },
+      },
+    };
+  }
+
   const answered = (id: string) => ({ context: c }: { context: Ctx }) => Object.hasOwn(c.answers, id);
   const submit = (step: Step) =>
     set(({ context: c, event }: { context: Ctx; event: { answers?: Record<string, unknown> } }) => ({
       answers: { ...c.answers, [step.id]: event.answers ?? {} },
-      // A service on the same step records the step when it has run.
-      trail: step.service ? c.trail : trailOf(c, step, true),
-      done: step.service ? c.done : [...c.done, step.id],
+      // A service on the same step records the step when it has run; a guarded step when its guard passes.
+      trail: step.service || step.guard ? c.trail : trailOf(c, step, true),
+      done: step.service || step.guard ? c.done : [...c.done, step.id],
       hops: 0,
+      refused: step.guard ? c.refused : null,
     }));
   const forThis = (id: string) => ({ event }: { event: { step?: string } }) => event.step === id;
 
@@ -156,7 +219,8 @@ export function createRunner(
             ? [{ guard: answered(id), target: "run" }, { guard: () => notMine(step), target: "waiting" }, { guard: () => tooLow(step), target: "stepup" }, { target: "asking" }]
             : [{ target: "run" }],
         },
-        asking: { on: { SUBMIT: { guard: forThis(id), target: "run", actions: submit(step) } } },
+        asking: { on: { SUBMIT: { guard: forThis(id), target: step.guard ? "guard" : "run", actions: submit(step) } } },
+        ...(step.guard ? { guard: guardState(step) } : {}),
         waiting: { on: { RECHECK: { target: "enter" } } },
         stepup: { on: { RECHECK: { target: "enter" } } },
         run: step.service
@@ -227,7 +291,7 @@ export function createRunner(
       };
     }
     const first = parallel ? (initial && !tasks.includes(initial) && journey.steps[initial] ? key(initial) : "tasks") : key(initial && journey.steps[initial] ? initial : journey.start);
-    const ctx: Ctx = { answers: {}, steps: {}, trail: [], result: null, error: null, failedAt: null, done: [], hops: 0, ...restored };
+    const ctx: Ctx = { answers: {}, steps: {}, trail: [], result: null, error: null, failedAt: null, done: [], hops: 0, refused: null, ...restored };
     return createMachine({ id: `run-${journey.id}`, initial: first, context: ctx, states } as never);
   }
 
@@ -256,7 +320,7 @@ export function createRunner(
     const [top, sub] = typeof value === "string" ? [value, null] : (Object.entries(value)[0] as [string, unknown]);
     if (top === "tasks") return taskView(c, sub as Record<string, unknown>, base);
     const id = top.replace(/^s_/, "");
-    if (sub === "asking") return { ...base, status: "asking", current: id, prompt: promptOf(id) };
+    if (sub === "asking") return { ...base, status: "asking", current: id, prompt: promptOf(id), refused: c.refused?.step === id ? c.refused : null };
     if (sub === "waiting") return { ...base, status: "waiting", current: id, waiting: { step: id, role: journey.steps[id]?.role ?? null } };
     if (sub === "stepup") return { ...base, status: "step_up", current: id, stepUp: { step: id, level: levelNeeded(journey, journey.steps[id]!) } };
     return { ...base, status: "running", current: id };
@@ -394,13 +458,15 @@ export async function replay(
   run: Pick<RunSnapshot, "answers" | "steps">,
   context: Scope = {},
 ): Promise<{ ok: true; state: RunState; answered: string[] } | { ok: false; problems: string[] }> {
-  const recorded: ServiceHandler = async (_input, { step }) => {
-    const out = Object.hasOwn(run.steps, step.id) ? run.steps[step.id] : undefined;
-    if (out === undefined) throw new Error(`The step "${step.label ?? step.id}" hasn't run.`);
+  // A guard's call is read back from the run too (RTN-11): replaying never calls the hook again.
+  const recorded: ServiceHandler = async (_input, { step, guard }) => {
+    const id = guard ? guardKey(step.id) : step.id;
+    const out = Object.hasOwn(run.steps, id) ? run.steps[id] : undefined;
+    if (out === undefined) throw new Error(guard ? `The check on "${step.label ?? step.id}" has no answer kept.` : `The step "${step.label ?? step.id}" hasn't run.`);
     if (out && typeof out === "object" && typeof (out as { error?: unknown }).error === "string") throw new Error((out as { error: string }).error);
     return out;
   };
-  const names = [...new Set(Object.values(journey.steps).flatMap((s) => (s.service ? [s.service] : [])))];
+  const names = [...new Set(Object.values(journey.steps).flatMap((s) => [...(s.service ? [s.service] : []), ...(s.guard?.call ? [s.guard.call] : [])]))];
   const runner = createRunner(journey, { services: Object.fromEntries(names.map((n) => [n, recorded])), context });
   let state = await runner.start();
   const answered: string[] = [];
@@ -417,6 +483,8 @@ export async function replay(
     answered.push(at);
     const r = await runner.answer(run.answers[at]!);
     if ("problems" in r) return { ok: false, problems: r.problems.map((p) => `${journey.steps[at]?.label ?? at}: ${p}`) };
+    // A guard that stops stored answers (RTN-9): the run isn't valid as sent.
+    if (r.refused) return { ok: false, problems: [`${journey.steps[at]?.label ?? at}: ${r.refused.reason}`] };
     state = r;
   }
   const extra = Object.keys(run.answers).filter((k) => !answered.includes(k));

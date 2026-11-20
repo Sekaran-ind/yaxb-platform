@@ -604,7 +604,39 @@ export function createD1RoutineStore(db: D1Like): import("../routines/index.js")
   type Notice = import("../routines/index.js").RoutineNotice;
   const DEFAULTS: import("../routines/index.js").RoutineSettings = { paused: false, limits: { runsPerDay: 200, messagesPerDay: 100, connectorCallsPerDay: 200 } };
   const COLS = "id, tenant_id, routine_id, role, text, created_at, done_at, done_by";
+  type Approval = import("../routines/index.js").RoutineApproval;
+  type ApprovalRow = Omit<Approval, "payload"> & { payload: string };
+  const ACOLS = "id, tenant_id, routine_id, routine_title, run_id, action, type, role, summary, payload, created_at, decision, decided_by, decided_at";
+  const approval = (r: ApprovalRow): Approval => ({ ...r, payload: JSON.parse(r.payload) as Approval["payload"] });
   return {
+    async addApproval(a) {
+      await db
+        .prepare(`INSERT INTO routine_approvals (${ACOLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, NULL, NULL, NULL)`)
+        .bind(a.id, a.tenant_id, a.routine_id, a.routine_title, a.run_id, a.action, a.type, a.role, a.summary, JSON.stringify(a.payload), a.created_at)
+        .run();
+    },
+    async approvals(tenant, roles, { limit = 100 } = {}) {
+      if (!roles.length) return [];
+      const marks = roles.map((_, n) => `?${n + 3}`).join(", ");
+      // Undecided ones older than APPROVAL_DAYS are dropped.
+      const since = new Date(Date.now() - 14 * 86_400_000).toISOString();
+      await db.prepare("DELETE FROM routine_approvals WHERE decision IS NULL AND created_at < ?1").bind(since).run();
+      const rows = await db
+        .prepare(`SELECT ${ACOLS} FROM routine_approvals WHERE tenant_id = ?1 AND decision IS NULL AND role IN (${marks}) ORDER BY created_at DESC LIMIT ?2`)
+        .bind(tenant, limit, ...roles)
+        .all<ApprovalRow>();
+      return rows.results.map(approval);
+    },
+    async decideApproval(tenant, id, decision, by, at) {
+      const row = await db.prepare(`SELECT ${ACOLS} FROM routine_approvals WHERE tenant_id = ?1 AND id = ?2 AND decision IS NULL`).bind(tenant, id).first<ApprovalRow>();
+      if (!row) return null;
+      const res = (await db
+        .prepare("UPDATE routine_approvals SET decision = ?3, decided_by = ?4, decided_at = ?5 WHERE tenant_id = ?1 AND id = ?2 AND decision IS NULL")
+        .bind(tenant, id, decision, by, at)
+        .run()) as { meta?: { changes?: number }; changes?: number };
+      // Two people deciding at once: only the first counts.
+      return (res.meta?.changes ?? res.changes ?? 0) > 0 ? approval(row) : null;
+    },
     addNotice: async (n) =>
       void (await db.prepare(`INSERT INTO routine_notices (${COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`).bind(n.id, n.tenant_id, n.routine_id, n.role, n.text, n.created_at, n.done_at, n.done_by).run()),
     async notices(tenant, roles, { all = false, limit = 100 } = {}) {
