@@ -29,7 +29,7 @@
 // provider's own case service starts the request in its own list (`startForPartner`), checking the
 // link again and using its own current version of the journey. Only how it ended (title, text,
 // outcome) goes back (`resumeFromPartner`).
-import { ASSURANCE_LEVELS, canInitiate, levelNeeded, mayAnswer, replay, type Journey, type RunActor, type RunSnapshot, type UsesResult } from "@sekaran-ind/yaxb-journeys/journeys";
+import { ASSURANCE_LEVELS, canInitiate, levelNeeded, mayAnswer, redactRun, replay, type Journey, type RunActor, type RunSnapshot, type UsesResult } from "@sekaran-ind/yaxb-journeys/journeys";
 import { render } from "@sekaran-ind/yaxb-journeys/journeys";
 import { resolveForRequester, type Organisation } from "@sekaran-ind/yaxb-journeys";
 import { shapeInputs, shapeProblems, type LinkShape } from "../links/index.js";
@@ -219,7 +219,11 @@ function parse<T>(schema: z.ZodType<T>, input: unknown): T {
 /** Every role the journey names (its starters other than visitors, its screens' and its finishers'). */
 export function rolesOf(journey: Journey): string[] {
   const out = new Set<string>([...(journey.roles?.initiate ?? []), ...(journey.roles?.complete ?? [])]);
-  for (const s of Object.values(journey.steps)) if (s.role) out.add(s.role);
+  for (const s of Object.values(journey.steps)) {
+    if (s.role) out.add(s.role);
+    // A role a step's access grants anything to takes part, so it may see the case (access.ts).
+    for (const [subject, bits] of Object.entries(s.access ?? {})) if (subject !== "starter" && subject !== "any" && bits !== "-") out.add(subject);
+  }
   out.delete("visitor");
   return [...out];
 }
@@ -254,6 +258,13 @@ export function isTurnOf(c: Pick<Case, "status" | "waiting_role" | "started_by" 
 
 /** May this person reassign a case: a moderator or an administrator. */
 export const mayReassign = (a: CaseActor) => a.admin || a.roles.includes("moderator") || a.roles.includes("administrator");
+
+/** May this person answer the step the case waits at: its turn, or a role its access lets write (access.ts)? */
+export function mayActNow(c: Case, a: CaseActor): boolean {
+  if (isTurnOf(c, a)) return true;
+  const step = c.status === "waiting" && !c.assignee && !c.links?.child && c.waiting_step ? c.journey.steps[c.waiting_step] : undefined;
+  return Boolean(step?.access) && mayAnswer(step!, runActor(c, a));
+}
 
 /** The actor's part of the journey, for the runner. */
 export const runActor = (c: Pick<Case, "started_by">, a: CaseActor): RunActor => ({ starter: c.started_by === a.id, roles: a.roles, level: a.level ?? 0 });
@@ -494,7 +505,7 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
     async act(actor: CaseActor, key: string, input: unknown): Promise<{ case: CaseSummary; spawned: Case[]; resumed: CaseSummary | null }> {
       const p = parse(caseActSchema, input);
       const { c, a } = await load(key, actor);
-      if (c.status !== "waiting" || !isTurnOf(c, a)) throw new CaseError("It isn't your turn on this case.", 409);
+      if (c.status !== "waiting" || !mayActNow(c, a)) throw new CaseError("It isn't your turn on this case.", 409);
       const answers = { ...c.run.answers };
       for (const [k, v] of Object.entries(p.answers)) {
         if (Object.hasOwn(answers, k)) throw new CaseError("Those screens are answered already.", 409);
@@ -693,8 +704,10 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
     /** One case: the stored run, the journey, the thread, and whether it is this person's turn. */
     async get(actor: CaseActor, key: string) {
       const { c, a } = await load(key, actor);
-      const turn = isTurnOf(c, a);
-      return { case: c, events: await store.events(c.id), turn, actor: runActor(c, a), mayFinish: c.status === "to_finish" && turn, mayDecline: (c.status === "waiting" || c.status === "to_finish") && (a.admin || c.finish_roles.some((r) => a.roles.includes(r)) || (c.waiting_role !== null && a.roles.includes(c.waiting_role))) };
+      const turn = mayActNow(c, a);
+      // A step whose access doesn't let this person read it is left out of what they are sent (access.ts); administrators read all.
+      const { run, hidden } = redactRun(c.journey.steps, c.run, { ...runActor(c, a), admin: a.admin });
+      return { case: hidden.length ? { ...c, run } : c, hidden, events: await store.events(c.id), turn, actor: runActor(c, a), mayFinish: c.status === "to_finish" && turn, mayDecline: (c.status === "waiting" || c.status === "to_finish") && (a.admin || c.finish_roles.some((r) => a.roles.includes(r)) || (c.waiting_role !== null && a.roles.includes(c.waiting_role))) };
     },
   };
 }

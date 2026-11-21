@@ -54,6 +54,22 @@ const memberRoles = computed(() => props.roles.filter((r) => r.id !== "visitor")
 const OFFERED_LEVELS = ASSURANCE_LEVELS.filter((l) => l.level <= 3);
 const strongerLevels = computed(() => OFFERED_LEVELS.filter((l) => l.level > (j.value.level ?? 0)));
 const answeredBy = (role: string) => (role ? (props.roles.find((r) => r.id === role)?.label ?? role) : "whoever started it");
+/** The grid of who reads (r), answers (w) and runs (x) a screen: the subjects it can name (access.ts). */
+const accessSubjects = computed(() => [{ id: "starter", label: "Whoever started it" }, ...memberRoles.value.map((r) => ({ id: r.id, label: r.label })), { id: "any", label: "Everyone who sees the case" }]);
+const accessOn = (s: { access: Record<string, string> }, subject: string, bit: "r" | "w") => (s.access[subject] ?? "").includes(bit);
+const listed = (s: { access: Record<string, string> }, subject: string) => Object.prototype.hasOwnProperty.call(s.access, subject);
+function setListed(s: { access: Record<string, string> }, subject: string, on: boolean) {
+  const next = { ...s.access };
+  if (on) next[subject] = subject === "any" ? "r" : "rw";
+  else delete next[subject];
+  s.access = next;
+}
+function toggleBit(s: { access: Record<string, string> }, subject: string, bit: "r" | "w", on: boolean) {
+  const have = new Set((s.access[subject] ?? "").replace("-", ""));
+  if (on) have.add(bit);
+  else have.delete(bit);
+  s.access = { ...s.access, [subject]: ["r", "w", "x"].filter((b) => have.has(b)).join("") || "-" };
+}
 const WITH_PLACEHOLDER = 'message: "Summarise {{answers.questions.name}}"';
 const screenIds = computed(() => j.value.screens.map((s) => s.id).filter(Boolean));
 /** The other screens, by name (their ids are what the YAML keeps). */
@@ -247,6 +263,20 @@ const open = ref<number | null>(0);
                   </select>
                   <p :id="id(`roleh${i}`)" class="yj-help">Another role: the journey waits here and goes to that role's work queue.</p>
                 </div>
+                <fieldset v-if="s.kind === 'ask' && !readonly || Object.keys(s.access).length" class="yj-span-2">
+                  <legend class="yj-field-label">Who can read and answer it (optional)</legend>
+                  <p class="yj-help">Like Unix's rwx: r reads what was answered, w answers it (x, for running a service step, is set in the YAML). Not listed: it works as above ({{ answeredBy(s.role) }} answers; everyone who sees the case reads). A role listed here may see the case.</p>
+                  <table class="yj-access">
+                    <thead><tr><th scope="col">Who</th><th scope="col">Listed</th><th scope="col">r</th><th scope="col">w</th></tr></thead>
+                    <tbody>
+                      <tr v-for="a in accessSubjects" :key="a.id">
+                        <th scope="row">{{ a.label }}</th>
+                        <td><input type="checkbox" :aria-label="`${a.label}: listed for ${s.label || s.id}`" :checked="listed(s, a.id)" :disabled="readonly" @change="setListed(s, a.id, ($event.target as HTMLInputElement).checked)" /></td>
+                        <td v-for="bit in (['r', 'w'] as const)" :key="bit"><input type="checkbox" :aria-label="`${a.label} ${bit} on ${s.label || s.id}`" :checked="accessOn(s, a.id, bit)" :disabled="readonly || !listed(s, a.id)" @change="toggleBit(s, a.id, bit, ($event.target as HTMLInputElement).checked)" /></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </fieldset>
                 <div v-if="strongerLevels.length">
                   <label :for="id(`level${i}`)" class="yj-field-label">Needs a stronger sign-in</label>
                   <select :id="id(`level${i}`)" v-model="s.level" class="yj-input" :aria-describedby="id(`levelh${i}`)">

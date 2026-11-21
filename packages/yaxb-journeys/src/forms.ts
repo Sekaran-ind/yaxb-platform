@@ -131,6 +131,8 @@ export type StepForm = {
   submitLabel: string;
   /** ask: who answers it, a role id; "" for the person who started the journey. */
   role: string;
+  /** Who reads (r), answers (w) and runs (x) it, by role, `starter` and `any`; empty: as `role` says (access.ts). */
+  access: Record<string, string>;
   /** service: the handler, and its input as YAML (a mapping). */
   service: string;
   withYaml: string;
@@ -179,6 +181,7 @@ export const newStep = (id = "", kind: StepKind = "ask"): StepForm => ({
   fieldsYaml: "",
   submitLabel: "",
   role: "",
+  access: {},
   service: "",
   withYaml: "",
   onError: "fail",
@@ -411,6 +414,7 @@ export function designFromDoc(doc: Record<string, unknown>): { design: ServiceDe
         fieldsYaml: s.questions === undefined ? "" : yamlOf(s.questions),
         submitLabel: str(s.submitLabel),
         role: str(s.role),
+        access: accessOfDoc(s.access),
         service: str(s.service),
         withYaml: yamlOf(s.with),
         onError: s.onError === "continue" ? "continue" : "fail",
@@ -473,8 +477,8 @@ export function designToDoc(d: ServiceDesign): { ok: true; doc: Record<string, u
       const after = task ? s.after.split(/[\s,]+/).filter(Boolean) : [];
       const base = { id: s.id.trim(), title: s.label.trim(), stage: s.stage.trim(), icon: s.icon.trim() };
       let screen: Record<string, unknown>;
-      if (s.kind === "ask") screen = { ...base, ask: s.ask.trim(), questions: parse(at, s.fieldsYaml, "list") ?? [], submitLabel: s.submitLabel.trim(), role: s.role.trim(), next: then, after: after.length ? after : undefined, level: s.level && s.level > (j.level ?? 0) ? s.level : undefined, guard: s.guardYaml.trim() ? parse(at, s.guardYaml, "mapping") : undefined, show: s.showYaml.trim() ? parse(at, s.showYaml, "list") : undefined };
-      else if (s.kind === "service") screen = { ...base, service: s.service.trim(), with: parse(at, s.withYaml, "mapping"), onError: s.onError === "continue" ? "continue" : undefined, next: then, after: after.length ? after : undefined };
+      if (s.kind === "ask") screen = { ...base, ask: s.ask.trim(), questions: parse(at, s.fieldsYaml, "list") ?? [], submitLabel: s.submitLabel.trim(), role: s.role.trim(), access: accessToDoc(s.access), next: then, after: after.length ? after : undefined, level: s.level && s.level > (j.level ?? 0) ? s.level : undefined, guard: s.guardYaml.trim() ? parse(at, s.guardYaml, "mapping") : undefined, show: s.showYaml.trim() ? parse(at, s.showYaml, "list") : undefined };
+      else if (s.kind === "service") screen = { ...base, service: s.service.trim(), with: parse(at, s.withYaml, "mapping"), access: accessToDoc(s.access), onError: s.onError === "continue" ? "continue" : undefined, next: then, after: after.length ? after : undefined };
       else if (s.kind === "decide") screen = { ...base, decide: branches(s.branches) };
       else {
         const ok = s.resultOk.trim();
@@ -502,6 +506,12 @@ export function designToDoc(d: ServiceDesign): { ok: true; doc: Record<string, u
     }),
   };
 }
+
+/** A screen's access from a document: only well-formed entries are kept (the checker reports the rest). */
+const accessOfDoc = (v: unknown): Record<string, string> =>
+  v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter((e): e is [string, string] => typeof e[1] === "string")) : {};
+/** A screen's access for a document: absent when it lists nothing. */
+const accessToDoc = (a: Record<string, string> | undefined): Record<string, string> | undefined => (a && Object.keys(a).length ? a : undefined);
 
 /** "Front desk" → "front-desk": a role or screen id from a name. */
 export const idFromName = (name: string) =>

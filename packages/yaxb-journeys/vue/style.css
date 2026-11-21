@@ -1635,3 +1635,7 @@ button.yj-crumb:hover {
   color: var(--yj-muted);
   font-weight: 400;
 }
+
+.yj-access { border-collapse: collapse; font-size: 0.875rem; }
+.yj-access th, .yj-access td { padding: 0.25rem 0.75rem 0.25rem 0; text-align: left; font-weight: normal; }
+.yj-access thead th { font-weight: 600; }
