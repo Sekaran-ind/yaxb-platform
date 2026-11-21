@@ -11,6 +11,12 @@ import { z } from "zod";
 export const SERVICE_STORAGE = ["none", "box", "server"] as const;
 export type ServiceStorage = (typeof SERVICE_STORAGE)[number];
 
+/** A service's retention period, in days from creation: at least the 30 days everything gets, at most 20 years. */
+export const RETAIN_DAYS_MIN = 30;
+export const RETAIN_DAYS_MAX = 7300;
+/** A valid retention period, or null when the value isn't one. */
+export const retainDaysOf = (v: unknown): number | null => (typeof v === "number" && Number.isInteger(v) && v >= RETAIN_DAYS_MIN && v <= RETAIN_DAYS_MAX ? v : null);
+
 export const EVENT_KINDS = [
   "journey.started",
   "screen.reached",

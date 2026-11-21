@@ -343,7 +343,7 @@ export function createD1ModeratorStore(db: D1Like, { tenant = "default" }: { ten
 /** The journey library on D1 (migrations/0006_library.sql), scoped to one tenant (TEN-3). */
 export function createD1LibraryStore(db: D1Like, { tenant = "default" }: { tenant?: string } = {}): LibraryStore {
   const ENTRY_COLS =
-    "id, library_id, kind, doc_id, title, yaml, status, revision, published_yaml, published_revision, owner_id, owner_name, submitted_by, submitted_by_name, submitted_at, reviewed_by, reviewed_by_name, reviewed_at, review_note, created_at, updated_at, updated_by_name, storage";
+    "id, library_id, kind, doc_id, title, yaml, status, revision, published_yaml, published_revision, owner_id, owner_name, submitted_by, submitted_by_name, submitted_at, reviewed_by, reviewed_by_name, reviewed_at, review_note, created_at, updated_at, updated_by_name, storage, retain_days";
   const role = (r: { id: string; label: string; description: string | null; created_at: string }): CustomRole => ({ id: r.id, label: r.label, created_at: r.created_at, ...(r.description ? { description: r.description } : {}) });
   return {
     async roles() {

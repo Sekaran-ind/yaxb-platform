@@ -130,6 +130,7 @@ export const AUDIT_ACTIONS = {
   "library.role_changed": "Role changed",
   "library.role_removed": "Role removed",
   "library.entry_storage": "Storage chosen",
+  "library.entry_retain": "Retention period set",
   "connector.secret_set": "Connector secret set",
   "connector.secret_removed": "Connector secret removed",
   "routine.settings": "Routines paused, resumed or limited",

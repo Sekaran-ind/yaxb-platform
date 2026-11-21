@@ -41,7 +41,7 @@ export type RoleFacts = {
   toOutside: string[];
 };
 export type ServiceStorage = "none" | "box" | "server";
-export type ConsentFacts = { service: string; title: string; storage: ServiceStorage; relayHours: number; roles: RoleFacts[] };
+export type ConsentFacts = { service: string; title: string; storage: ServiceStorage; relayHours: number; /** Days a record on the server is kept from creation (30 when the service sets none). */ retainDays: number; roles: RoleFacts[] };
 export type GuardianFlag = { level: "error" | "warning" | "info"; role: string | null; message: string };
 
 const SENSITIVE: [Sensitivity, RegExp][] = [
@@ -76,7 +76,7 @@ type Screen = { id?: string; title?: string; role?: string; questions?: unknown;
 type JourneyDoc = { id: string; title?: string; roles?: { initiate?: string[]; complete?: string[] }; screens?: Screen[] };
 
 /** The facts behind each role's consent form. */
-export function consentFacts(doc: Record<string, unknown>, opts: { storage?: ServiceStorage; relayHours?: number; roles?: readonly Role[] } = {}): ConsentFacts {
+export function consentFacts(doc: Record<string, unknown>, opts: { storage?: ServiceStorage; relayHours?: number; retainDays?: number | null; roles?: readonly Role[] } = {}): ConsentFacts {
   const expanded = expandService(doc);
   const all: readonly Role[] = [...DEFAULT_ROLES, ...(opts.roles ?? []), ...expanded.roles];
   const label = (id: string) => (id === VISITOR_ROLE ? "Anyone at the kiosk" : roleLabel(id, all));
@@ -105,7 +105,7 @@ export function consentFacts(doc: Record<string, unknown>, opts: { storage?: Ser
     const title = (j: JourneyDoc) => j.title ?? j.id;
     return { role, label: label(role), starts: starts.map(title), completes: completes.map(title), answers: answers.map(title), gives: dedupe(gives), sees: dedupe(sees), seenBy, toAssistant, toOutside };
   });
-  return { service: String(doc.id ?? ""), title: String(doc.title ?? doc.id ?? "This service"), storage: opts.storage ?? "none", relayHours: opts.relayHours ?? 48, roles: roles.filter((r) => r.role === VISITOR_ROLE ? r.starts.length > 0 : r.starts.length + r.completes.length + r.answers.length > 0) };
+  return { service: String(doc.id ?? ""), title: String(doc.title ?? doc.id ?? "This service"), storage: opts.storage ?? "none", relayHours: opts.relayHours ?? 48, retainDays: opts.retainDays ?? 30, roles: roles.filter((r) => r.role === VISITOR_ROLE ? r.starts.length > 0 : r.starts.length + r.completes.length + r.answers.length > 0) };
 }
 const dedupe = (list: AskedField[]) => list.filter((a, i) => list.findIndex((b) => b.label.toLowerCase() === a.label.toLowerCase()) === i);
 
@@ -168,7 +168,9 @@ function visitorForm(facts: ConsentFacts, r: RoleFacts): ConsentForm {
     points.push(
       facts.storage === "none"
         ? `Your request is kept ${WHERE.none}. If it has to wait for someone, it may pass through a secure relay for up to ${facts.relayHours} hours.`
-        : `Your request is kept ${WHERE[facts.storage]} until the service has finished with it.`,
+        : facts.storage === "server"
+          ? `Your request is kept ${WHERE.server} for ${facts.retainDays} days after it is made, then deleted. It may be deleted sooner once the service has finished with it.`
+          : `Your request is kept ${WHERE[facts.storage]} until the service has finished with it.`,
     );
   } else points.push("What you give stays on this device.");
   if (has(r.gives, "password").length) points.push("A password you type is never stored or sent on.");

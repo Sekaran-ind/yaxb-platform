@@ -32,7 +32,7 @@ import {
 import { createD1RoutineStore } from "@sekaran-ind/yaxb-core/stores/d1";
 import { dohResolver } from "@sekaran-ind/yaxb-core/web/pages";
 import type { LibraryEntry } from "@sekaran-ind/yaxb-core/library";
-import { currentEdition, db, dbFor, EDITIONS, withEdition } from "./edition";
+import { currentEdition, db, dbFor, EDITIONS, withEdition, type Edition } from "./edition";
 import { settings, type Bindings } from "./env";
 import { cases, catalogue, connectorCalled, connectorSecrets, currentTenant, serviceEvents, tenantContext } from "./kiosk";
 
@@ -265,12 +265,34 @@ export async function sweepTenant(env: Bindings, now = new Date()): Promise<Rout
   return out;
 }
 
+/** One unit of the sweep: a business's time routines, or its cases' dependencies past their time (DEP-3). */
+export type SweepJob = { edition: Edition; tenant: string; job: "routines" | "cases" };
+type SweepQueue = { sendBatch(messages: { body: SweepJob }[]): Promise<void> };
+/** The paid plan's queue (wrangler.jsonc `queues`, commented there): when bound, the cron only enqueues. */
+const queueOf = (env: Bindings) => (env as unknown as { SWEEP_QUEUE?: SweepQueue }).SWEEP_QUEUE;
+
+/** Runs one job; a failure is logged (and thrown, so a queue retries it). */
+export async function runSweepJob(env: Bindings, { edition, tenant, job }: SweepJob, now = new Date()): Promise<number> {
+  return withEdition(edition, () =>
+    tenantContext.run(tenant, async () => {
+      if (job === "cases") {
+        await cases(env).expire(now);
+        return 0;
+      }
+      return (await sweepTenant(env, now)).length;
+    }),
+  );
+}
+
 /**
- * The Cron Trigger (every 15 minutes, RTN-2): every edition's businesses with a published routine.
- * One business's failure is logged and never stops the others.
+ * The Cron Trigger (every 15 minutes, RTN-2): every edition's businesses with a published routine, and
+ * their cases' dependencies past their time. With a queue bound (the paid plan) it only enqueues one job
+ * per business and returns 0; the queue's consumer (`queue` in index.ts) runs them in parallel, each
+ * retried on its own. Without one, the jobs run here one after another, and one business's failure is
+ * logged and never stops the others.
  */
 export async function sweep(env: Bindings, now = new Date()): Promise<number> {
-  let runs = 0;
+  const jobs: SweepJob[] = [];
   for (const edition of EDITIONS) {
     let database: D1Database;
     try {
@@ -283,14 +305,20 @@ export async function sweep(env: Bindings, now = new Date()): Promise<number> {
       .all<{ tenant_id: string }>();
     // DEP-3: dependencies past their time, in each business's central cases (a business's list is its own).
     const owners = await database.prepare("SELECT DISTINCT tenant_id FROM cases WHERE status IN ('waiting', 'to_finish') AND links IS NOT NULL").all<{ tenant_id: string }>().catch(() => ({ results: [] as { tenant_id: string }[] }));
-    for (const { tenant_id } of owners.results)
-      await withEdition(edition, () => tenantContext.run(tenant_id, () => cases(env).expire(now))).catch((e) => console.error(JSON.stringify({ msg: "case expiry failed", edition, error: e instanceof Error ? e.message.slice(0, 200) : "unknown" })));
-    for (const { tenant_id } of results) {
-      try {
-        runs += (await withEdition(edition, () => tenantContext.run(tenant_id, () => sweepTenant(env, now)))).length;
-      } catch (e) {
-        console.error(JSON.stringify({ msg: "routine sweep failed", edition, error: e instanceof Error ? `${e.name}: ${e.message.slice(0, 200)}` : "unknown" }));
-      }
+    for (const { tenant_id } of owners.results) jobs.push({ edition, tenant: tenant_id, job: "cases" });
+    for (const { tenant_id } of results) jobs.push({ edition, tenant: tenant_id, job: "routines" });
+  }
+  const queue = queueOf(env);
+  if (queue) {
+    for (let i = 0; i < jobs.length; i += 100) await queue.sendBatch(jobs.slice(i, i + 100).map((body) => ({ body })));
+    return 0;
+  }
+  let runs = 0;
+  for (const j of jobs) {
+    try {
+      runs += await runSweepJob(env, j, now);
+    } catch (e) {
+      console.error(JSON.stringify({ msg: j.job === "cases" ? "case expiry failed" : "routine sweep failed", edition: j.edition, error: e instanceof Error ? `${e.name}: ${e.message.slice(0, 200)}` : "unknown" }));
     }
   }
   return runs;

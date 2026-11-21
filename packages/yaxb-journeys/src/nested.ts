@@ -28,6 +28,7 @@
 //         - id: triage
 //           role: nurse                        who answers it (absent: whoever started it); the
 //           questions: [...]                   journey waits for a nurse, a case in their queue
+//           access: { nurse: rw, doctor: r }   who reads (r), answers (w) and runs (x) it; see access.ts
 //         - id: summarise
 //           service: agent.ask                a service screen; `with:` is its input
 //           with: { message: "…" }
@@ -39,6 +40,7 @@
 // Each screen goes to the next one in the list unless it says `next:`. A journey whose last screen
 // doesn't end it gets an ending ("Thank you"). Journeys may name the service's roles, the built-in
 // ones (administrator, moderator, reviewer) and `visitor` (anyone at the kiosk).
+import { accessProblems, type StepAccess } from "./access.js";
 import { DEFAULT_ROLES, MANAGER_OF_REQUESTER, ROLE_ID, VISITOR_ROLE, type Role } from "./roles.js";
 import { serviceConsent } from "./consent.js";
 
@@ -47,7 +49,7 @@ export const isNestedService = (doc: unknown): doc is Record<string, unknown> =>
 
 const SERVICE_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "order", "layouts", "hidden", "roles", "journeys", "dates", "consent"]);
 const JOURNEY_KEYS = new Set(["id", "title", "summary", "icon", "category", "version", "roles", "flow", "level", "start", "screens"]);
-const SCREEN_KEYS = new Set(["id", "title", "ask", "questions", "submitLabel", "service", "with", "onError", "decide", "next", "result", "stage", "icon", "role", "after", "level", "guard", "uses", "show"]);
+const SCREEN_KEYS = new Set(["id", "title", "ask", "questions", "submitLabel", "service", "with", "onError", "decide", "next", "result", "stage", "icon", "role", "access", "after", "level", "guard", "uses", "show"]);
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 
 export type Expanded = {
@@ -196,6 +198,10 @@ export function expandService(doc: Record<string, unknown>): Expanded {
         if (s.role !== undefined) {
           step.role = s.role;
           if (typeof s.role === "string" && ROLE_ID.test(s.role) && s.role !== VISITOR_ROLE && !known.has(s.role)) problems.push(`${sat}: role '${s.role}' isn't one of this service's roles: add it to the roles`);
+        }
+        if (s.access !== undefined) {
+          problems.push(...accessProblems(sat, s.access, { questions: s.questions !== undefined || s.ask !== undefined, service: s.service !== undefined }, [...known]));
+          if (s.access && typeof s.access === "object" && !Array.isArray(s.access)) step.access = s.access as StepAccess;
         }
         if (s.service !== undefined) {
           step.service = s.service;

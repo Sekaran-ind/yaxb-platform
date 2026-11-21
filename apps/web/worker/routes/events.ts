@@ -23,6 +23,18 @@ app.put("/api/library/entries/:id/storage", (c) =>
   }),
 );
 
+/**
+ * How long a service's records are kept on the server, in days from creation (RET-1): its author or an
+ * administrator sets it in the service design; null returns to 30. Only the paid plan honours it: the
+ * free plan accepts the setting (so a service moves to paid unchanged) and deletes at 30 days anyway.
+ */
+app.put("/api/library/entries/:id/retain", (c) =>
+  libraryCall(c, async (a, body) => {
+    const days = (body as { days?: unknown } | null)?.days;
+    return { entry: await library(c.env).setEntryRetain(a, c.req.param("id"), days ?? null), honoured: settings(c.env).PLAN === "paid" };
+  }),
+);
+
 /** Which published service an event belongs to, and where it keeps its events. */
 async function serviceStorage(c: Context<AppEnv>, entryId: string) {
   const { services } = await (await catalogue(c.env)).published([], { all: true });

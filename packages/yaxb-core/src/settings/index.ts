@@ -28,7 +28,7 @@ export const STORAGE_OPTIONS = [
   {
     id: "server",
     label: "Server (Cloudflare D1)",
-    description: "Conversations kept on the server for 30 days; the agent's memory in its long-term store (Deep Agents StoreBackend). Notebook sources stay in this browser.",
+    description: "Paid plan. Conversations and the agent's memory kept on the server (its long-term store, Deep Agents StoreBackend) until you delete them. Notebook sources stay in this browser.",
   },
 ] as const;
 export type StorageId = (typeof STORAGE_OPTIONS)[number]["id"];
@@ -116,6 +116,8 @@ export type Capabilities = {
   mcp: McpServerInfo[];
   journeys: { id: string; title: string; summary?: string }[];
   defaults: AgentSettings;
+  /** The deployment's plan (set by the Worker): Server storage and other paid features are off on "free". */
+  plan?: "free" | "paid";
   /** The free tier's allowance (set by the Worker): AI questions per window for visitors who aren't members, or absent when there is no limit. */
   freeTier?: { questions: number; minutes: number; words: number; chars: number; upgrade: string | null } | null;
 };

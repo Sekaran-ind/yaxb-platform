@@ -7,6 +7,7 @@
 // filesystem; after the turn the conversation is saved on the server (storage "server") or handed
 // back in a `state` event for the browser to keep.
 import { spellingHint } from "../spell/index.js";
+import { retainDaysOf } from "../metrics/index.js";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import {
   HumanMessage,
@@ -345,7 +346,7 @@ export function createKiosk(deps: KioskDeps) {
    * up when the wording differs from the service's current forms. Nothing is stored.
    */
   async function guardian(
-    input: { yaml: unknown; storage?: unknown; relayHours?: unknown; roles?: readonly Role[]; selection?: Selection | null },
+    input: { yaml: unknown; storage?: unknown; relayHours?: unknown; retainDays?: unknown; roles?: readonly Role[]; selection?: Selection | null },
     { signal }: { signal?: AbortSignal } = {},
   ): Promise<{ consent: ServiceConsent; facts: ConsentFacts; flags: GuardianFlag[]; via: "assistant" | "draft"; note: string | null } | { error: string }> {
     if (typeof input.yaml !== "string" || !input.yaml.trim() || input.yaml.length > 200_000) return { error: "Send the service's YAML." };
@@ -353,7 +354,7 @@ export function createKiosk(deps: KioskDeps) {
     if (!parsed.ok) return { error: parsed.error };
     const storage = input.storage === "box" || input.storage === "server" ? input.storage : "none";
     const relayHours = typeof input.relayHours === "number" && input.relayHours > 0 && input.relayHours <= 168 ? input.relayHours : 48;
-    const facts = consentFacts(parsed.doc, { storage, relayHours, roles: input.roles ?? [] });
+    const facts = consentFacts(parsed.doc, { storage, relayHours, retainDays: retainDaysOf(input.retainDays), roles: input.roles ?? [] });
     const flags = guardianFlags(facts);
     const current = serviceConsent(parsed.doc.consent, null);
     const bump = (c: ServiceConsent): ServiceConsent => {

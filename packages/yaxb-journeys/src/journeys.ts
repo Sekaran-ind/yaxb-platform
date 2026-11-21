@@ -42,12 +42,14 @@ import { load } from "js-yaml";
 import { conditionProblem, placeholders, type Scope } from "./expressions.js";
 import { fieldListProblems, type Field } from "./fields.js";
 import { questionnaireFields, type Questionnaire } from "./questionnaires.js";
+import { accessOf, accessProblems, type StepAccess } from "./access.js";
 import { journeyRoleProblems, MANAGER_OF_REQUESTER, ROLE_ID, VISITOR_ROLE, type JourneyRoles } from "./roles.js";
 
 export * from "./expressions.js";
 export * from "./fields.js";
 export * from "./questionnaires.js";
 export * from "./roles.js";
+export * from "./access.js";
 
 export type Branch = { if?: string; to: string };
 /** VIS-6: a display block as written, and as the runner fills it (`data` from its template). */
@@ -70,6 +72,8 @@ export const GUARD_MAX_MS = 10_000;
 export const GUARD_DEFAULT_MS = 5_000;
 /** Where a guard's answer is kept with the run, so replaying it never calls the hook again (RTN-11). */
 export const guardKey = (step: string) => `guard:${step}`;
+/** Where a run went from a step that chooses between ways (a decision), kept with it so a replay that cannot read the answers behind it (sealed.ts) takes the same way. */
+export const routeKey = (step: string) => `route:${step}`;
 
 export type Step = {
   id: string;
@@ -93,6 +97,8 @@ export type Step = {
    * answer, it waits there: the journey is handed over (a case, which the host stores).
    */
   role?: string;
+  /** Who may read (r), answer (w) and run (x) this step, by role, `starter` and `any` (access.ts). Absent: as `role` says. */
+  access?: StepAccess;
   /** How sure the kiosk must be of who answers this step (IDN-30): more than the journey's, for an approval. */
   level?: number;
   /**
@@ -140,7 +146,7 @@ export type Journey = {
 };
 
 const JOURNEY_KEYS = new Set(["kind", "id", "version", "title", "summary", "icon", "category", "roles", "flow", "level", "start", "steps"]);
-const STEP_KEYS = new Set(["ask", "fields", "questionnaire", "service", "with", "onError", "decide", "final", "result", "next", "label", "stage", "icon", "submitLabel", "role", "after", "level", "guard", "uses", "show"]);
+const STEP_KEYS = new Set(["ask", "fields", "questionnaire", "service", "with", "onError", "decide", "final", "result", "next", "label", "stage", "icon", "submitLabel", "role", "access", "after", "level", "guard", "uses", "show"]);
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 /** An outcome id: lower-case words joined by '-', optionally dotted (registration.approved). */
 export const OUTCOME_ID = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*$/;
@@ -260,6 +266,7 @@ export function journeyProblems(doc: unknown, { services, questionnaires = [], r
       else if (roles && s.role !== MANAGER_OF_REQUESTER && !roles.includes(s.role)) problems.push(`${at}: no role '${s.role}'`);
       if (s.ask === undefined && s.questionnaire === undefined) problems.push(`${at}: only a step with questions is answered by a role`);
     }
+    problems.push(...accessProblems(at, s.access, { questions: s.ask !== undefined || s.questionnaire !== undefined, service: s.service !== undefined }, roles ? [...roles, MANAGER_OF_REQUESTER] : undefined));
     if (s.onError !== undefined && s.onError !== "fail" && s.onError !== "continue") problems.push(`${at}: onError is fail or continue`);
     if (s.level !== undefined) {
       if (!isLevel(s.level)) problems.push(`${at}: ${LEVEL_PROBLEM}`);
@@ -356,10 +363,17 @@ export const levelNeeded = (journey: Pick<Journey, "level">, step: Pick<Step, "l
 export const sureEnough = (journey: Pick<Journey, "level">, step: Pick<Step, "level">, actor: Pick<RunActor, "level">) => (actor.level ?? 0) >= levelNeeded(journey, step);
 
 /** The part of a run that is stored and handed over: enough to resume it anywhere. */
-export type RunSnapshot = { current: string | null; answers: Record<string, Record<string, unknown>>; steps: Record<string, unknown>; trail: RunState["trail"] };
+export type RunSnapshot = {
+  current: string | null;
+  answers: Record<string, Record<string, unknown>>;
+  steps: Record<string, unknown>;
+  trail: RunState["trail"];
+  /** Steps whose answers travel sealed, for the people who may read them (cases/sealed.ts): not in `answers` here. */
+  sealed?: Record<string, unknown>;
+};
 
-/** May this actor answer the step? A step with a role needs that role; one without, the starter. */
-export const mayAnswer = (step: Pick<Step, "role">, actor: RunActor) => (step.role ? actor.roles.includes(step.role) : actor.starter);
+/** May this actor answer the step? Its access says (access.ts); without one, a step with a role needs that role and one without, the starter. */
+export const mayAnswer = (step: Pick<Step, "role" | "access">, actor: RunActor) => accessOf(step, actor).w;
 
 export type RoleNeed = { role: string; for: ("start" | "answer" | "finish")[] };
 

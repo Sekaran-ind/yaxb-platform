@@ -35,6 +35,7 @@ import { computed, ref } from "vue";
 import { kioskViewer, publishedJourney, publishedOrganisation, roleName } from "@/composables/library";
 import { settings, useCapabilities } from "@/composables/settings";
 import { onTeamData, useTeam } from "@/composables/team";
+import { devicePublicKey, openReceived, registerDeviceKey, sealForSend } from "@/composables/seal-keys";
 import { boxMailbox, deliver, recipients, relayMailbox } from "@/lib/browser/case-transport";
 import { allLocalCases, deliveriesOf, localCaseStore, saveDelivery, thisDevice } from "@/lib/browser/cases-local";
 
@@ -134,7 +135,16 @@ export async function handOn(c: Case): Promise<Delivery | null> {
   const a = await deviceActor();
   const { box, relay } = mailboxes();
   const hours = box ? BOX_TTL_HOURS : casesCaps.value.relayHours;
-  const e = caseEnvelope(c, await localCaseStore.events(c.id), to, { id: a.id, name: a.name, device: a.device! }, hours, new Date(), Math.max(hours, 1));
+  // A step not everyone may read goes sealed for those who may (seal-keys.ts); if no device could read one, nothing is sent.
+  let out: Case;
+  try {
+    out = await sealForSend(c);
+  } catch (err) {
+    const d: Delivery = { envelope: crypto.randomUUID(), via: "none", to, to_name: nameOf(to, c), sent_at: new Date().toISOString(), expires_at: null, state: "not-sent", reason: err instanceof Error ? err.message : "It could not be sealed." };
+    await saveDelivery(c.id, d);
+    return d;
+  }
+  const e = caseEnvelope(out, await localCaseStore.events(c.id), to, { id: a.id, name: a.name, device: a.device! }, hours, new Date(), Math.max(hours, 1));
   const online = a.guest ? [] : recipients(to, team.members.value, team.onlineIds.value).map((m) => ({ id: m.id, name: m.name }));
   const d = await deliver(e, nameOf(to, c), { online, direct: (member, env) => team.sendData(member, env), box, relay, hours: { box: BOX_TTL_HOURS, relay: casesCaps.value.relayHours } });
   await saveDelivery(c.id, d);
@@ -147,6 +157,12 @@ async function accept(e: Envelope): Promise<boolean> {
   if (!parsed.success) return false;
   if (e.kind === "case") {
     const got = await receiveCase(localCaseStore, e.body);
+    // Steps this device may read are opened and kept in the clear; the others stay sealed, and are carried on as they are.
+    if (got.changed) {
+      const opened = await openReceived(got.case);
+      if (opened !== got.case) await localCaseStore.put(opened);
+      got.case = opened;
+    }
     if (got.changed) void beacon(got.case, nextAddress(got.case));
     // DEP-1: a request this device's case was waiting for came back closed: that case carries on.
     if (got.changed && got.case.links?.parent && (got.case.status === "done" || got.case.status === "declined")) {
@@ -242,6 +258,9 @@ async function passOn(spawned: readonly Case[], resumed: CaseSummary | null = nu
 
 export async function startOnDevice(entry: string, journey: string, answers: unknown, steps: unknown): Promise<{ case: CaseSummary; delivery: Delivery | null }> {
   const { case: c, spawned } = await service.start(await deviceActor(), { entry, journey, answers, steps });
+  // The key of this device goes with the case, so what it gave can be sealed back to it (seal-keys.ts).
+  const started = await localCaseStore.get(c.id);
+  if (started) await localCaseStore.put({ ...started, starter_key: await devicePublicKey().catch(() => null) });
   await passOn(spawned);
   return { case: c, delivery: await handOn((await localCaseStore.get(c.id))!) };
 }
@@ -276,7 +295,13 @@ async function sendBack(c: Case) {
   if (!c.starter_device || c.starter_device === (await thisDevice()).id) return;
   const a = await deviceActor();
   const { box, relay } = mailboxes();
-  const e = caseEnvelope(c, await localCaseStore.events(c.id), { device: c.starter_device }, { id: a.id, name: a.name, device: a.device! }, casesCaps.value.relayHours);
+  let out: Case;
+  try {
+    out = await sealForSend(c);
+  } catch {
+    return; // no device could read a sealed step: it isn't sent
+  }
+  const e = caseEnvelope(out, await localCaseStore.events(c.id), { device: c.starter_device }, { id: a.id, name: a.name, device: a.device! }, casesCaps.value.relayHours);
   await saveDelivery(c.id, await deliver(e, c.links?.parent ? `the device with ${c.links.parent.ref}` : "the kiosk it was started on", { online: [], direct: async () => false, box, relay, hours: { box: BOX_TTL_HOURS, relay: casesCaps.value.relayHours } }));
 }
 export async function queueOnDevice() {
@@ -351,6 +376,7 @@ let timer: ReturnType<typeof setInterval> | null = null;
 export function startCaseNetwork() {
   if (!onDevices.value) return;
   if (kioskViewer.value.member && !team.me.value) void team.load();
+  void registerDeviceKey();
   void collect();
   timer ??= setInterval(() => void collect(), 60_000);
 }

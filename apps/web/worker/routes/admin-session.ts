@@ -6,10 +6,19 @@ import { auditEvent } from "@sekaran-ind/yaxb-core/moderators";
 import { safeEqual, setAdminCookie } from "../session";
 import { MAX_FORM_BODY, jsonError, sameOrigin, ip, withinLimit, readJson } from "../http";
 import { signInSchema, administrator } from "../actors";
+import { db } from "../edition";
+import { readSize } from "../db-size";
+import type { D1Like } from "@sekaran-ind/yaxb-core/stores/d1";
 
 app.get("/api/admin", async (c) => {
   const who = await administrator(c);
   return c.json({ admin: Boolean(who), name: who?.name ?? null, enabled: Boolean(settings(c.env).ADMIN_TOKEN) });
+});
+
+/** How full this edition's database is (step 5 of the data lifetime work): the site administrator's, no business names. */
+app.get("/api/admin/database", async (c) => {
+  if (!(await administrator(c))) return jsonError(c, 403, "Administrators only.");
+  return c.json({ size: await readSize(c.env, db(c.env) as unknown as D1Like) });
 });
 
 app.post("/api/admin", async (c) => {

@@ -18,7 +18,7 @@
 //   review     reviewer, administrator: accept or reject what is in review, never their own submission
 //   manage     administrator: the organisation's roles, archiving and restoring whole libraries
 // The ADMIN_TOKEN holder may do everything.
-import { SERVICE_STORAGE, type ServiceStorage } from "../metrics/index.js";
+import { RETAIN_DAYS_MAX, RETAIN_DAYS_MIN, retainDaysOf, SERVICE_STORAGE, type ServiceStorage } from "../metrics/index.js";
 import { connectorHandlers, connectorSecrets, parseConnector, type Connector } from "../connectors/index.js";
 import { parseRoutine, ROUTINE_AUTHORS, type Routine } from "../routines/index.js";
 import { shapeProblems, type LinkShape } from "../links/index.js";
@@ -114,6 +114,11 @@ export type LibraryEntry = {
    * An administrator sets it, usually when the service is added to a kiosk. Absent: none.
    */
   storage?: ServiceStorage | null;
+  /**
+   * How many days the records this service keeps on the server live, from creation (the author's
+   * choice, in the service design). Absent: 30 days. The free plan deletes at 30 days whatever this says.
+   */
+  retain_days?: number | null;
 };
 
 export type EntryRevision = { entry_id: string; revision: number; yaml: string; at: string; by_id: string | null; by_name: string | null; note: string | null };
@@ -654,6 +659,18 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
       return next;
     },
 
+    /** How long the service's records are kept on the server (RET-1): its author or an administrator; null returns to 30 days. */
+    async setEntryRetain(a: LibraryActor, id: string, days: unknown) {
+      const e = await getEntry(a, id);
+      mustChange(a, e);
+      const retain = days === null ? null : retainDaysOf(days);
+      if (days !== null && retain === null) throw new LibraryError(`Keep records for a whole number of days, from ${RETAIN_DAYS_MIN} to ${RETAIN_DAYS_MAX}, or leave it empty for ${RETAIN_DAYS_MIN}.`);
+      const next: LibraryEntry = { ...e, retain_days: retain, updated_at: now() };
+      await store.putEntry(next);
+      await audit(a, "library.entry_retain", id, { id: e.doc_id, days: retain ?? 0 });
+      return next;
+    },
+
     async setEntryArchived(a: LibraryActor, id: string, archived: boolean) {
       const e = await getEntry(a, id);
       mustChange(a, e);
@@ -804,6 +821,8 @@ export function createLibraryService(store: LibraryStore, options: LibraryOption
               state: e.status,
               /** Where it records events: kiosks send them there (MET-1). */
               storage: (e.storage ?? "none") as ServiceStorage,
+              /** Days its records are kept on the server (absent: 30). */
+              retain_days: e.retain_days ?? null,
               roles: b.roles,
               journeys: b.journeys.map((j) => ({
                 id: j.id,

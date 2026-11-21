@@ -78,7 +78,7 @@ describe("authorization", () => {
       "POST /api/identity/passkey/register/start", "POST /api/identity/passkey/signin/start", "POST /api/identity/app/start", "POST /api/identity/handoff/start",
       "DELETE /api/identity/device-lock",
       "GET /api/cases", "GET /api/library", "GET /api/library/design", "GET /api/library/published", "GET /api/library/templates", "GET /api/sites",
-      "GET /api/relay", "GET /api/relay/status", "GET /api/routines/approvals", "GET /api/routines/notices", "GET /yaxb",
+      "GET /api/keys/directory" /* public keys only: a visitor seals what they gave before it leaves their device */, "GET /api/relay", "GET /api/relay/status", "GET /api/routines/approvals", "GET /api/routines/notices", "GET /yaxb",
     ]);
     const open = Object.entries(snap).filter(([, k]) => k === "open").map(([r]) => r);
     expect(open.filter((r) => !OPEN_BY_DESIGN.has(r)), "Routes open to anyone that aren't on the reviewed list").toEqual([]);

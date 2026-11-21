@@ -468,7 +468,7 @@ watch(
       <FlowPreview :bundle="check.bundle" :layout="resolveLayout(width - 24)" :width="width - 24" storage-key="catalogue.preview" />
     </div>
     <JourneyFlow v-else-if="view === 'flow'" :bundle="check.bundle" :problems="check.problems" @line="goToLine" />
-    <ConsentPanel v-else-if="view === 'consent'" v-model="yaml" :editable="editable" :storage="entryStorage" :roles="roles" />
+    <ConsentPanel v-else-if="view === 'consent'" v-model="yaml" :editable="editable" :storage="entryStorage" :roles="roles" :entry-id="entry?.id ?? null" :retain-days="entry?.retain_days ?? props.published?.retain_days ?? null" @retained="(d) => entry && (entry = { ...entry, retain_days: d })" />
     <div v-else-if="view === 'summary'" class="space-y-4">
       <ServiceSummary :bundle="check.bundle" />
       <dl v-if="entry" class="grid gap-x-6 gap-y-1 rounded-xl bg-mist p-3 text-sm sm:grid-cols-[auto_1fr]">
