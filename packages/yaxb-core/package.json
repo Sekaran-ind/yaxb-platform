@@ -171,6 +171,14 @@
       "types": "./dist/metrics/index.d.ts",
       "default": "./dist/metrics/index.js"
     },
+    "./stores/keys": {
+      "types": "./dist/stores/keys.d.ts",
+      "default": "./dist/stores/keys.js"
+    },
+    "./seal": {
+      "types": "./dist/seal/index.d.ts",
+      "default": "./dist/seal/index.js"
+    },
     "./stores/size": {
       "types": "./dist/stores/size.d.ts",
       "default": "./dist/stores/size.js"

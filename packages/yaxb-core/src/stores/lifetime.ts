@@ -64,6 +64,7 @@ export const TABLE_LIFETIME: Record<string, TableLifetime> = {
   library_revisions: { class: "identity", reason: "a service's revisions" },
   library_roles: { class: "identity", reason: "a business's roles" },
   design_lessons: { class: "identity", reason: "what the Service Designer was taught: configuration, not a record" },
+  member_keys: { class: "identity", reason: "public keys of members' devices, for sealed steps; removed by the member or when the device is lost" },
   connector_secrets: { class: "identity", reason: "sealed connector secrets" },
   routine_settings: { class: "identity", reason: "a business's routine limits" },
   routine_usage: { class: "identity", reason: "daily counters for limits" },

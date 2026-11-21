@@ -72,6 +72,8 @@ export const GUARD_MAX_MS = 10_000;
 export const GUARD_DEFAULT_MS = 5_000;
 /** Where a guard's answer is kept with the run, so replaying it never calls the hook again (RTN-11). */
 export const guardKey = (step: string) => `guard:${step}`;
+/** Where a run went from a step that chooses between ways (a decision), kept with it so a replay that cannot read the answers behind it (sealed.ts) takes the same way. */
+export const routeKey = (step: string) => `route:${step}`;
 
 export type Step = {
   id: string;
@@ -361,7 +363,14 @@ export const levelNeeded = (journey: Pick<Journey, "level">, step: Pick<Step, "l
 export const sureEnough = (journey: Pick<Journey, "level">, step: Pick<Step, "level">, actor: Pick<RunActor, "level">) => (actor.level ?? 0) >= levelNeeded(journey, step);
 
 /** The part of a run that is stored and handed over: enough to resume it anywhere. */
-export type RunSnapshot = { current: string | null; answers: Record<string, Record<string, unknown>>; steps: Record<string, unknown>; trail: RunState["trail"] };
+export type RunSnapshot = {
+  current: string | null;
+  answers: Record<string, Record<string, unknown>>;
+  steps: Record<string, unknown>;
+  trail: RunState["trail"];
+  /** Steps whose answers travel sealed, for the people who may read them (cases/sealed.ts): not in `answers` here. */
+  sealed?: Record<string, unknown>;
+};
 
 /** May this actor answer the step? Its access says (access.ts); without one, a step with a role needs that role and one without, the starter. */
 export const mayAnswer = (step: Pick<Step, "role" | "access">, actor: RunActor) => accessOf(step, actor).w;

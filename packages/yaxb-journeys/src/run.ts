@@ -26,7 +26,7 @@
 import { assign, createActor, createMachine, fromPromise, type AnyActorRef, type AnyMachineSnapshot } from "xstate";
 import { holds, render, type Scope } from "./expressions.js";
 import { formProblems, keptAnswers } from "./fields.js";
-import { GUARD_DEFAULT_MS, guardKey, levelNeeded, mayAnswer, type DisplayKind, type ShownBlock, type Journey, type RunActor, type RunSnapshot, type RunState, type ServiceHandler, type Step, type TaskState } from "./journeys.js";
+import { GUARD_DEFAULT_MS, guardKey, levelNeeded, routeKey, mayAnswer, type DisplayKind, type ShownBlock, type Journey, type RunActor, type RunSnapshot, type RunState, type ServiceHandler, type Step, type TaskState } from "./journeys.js";
 
 /** XState's assign, for this file's events (SUBMIT's answers, a service's output or error). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -78,7 +78,10 @@ export function createRunner(
     onChange,
     actor: firstActor,
     known = {},
-  }: { services?: Record<string, ServiceHandler>; context?: Scope; onChange?: (s: RunState) => void; actor?: RunActor; known?: Record<string, unknown> } = {},
+    recordRoutes = false,
+    sealed = [],
+    routes = {},
+  }: { services?: Record<string, ServiceHandler>; context?: Scope; onChange?: (s: RunState) => void; actor?: RunActor; known?: Record<string, unknown>; recordRoutes?: boolean; sealed?: readonly string[]; routes?: Record<string, string> } = {},
 ) {
   let who = firstActor;
   const tasks = journeyTasks(journey);
@@ -101,13 +104,29 @@ export function createRunner(
   function routeOf(step: Step) {
     const hop = set(({ context: c }: { context: Ctx }) => ({ hops: c.hops + 1 }));
     const circles = { guard: ({ context: c }: { context: Ctx }) => c.hops >= MAX_HOPS, ...fail("The journey went round in circles.", () => step.id) };
-    const go = (to: string) => (journey.steps[to] ? { target: target(to), actions: hop } : fail(`The journey has no step "${to}".`, () => to));
+    // With `recordRoutes`, a step that chooses between ways keeps the way taken in the run's steps (see routeKey).
+    const keepRoute = (to: string) => set(({ context: c }: { context: Ctx }) => ({ steps: { ...c.steps, [routeKey(step.id)]: to } }));
+    const go = (to: string, choosing = false) => (journey.steps[to] ? { target: target(to), actions: recordRoutes && choosing ? [hop, keepRoute(to)] : hop } : fail(`The journey has no step "${to}".`, () => to));
     const n = step.decide ?? step.next;
     if (n === undefined) return [circles, fail("The journey stopped without an ending.", () => step.id)];
     if (typeof n === "string") return [circles, go(n)];
+    // Where a run went from here, kept with it (sealed.ts): a replay that can't read the answers a branch
+    // depends on (they are sealed) takes the recorded way instead. Absent, the conditions decide as always.
+    const recorded = (c: Ctx) => (typeof routes[step.id] === "string" ? routes[step.id] : typeof c.steps[routeKey(step.id)] === "string" ? (c.steps[routeKey(step.id)] as string) : undefined);
+    // A decision that depends on a step whose answers are sealed here, and has no recorded way, can't be taken: say so, don't guess.
+    const mentions = (expr: string, id: string) => new RegExp(`answers(\\.|\\[['"])${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`).test(expr);
+    const unreadable = (c: Ctx) => recorded(c) === undefined && sealed.some((id) => n.some((b) => b.if !== undefined && mentions(b.if, id)));
     return [
       circles,
-      ...n.map((b) => (b.if === undefined ? go(b.to) : { guard: ({ context: c }: { context: Ctx }) => holds(b.if!, scope(c)), ...go(b.to) })),
+      { guard: ({ context: c }: { context: Ctx }) => unreadable(c), ...fail(`The way on from "${step.label ?? step.id}" depends on answers this device can't read.`, () => step.id) },
+      ...n.map((b, i) => ({
+        guard: ({ context: c }: { context: Ctx }) => {
+          const r = recorded(c);
+          if (r !== undefined) return n.findIndex((x) => x.to === r) === i;
+          return b.if === undefined ? true : holds(b.if, scope(c));
+        },
+        ...go(b.to, true),
+      })),
       fail("The journey stopped without an ending.", () => step.id),
     ];
   }
@@ -454,9 +473,14 @@ export function createRunner(
       return settle();
     },
     /** Answer the current ask step. Returns problems instead of advancing when an answer is missing. */
-    async answer(values: Record<string, unknown>): Promise<RunState | { problems: string[] }> {
+    async answer(values: Record<string, unknown>, opts: { sealed?: boolean } = {}): Promise<RunState | { problems: string[] }> {
       if (state.status !== "asking" || !state.prompt || !actor) return { problems: ["Nothing is waiting for an answer."] };
       const step = journey.steps[state.prompt.step]!;
+      // A sealed step's answers can't be read here: it counts as answered, with none, and the run's recorded route says where it went.
+      if (opts.sealed) {
+        actor.send({ type: "SUBMIT", step: step.id, answers: {} });
+        return settle();
+      }
       const sc = { answers: state.answers, steps: state.steps, context };
       const problems = formProblems(step.fields ?? [], values, sc);
       if (problems.length) return { problems };
@@ -486,7 +510,11 @@ export async function replay(
   journey: Journey,
   run: Pick<RunSnapshot, "answers" | "steps">,
   context: Scope = {},
+  /** Steps whose answers are sealed (sealed.ts): they count as answered without being read; `steps["route:<id>"]` says where each went. */
+  opts: { sealed?: readonly string[]; recordRoutes?: boolean } = {},
 ): Promise<{ ok: true; state: RunState; answered: string[] } | { ok: false; problems: string[] }> {
+  const sealed = new Set(opts.sealed ?? []);
+  const has = (id: string) => Object.hasOwn(run.answers, id) || sealed.has(id);
   // A guard's call is read back from the run too (RTN-11): replaying never calls the hook again.
   const recorded: ServiceHandler = async (_input, { step, guard }) => {
     const id = guard ? guardKey(step.id) : step.id;
@@ -498,28 +526,28 @@ export async function replay(
   const names = [...new Set(Object.values(journey.steps).flatMap((s) => [...(s.service ? [s.service] : []), ...(s.guard?.call ? [s.guard.call] : [])]))];
   // How its dependencies ended (DEP-1) is known up front: a uses step with its answer goes on.
   const known = Object.fromEntries(Object.entries(journey.steps).flatMap(([id, st]) => (st.uses && Object.hasOwn(run.steps, id) ? [[id, run.steps[id]]] : [])));
-  const runner = createRunner(journey, { services: Object.fromEntries(names.map((n) => [n, recorded])), context, known });
+  const runner = createRunner(journey, { services: Object.fromEntries(names.map((n) => [n, recorded])), context, known, recordRoutes: opts.recordRoutes, sealed: opts.sealed, routes: Object.fromEntries(Object.entries(run.steps).filter(([k, v]) => k.startsWith("route:") && typeof v === "string").map(([k, v]) => [k.slice(6), v as string])) });
   let state = await runner.start();
   const answered: string[] = [];
   for (let i = 0; i < MAX_HOPS && state.status === "asking" && state.prompt; i++) {
     let at = state.prompt.step;
-    if (!Object.hasOwn(run.answers, at)) {
+    if (!has(at)) {
       // A parallel journey: another ready task may have its answers.
-      const other = state.tasks?.find((t) => t.status === "ready" && Object.hasOwn(run.answers, t.step) && !answered.includes(t.step));
+      const other = state.tasks?.find((t) => t.status === "ready" && has(t.step) && !answered.includes(t.step));
       if (!other) break;
       state = await runner.focus(other.step);
       if (state.status !== "asking" || !state.prompt) break;
       at = state.prompt.step;
     }
     answered.push(at);
-    const r = await runner.answer(run.answers[at]!);
+    const r = await runner.answer(sealed.has(at) ? {} : run.answers[at]!, { sealed: sealed.has(at) });
     if ("problems" in r) return { ok: false, problems: r.problems.map((p) => `${journey.steps[at]?.label ?? at}: ${p}`) };
     // A guard that stops stored answers (RTN-9): the run isn't valid as sent.
     if (r.refused) return { ok: false, problems: [`${journey.steps[at]?.label ?? at}: ${r.refused.reason}`] };
     state = r;
   }
-  const extra = Object.keys(run.answers).filter((k) => !answered.includes(k));
-  if (extra.length) return { ok: false, problems: [`Answers for steps the journey didn't reach: ${extra.join(", ")}.`] };
   if (state.status === "failed") return { ok: false, problems: [state.error ?? "The journey failed."] };
+  const extra = [...Object.keys(run.answers), ...sealed].filter((k) => !answered.includes(k));
+  if (extra.length) return { ok: false, problems: [`Answers for steps the journey didn't reach: ${extra.join(", ")}.`] };
   return { ok: true, state, answered };
 }

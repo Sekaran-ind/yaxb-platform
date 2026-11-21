@@ -18,6 +18,7 @@
 import { replay, type RunState } from "@sekaran-ind/yaxb-journeys/journeys";
 import { z } from "zod";
 import { contextOf, type Case, type CaseEvent, type CaseStore } from "./index.js";
+import { sealedProblems } from "./sealed.js";
 
 export const RELAY_TTL_HOURS = 48;
 export const RELAY_MAX_HOURS = 7 * 24;
@@ -65,6 +66,8 @@ export type Delivery = {
   expires_at: string | null;
   state: "delivered" | "waiting" | "expired" | "not-sent";
   picked_by?: string | null;
+  /** Why it was not sent, when it was not (a step could not be sealed for anyone). */
+  reason?: string;
 };
 
 /** A mailbox for envelopes and beacons: the box, or the cloud relay. */
@@ -162,7 +165,10 @@ export async function receiveCase(store: CaseStore, body: unknown): Promise<{ ca
   const b = body as CaseBody;
   const c = b?.case;
   if (!c || typeof c !== "object" || !c.journey || !c.run || !Array.isArray(b.events)) throw new TransferError("That isn't a case.");
-  const r = await replay(c.journey, { answers: c.run.answers ?? {}, steps: c.run.steps ?? {} }, contextOf(c));
+  // Steps that arrive sealed can't be read here; the way the run went at each decision is in the case (sealed.ts).
+  const sealedBad = sealedProblems(c.journey, { answers: c.run.answers ?? {}, sealed: c.run.sealed });
+  if (sealedBad.length) throw new TransferError(`The case's sealed steps don't fit its journey: ${sealedBad[0]}`);
+  const r = await replay(c.journey, { answers: c.run.answers ?? {}, steps: c.run.steps ?? {} }, contextOf(c), { sealed: Object.keys(c.run.sealed ?? {}) });
   if (!r.ok) throw new TransferError(`The case's answers don't fit its journey: ${r.problems[0]}`);
   const at = standing(r.state);
   const claimed = c.status === "done" || c.status === "declined" ? (r.state.status === "done" ? "to_finish" : "waiting") : c.status;
@@ -172,10 +178,26 @@ export async function receiveCase(store: CaseStore, body: unknown): Promise<{ ca
   const kept = await store.get(c.id);
   const keptEvents = kept ? await store.events(c.id) : [];
   if (kept && keptEvents.length >= b.events.length && kept.updated_at >= c.updated_at) return { case: kept, changed: false };
-  await store.put(c);
+  // What this device already read stays readable: a step it wrote or opened before is kept in the clear, not replaced by the sealed copy.
+  const merged = kept && c.run.sealed ? keepWhatWasRead(c, kept) : c;
+  await store.put(merged);
   const have = new Set(keptEvents.map((e) => e.id));
   for (const e of b.events) if (!have.has(e.id)) await store.addEvent(e);
-  return { case: c, changed: true };
+  return { case: merged, changed: true };
+}
+
+/** A newer copy with some steps sealed, and what this device kept of the same case in the clear for those steps. */
+function keepWhatWasRead(incoming: Case, kept: Case): Case {
+  const sealed = { ...(incoming.run.sealed ?? {}) };
+  const answers = { ...incoming.run.answers };
+  for (const id of Object.keys(sealed)) {
+    if (Object.hasOwn(kept.run.answers, id)) {
+      answers[id] = kept.run.answers[id]!;
+      delete sealed[id];
+    }
+  }
+  const { sealed: _s, ...run } = incoming.run;
+  return { ...incoming, run: { ...run, answers, ...(Object.keys(sealed).length ? { sealed } : {}) } };
 }
 
 function standing(s: RunState): { status: "waiting" | "to_finish"; step: string | null } {

@@ -29,6 +29,7 @@ import "./routes/library-public";
 import "./routes/identity";
 import "./routes/sync";
 import "./routes/records";
+import "./routes/keys";
 import "./routes/cases";
 import "./routes/connectors";
 import "./routes/events";

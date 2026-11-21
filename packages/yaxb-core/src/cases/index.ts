@@ -34,6 +34,7 @@ import { render } from "@sekaran-ind/yaxb-journeys/journeys";
 import { resolveForRequester, type Organisation } from "@sekaran-ind/yaxb-journeys";
 import { shapeInputs, shapeProblems, type LinkShape } from "../links/index.js";
 import { z } from "zod";
+import type { PublicKey } from "../seal/index.js";
 
 export type CaseStatus = "waiting" | "to_finish" | "done" | "declined";
 
@@ -80,6 +81,8 @@ export type Case = {
   journey: Journey;
   /** The device a visitor started it on: their later screens come back there (devices storage). */
   starter_device?: string | null;
+  /** The public key of the device a visitor started it on, so what they gave can be sealed back to them (sealed.ts). */
+  starter_key?: PublicKey | null;
   /** One member it is assigned to (a moderator's reassignment), instead of everyone with the role. */
   assignee?: string | null;
   assignee_name?: string | null;
@@ -391,11 +394,11 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
   async function resume(parent: Case, outcome: UsesResult, child: Case | null, device: string | null): Promise<{ parent: Case; spawned: Case[] }> {
     const step = parent.links!.child!.step;
     const steps = { ...parent.run.steps, [step]: outcome };
-    const r = await replay(parent.journey, { answers: parent.run.answers, steps }, contextOf(parent));
+    const r = await replay(parent.journey, { answers: parent.run.answers, steps }, contextOf(parent), { sealed: Object.keys(parent.run.sealed ?? {}) });
     if (!r.ok) throw new CaseError(r.problems[0] ?? "The case can't carry on.");
     const at = position(parent.journey, r);
     const t = now();
-    const next: Case = { ...parent, ...at, updated_at: t, closed_at: at.status === "done" ? t : null, run: storable(parent.journey, { current: r.state.current, answers: parent.run.answers, steps, trail: r.state.trail }), links: { ...parent.links, child: null } };
+    const next: Case = { ...parent, ...at, updated_at: t, closed_at: at.status === "done" ? t : null, run: storable(parent.journey, { current: r.state.current, answers: parent.run.answers, steps, trail: r.state.trail, ...(parent.run.sealed ? { sealed: parent.run.sealed } : {}) }), links: { ...parent.links, child: null } };
     await store.put(next);
     const sys = SYSTEM_CASE_ACTOR(parent);
     const said = outcome.status === "timed_out" ? `Stopped waiting for ${parent.links!.child!.service_title} (${outcome.case})` : `${parent.links!.child!.service_title} ${outcome.status === "done" ? "finished" : "declined"} ${outcome.case}${outcome.result?.title ? `: ${outcome.result.title}` : ""}`;
@@ -508,16 +511,17 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
       if (c.status !== "waiting" || !mayActNow(c, a)) throw new CaseError("It isn't your turn on this case.", 409);
       const answers = { ...c.run.answers };
       for (const [k, v] of Object.entries(p.answers)) {
-        if (Object.hasOwn(answers, k)) throw new CaseError("Those screens are answered already.", 409);
+        if (Object.hasOwn(answers, k) || Object.hasOwn(c.run.sealed ?? {}, k)) throw new CaseError("Those screens are answered already.", 409);
         answers[k] = v;
       }
       const steps = { ...c.run.steps };
       for (const [k, v] of Object.entries(p.steps)) if (!Object.hasOwn(steps, k)) steps[k] = v;
       sized({ answers, steps });
-      const r = await replay(c.journey, { answers, steps }, contextOf(c));
+      const sealed = Object.keys(c.run.sealed ?? {});
+      const r = await replay(c.journey, { answers, steps }, contextOf(c), { sealed });
       if (!r.ok) throw new CaseError(r.problems[0] ?? "The answers don't fit the journey.");
       const me = runActor(c, a);
-      const fresh = r.answered.filter((s) => !Object.hasOwn(c.run.answers, s));
+      const fresh = r.answered.filter((s) => !Object.hasOwn(c.run.answers, s) && !sealed.includes(s));
       if (!fresh.length) throw new CaseError("Answer the screen first.");
       const notMine = fresh.find((s) => !mayAnswer(c.journey.steps[s]!, me));
       if (notMine) throw new CaseError(`The screen "${c.journey.steps[notMine]?.label ?? notMine}" is answered by someone else.`, 403);
@@ -532,7 +536,7 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
         assignee_name: null,
         updated_at: t,
         closed_at: at.status === "done" ? t : null,
-        run: storable(c.journey, { current: r.state.current, answers, steps, trail: r.state.trail }),
+        run: storable(c.journey, { current: r.state.current, answers, steps, trail: r.state.trail, ...(c.run.sealed ? { sealed: c.run.sealed } : {}) }),
       };
       await store.put(next);
       await event(next, a, "answered", fresh[0] ?? null, fresh.map((s) => c.journey.steps[s]?.label ?? s).join(", "));
@@ -714,6 +718,7 @@ export function createCaseService(store: CaseStore, options: CaseOptions) {
 
 export type CaseService = ReturnType<typeof createCaseService>;
 export * from "./transfer.js";
+export * from "./sealed.js";
 
 export function createMemoryCaseStore(): CaseStore {
   const cases = new Map<string, Case>();
