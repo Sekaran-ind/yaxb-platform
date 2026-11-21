@@ -13,6 +13,7 @@ import { createMachine, type AnyStateMachine } from "xstate";
 import { toDirectedGraph } from "@xstate/graph";
 import type { Branch, Journey, Step } from "./journeys.js";
 import { MANAGER_OF_REQUESTER, VISITOR_ROLE } from "./roles.js";
+import { accessOf, isRestricted, mentionsAnswers } from "./access.js";
 import { afterTasks, journeyTasks } from "./run.js";
 
 export const FAILED_STATE = "(failed)";
@@ -220,6 +221,59 @@ export type DesignCheck = { level: "error" | "warning"; step: string | null; mes
 const APPROVAL = /\b(approv|review|accept|verif|check|confirm|screen|vet)\w*/i;
 
 /**
+ * A decision that depends on a step hidden from the person whose device takes it. On devices a case
+ * travels with such a step sealed (cases/sealed.ts), and whoever answers just before a decision takes it
+ * on their own device: if they can't read a step the decision looks at, it can't be decided there. Warned
+ * at design time, so it isn't found when a case stops. (When requests are kept in the cloud the server
+ * decides and it works, which is why this is a warning.)
+ */
+function hiddenDecisionChecks(j: Journey, edges: readonly { from: string; to: string }[]): DesignCheck[] {
+  const out: DesignCheck[] = [];
+  const asks = (s: Step) => s.ask !== undefined || s.questionnaire !== undefined;
+  const actorOf = (id: string) => ({ starter: !j.steps[id]!.role, roles: j.steps[id]!.role ? [j.steps[id]!.role!] : [] });
+  const restricted = Object.entries(j.steps).filter(([, s]) => isRestricted(s)).map(([id]) => id);
+  if (!restricted.length) return out;
+  const decides = (s: Step) => (Array.isArray(s.decide) ? s.decide : Array.isArray(s.next) ? s.next : null);
+  const said = new Set<string>();
+  for (const [d, step] of Object.entries(j.steps)) {
+    const branches = decides(step);
+    if (!branches) continue;
+    const reads = restricted.filter((x) => branches.some((b) => typeof b.if === "string" && mentionsAnswers(b.if, x)));
+    if (!reads.length) continue;
+    // Who takes it: a question step's own answerer, or whoever answers the question screen(s) before it.
+    const evaluators = new Set<string>();
+    if (asks(step)) evaluators.add(d);
+    else {
+      const seen = new Set<string>([d]);
+      const walk = (id: string) => {
+        for (const e of edges.filter((x) => x.to === id)) {
+          if (seen.has(e.from) || !j.steps[e.from]) continue;
+          seen.add(e.from);
+          if (asks(j.steps[e.from]!)) evaluators.add(e.from);
+          else walk(e.from);
+        }
+      };
+      walk(d);
+    }
+    for (const p of evaluators) {
+      for (const x of reads) {
+        if (x === p || accessOf(j.steps[x]!, actorOf(p)).r) continue;
+        const key = `${d}|${p}|${x}`;
+        if (said.has(key)) continue;
+        said.add(key);
+        const who = j.steps[p]!.role ? `the ${j.steps[p]!.role}` : "the person who started it";
+        out.push({
+          level: "warning",
+          step: d,
+          message: `the decision at '${d}' depends on '${x}', which ${who} (who answers '${p}' just before it) can't read: on devices that case stops there. Let them read it (access: { ${j.steps[p]!.role ?? "starter"}: r } on '${x}'), or decide on something they can read.`,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/**
  * Design checks for one journey, from its graph: what nobody reaches (and why, when a result ends
  * the journey before it), what can never end, an approval that is a decision nobody is asked for, and roles named one letter away from a known role.
  */
@@ -259,6 +313,8 @@ export function designChecks(j: Journey, { roles = [] as readonly string[], orde
     }
   }
   for (const n of g.nodes) if (n.reachable && !canEnd.has(n.id)) out.push({ level: "warning", step: n.id, message: `from screen '${n.id}' the journey can never end: it loops with no way out.` });
+
+  out.push(...hiddenDecisionChecks(j, g.edges));
 
   for (const [id, s] of Object.entries(j.steps)) {
     // "Approve" as a decision: it runs by itself, nobody is asked.

@@ -26,6 +26,7 @@
 import { assign, createActor, createMachine, fromPromise, type AnyActorRef, type AnyMachineSnapshot } from "xstate";
 import { holds, render, type Scope } from "./expressions.js";
 import { formProblems, keptAnswers } from "./fields.js";
+import { mentionsAnswers } from "./access.js";
 import { GUARD_DEFAULT_MS, guardKey, levelNeeded, routeKey, mayAnswer, type DisplayKind, type ShownBlock, type Journey, type RunActor, type RunSnapshot, type RunState, type ServiceHandler, type Step, type TaskState } from "./journeys.js";
 
 /** XState's assign, for this file's events (SUBMIT's answers, a service's output or error). */
@@ -114,8 +115,7 @@ export function createRunner(
     // depends on (they are sealed) takes the recorded way instead. Absent, the conditions decide as always.
     const recorded = (c: Ctx) => (typeof routes[step.id] === "string" ? routes[step.id] : typeof c.steps[routeKey(step.id)] === "string" ? (c.steps[routeKey(step.id)] as string) : undefined);
     // A decision that depends on a step whose answers are sealed here, and has no recorded way, can't be taken: say so, don't guess.
-    const mentions = (expr: string, id: string) => new RegExp(`answers(\\.|\\[['"])${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`).test(expr);
-    const unreadable = (c: Ctx) => recorded(c) === undefined && sealed.some((id) => n.some((b) => b.if !== undefined && mentions(b.if, id)));
+    const unreadable = (c: Ctx) => recorded(c) === undefined && sealed.some((id) => n.some((b) => b.if !== undefined && mentionsAnswers(b.if, id)));
     return [
       circles,
       { guard: ({ context: c }: { context: Ctx }) => unreadable(c), ...fail(`The way on from "${step.label ?? step.id}" depends on answers this device can't read.`, () => step.id) },

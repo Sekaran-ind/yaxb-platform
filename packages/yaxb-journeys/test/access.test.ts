@@ -118,3 +118,57 @@ journeys:
     expect(doc.journeys[0]!.screens[1]!.access).toBeUndefined();
   });
 });
+
+describe("a decision that depends on a step hidden from the person who takes it", () => {
+  const service = (decideAfter: "symptoms" | "triage" | "billing") => `kind: service
+id: clinic
+title: Clinic
+roles: [{ id: nurse, label: Nurse }, { id: doctor, label: Doctor }, { id: clerk, label: Clerk }]
+journeys:
+  - id: visit
+    title: Visit
+    roles: { initiate: [visitor], complete: [doctor] }
+    screens:
+      - id: symptoms
+        title: Symptoms
+        access: { starter: rw, nurse: r, doctor: r }
+        questions: [{ id: urgent, type: boolean, label: Urgent }]
+        next: ${decideAfter === "symptoms" ? "route" : "triage"}
+      - id: triage
+        title: Triage
+        role: nurse
+        access: { nurse: rw, doctor: r }
+        questions: [{ id: bp, type: text, label: BP }]
+        next: ${decideAfter === "triage" ? "route" : "billing"}
+      - id: billing
+        title: Billing
+        role: clerk
+        questions: [{ id: code, type: text, label: Code }]
+        next: ${decideAfter === "billing" ? "route" : "done"}
+      - id: route
+        decide:
+          - { if: "answers.symptoms.urgent == true", to: done }
+          - { to: done }
+      - id: done
+        result: { title: Done }
+`;
+  const warnings = (yaml: string) => compileBundle(yaml).problems.filter((p) => p.level === "warning" && /can't read/.test(p.message)).map((p) => p.message);
+
+  it("warns when the person who answers just before it can't read what it looks at", () => {
+    const w = warnings(service("billing"));
+    expect(w).toHaveLength(1);
+    expect(w[0]).toMatch(/decision at 'route' depends on 'symptoms', which the clerk .*can't read/);
+    expect(w[0]).toMatch(/access: \{ clerk: r \}/);
+  });
+
+  it("is quiet when they can read it, or wrote it", () => {
+    expect(warnings(service("triage"))).toEqual([]); // the nurse reads the symptoms
+    expect(warnings(service("symptoms"))).toEqual([]); // the starter wrote them
+    // Letting the clerk read them clears the warning.
+    expect(warnings(service("billing").replace("access: { starter: rw, nurse: r, doctor: r }", "access: { starter: rw, nurse: r, doctor: r, clerk: r }"))).toEqual([]);
+  });
+
+  it("says nothing about a step everyone may read", () => {
+    expect(warnings(service("billing").replace(/        access: \{ starter: rw, nurse: r, doctor: r \}\n/, ""))).toEqual([]);
+  });
+});

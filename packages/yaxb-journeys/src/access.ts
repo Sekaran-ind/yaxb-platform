@@ -56,6 +56,13 @@ export function accessOf(step: { role?: string; access?: StepAccess }, actor: Wh
   return out;
 }
 
+/** Does everyone who sees the case read this step? Then it travels in the clear. A step with questions whose access doesn't give `any` the `r` is restricted: on devices it travels sealed. */
+export const isRestricted = (s: { access?: StepAccess; ask?: unknown; questionnaire?: unknown }) =>
+  Boolean(s.access) && (s.ask !== undefined || s.questionnaire !== undefined) && !(typeof s.access?.any === "string" && s.access.any.includes("r"));
+
+/** Does a condition read the answers of this step (`answers.<id>.…` or `answers['<id>']`)? */
+export const mentionsAnswers = (expr: string, id: string) => new RegExp(`answers(\\.|\\[['"])${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`).test(expr);
+
 /** Problems with a step's `access`. `known` are the role ids that exist; `step` says what the step can do. */
 export function accessProblems(at: string, value: unknown, step: { questions: boolean; service: boolean }, known?: readonly string[]): string[] {
   if (value === undefined) return [];

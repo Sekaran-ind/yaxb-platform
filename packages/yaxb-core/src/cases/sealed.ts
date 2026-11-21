@@ -11,7 +11,7 @@
 // recorded way (journeys `replay`, `{ sealed }`).
 //
 // Only a step with questions is sealed. A service step's result stays in the clear.
-import { accessOf, replay, type Journey, type Step } from "@sekaran-ind/yaxb-journeys/journeys";
+import { accessOf, isRestricted, replay, type Journey, type Step } from "@sekaran-ind/yaxb-journeys/journeys";
 import { open, seal, type PublicKey, type KeyPair, type Sealed } from "../seal/index.js";
 import { contextOf, type Case } from "./index.js";
 import { TransferError } from "./transfer.js";
@@ -26,10 +26,6 @@ export interface KeyDirectory {
 
 export const sealedAad = (caseId: string, step: string) => `${caseId}|${step}`;
 
-const asksQuestions = (s: Step) => s.ask !== undefined || s.questionnaire !== undefined;
-
-/** Does everyone who sees the case read this step? Then it needn't be sealed. */
-export const isRestricted = (s: Step) => Boolean(s.access) && asksQuestions(s) && !(s.access && typeof s.access.any === "string" && s.access.any.includes("r"));
 
 /** Who may read a restricted step: the roles, and whether the person who started the case. Mirrors accessOf. */
 export function readersOf(s: Step): { roles: string[]; starter: boolean } {
@@ -102,4 +98,4 @@ export function sealedProblems(journey: Journey, run: Pick<Case["run"], "answers
   return problems;
 }
 
-export { accessOf };
+export { accessOf, isRestricted };
